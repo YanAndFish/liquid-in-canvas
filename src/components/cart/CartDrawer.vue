@@ -116,7 +116,7 @@ onBeforeUnmount(() => {
 <template>
   <Transition name="cart">
     <div v-if="props.open" id="cart-shell" class="fixed inset-0 z-50">
-      <div data-glass-scrim class="absolute inset-0 bg-[var(--scrim)]" @click="close" />
+      <div data-glass-scrim class="absolute inset-0 bg-[var(--cart-scrim)]" @click="close" />
 
       <aside
         ref="panel"
@@ -126,11 +126,11 @@ onBeforeUnmount(() => {
         data-liquid-glass
         data-glass-anchor="#cart-shell"
         data-glass-radius="28 0 0 28"
-        :data-glass-blur="theme === 'dark' ? '20' : '32'"
+        :data-glass-blur="theme === 'dark' ? '18' : '28'"
         data-glass-refraction="26"
         data-glass-dispersion="0.36"
         :data-glass-tint="theme === 'dark' ? '#0b0d12' : undefined"
-        :data-glass-tint-alpha="theme === 'dark' ? '0.34' : '0.62'"
+        :data-glass-tint-alpha="theme === 'dark' ? '0.1' : '0.45'"
         :data-glass-specular="theme === 'dark' ? '0.62' : undefined"
         data-glass-shadow="0.55"
         data-glass-shadow-size="38"

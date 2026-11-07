@@ -64,8 +64,8 @@ function pause(media: HTMLVideoElement): void {
         <video
           ref="video"
           class="showcase-video"
-          src="/media/liquid-glass.mp4"
-          poster="/media/liquid-glass-poster.jpg"
+          src="/media/liquid-glass-flower.mp4"
+          poster="/media/liquid-glass-flower-poster.jpg"
           muted
           loop
           playsinline
@@ -73,6 +73,7 @@ function pause(media: HTMLVideoElement): void {
           aria-hidden="true"
         />
         <div class="showcase-shade" aria-hidden="true" />
+        <div class="showcase-grid" aria-hidden="true" />
 
         <div class="showcase-copy">
           <p class="eyebrow text-white/55">
@@ -91,11 +92,14 @@ function pause(media: HTMLVideoElement): void {
           data-glass-anchor=".showcase-frame"
           data-glass-radius="28"
           data-glass-blur="18"
-          data-glass-refraction="22"
+          data-glass-refraction="24"
+          data-glass-dispersion="0.6"
+          data-glass-tint="#0a0c10"
+          data-glass-tint-alpha="0.08"
           data-glass-specular="0.75"
           data-glass-shadow="0.4"
           data-glass-shadow-size="32"
-          class="showcase-card bottom-5 left-5 sm:bottom-8 sm:left-8"
+          class="showcase-card bottom-5 left-[12%] sm:bottom-[26%] sm:left-[22%]"
         >
           <p class="eyebrow text-white/55">
             {{ t('glass.lens.label') }}
@@ -114,8 +118,10 @@ function pause(media: HTMLVideoElement): void {
           data-glass-anchor=".showcase-frame"
           data-glass-radius="999"
           data-glass-blur="8"
-          data-glass-refraction="16"
-          data-glass-specular="0.95"
+          data-glass-refraction="18"
+          data-glass-tint="#0a0c10"
+          data-glass-tint-alpha="0.04"
+          data-glass-specular="0.9"
           data-glass-shadow="0.3"
           data-glass-shadow-size="26"
           class="showcase-pill right-5 top-5 hidden sm:right-8 sm:top-8 sm:inline-flex"
@@ -129,12 +135,14 @@ function pause(media: HTMLVideoElement): void {
           data-glass-anchor=".showcase-frame"
           data-glass-radius="24"
           data-glass-blur="14"
-          data-glass-refraction="20"
-          data-glass-dispersion="0.3"
-          data-glass-specular="0.7"
+          data-glass-refraction="22"
+          data-glass-dispersion="0.6"
+          data-glass-tint="#0a0c10"
+          data-glass-tint-alpha="0.08"
+          data-glass-specular="0.75"
           data-glass-shadow="0.34"
           data-glass-shadow-size="28"
-          class="showcase-card bottom-5 right-5 hidden sm:bottom-8 sm:right-8 sm:block"
+          class="showcase-card bottom-5 right-[12%] hidden sm:bottom-[28%] sm:right-[18%] sm:block"
         >
           <p class="eyebrow text-white/55">
             {{ t('glass.specular.label') }}
@@ -179,6 +187,16 @@ function pause(media: HTMLVideoElement): void {
   background:
     linear-gradient(105deg, rgba(4, 8, 12, 0.62), rgba(4, 8, 12, 0.08) 52%, rgba(4, 8, 12, 0.26)),
     linear-gradient(0deg, rgba(4, 8, 12, 0.52), transparent 42%);
+}
+
+.showcase-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.11) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.11) 1px, transparent 1px);
+  background-size: 56px 56px;
+  pointer-events: none;
 }
 
 .showcase-copy {
