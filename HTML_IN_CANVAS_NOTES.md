@@ -344,10 +344,59 @@ key 必须是 `route.path`，不能是 `route.fullPath`。否则点击 `/#collec
 
 页面切换时 `.page-view` 上有 `transform`。这会成为 `position: fixed` 后代的包含块。购物袋抽屉必须留在 transition 外面，否则打开抽屉时 fixed 定位会改变。
 
+### 11.6 详情页图片的共享元素过渡
+
+最早的版本只做整页 crossfade，然后在 `@enter` 里启动图片 clone。结果是列表图片先消失，详情页图片在 crossfade 中已经出现，clone 再从旧位置飞过来。用户看到的是两次图片和一段像渐变的页面叠影。
+
+当前做法分四步。
+
+1. 点击商品卡片链接时，立刻在卡片图片面板的位置创建一个 fixed clone。clone 放在 `#app` 内的 `.shared-layer`，不能被页面 transition 裁掉。
+2. 路由开始切换，旧页在 80ms 内淡出，clone 一直停在卡片图片的位置。
+3. 新页 `@enter` 时把详情页图片设为 `visibility: hidden`，调用 `completeProductFlight()`。隐藏用 `visibility` 而不是 `display`，布局不会跳。
+4. layer 轮询 `#stage-scroll.scrollTop === 0`，拿到详情页图片的最终位置，减去进入页当前的 `translateY`，再用 480ms 把 clone 缩放移动到目标。动画结束后移除 clone，恢复目标图片的 `visibility`。
+
+clone 必须设置 `transform-origin: top left`。默认原点是中心，缩放后终点会向右侧和下方偏出目标位置。
+
+详情页的非图片内容在新页 enter 后 100ms 开始淡入。旧页 80ms 淡出，新页 100ms 开始，中间只有很短的空白，clone 是连续元素。
+
+实测终点：
+
+```text
+route clone 最后位置: (52, 165, 584, 730)
+详情图片目标位置:    (52, 165, 584, 730)
+```
+
+`prefers-reduced-motion: reduce` 时不创建 clone，目标图片直接显示。
+
+### 11.7 返回列表不应该平滑滚动
+
+从详情页点“Back to collection”或头部的“Collection”时，目标地址是 `/#collection`，不是浏览器 back。原来的 `scrollBehavior` 看到 hash 就走平滑滚动分支，从当前的 0 滚到 collection 位置，忽略已经保存的 `/` 滚动位置。
+
+实测修复前的滚动位置：
+
+```text
+0 -> 2 -> 10 -> 27 -> 56 -> 106 ...
+```
+
+用户看到的是从顶部慢慢滚回列表中部。
+
+修复是在 `scrollBehavior` 里加一个明确分支。`to.hash === '#collection'`、`from.path !== to.path` 且存在保存位置时，直接 `scrollTo({ top: saved, behavior: 'instant' })`。同页面的 hash 导航仍然走平滑滚动。浏览器 back 本来就走 `savedPosition` 分支，已经是 instant。
+
+修复后：
+
+```text
+t=0   scrollTop 0
+t=29  scrollTop 997
+```
+
+列表直接出现在上次的滚动位置。`savedPositions` 同时按 `to.fullPath` 和 `to.path` 查找，因为首页可能带着 `#collection` 离开。
+
 ## 12. 交互动画
 
-已加入的传统 HTML + CSS 动画：
+已加入的 DOM 动画：
 
+- 商品卡片图片到详情页图片的共享元素过渡。
+- 加购时商品图片飞入头部购物袋。
 - 产品卡片 hover 上移 4px，图片容器缩放到 1.04。
 - Hero 图片 hover 缩放到 1.02。
 - 导航链接下划线从左侧展开。
@@ -356,14 +405,39 @@ key 必须是 `route.path`，不能是 `route.fullPath`。否则点击 `/#collec
 - 筛选按钮按下缩放到 0.95。
 - 加购图标在 `Added` 状态放大到 1.1。
 
-这些动画都由 `paint` 事件同步到 canvas。实测：
+这些动画都是 DOM 动画，不涉及 canvas shader。它们由 `paint` 事件同步到 canvas。
 
-- 产品卡片 hover 后 `article` 的 transform 为 `translateY(-3.91px)`，图片容器的 `scale` 为 `1.035`。paint 计数从 42 增加到 68。
-- 导航下划线的 `::after` transform 从 `scaleX(0)` 变成 `scaleX(1)`。
-- 购物袋行项目在 100ms 时 opacity 约 0.56，transform 约 `translateX(6px)`，600ms 后恢复到 1 和 0。paint 计数从 142 增加到 159。
-- 路由切换 80ms 时存在两个 `.page-view`，paint 计数从 2 增加到 16，切换完成后为 25。
+### 12.1 入袋动画
 
-`prefers-reduced-motion: reduce` 的全局规则会把 transition 和 animation 时长压到 0.01ms，这些动画会立即结束。
+加购时分两步。
+
+1. 在 store 更新前捕获商品图片面板的矩形。
+2. 调用 `add()`，然后等 `nextTick()`。等购物袋按钮里的数量角标插入后，再读取 `[data-bag-target]` 的图标位置。
+3. 用商品图片创建 clone，从图片面板飞到购物袋图标。动画 620ms，先向上弧线移动，再缩小到 16px，最后透明度降低。
+4. 动画结束时给购物袋图标做一次 320ms 的 scale 1 -> 1.16 -> 1 脉冲。
+
+关键坑是目标位置。头部右侧控件是右对齐的。加购后数量角标出现，购物袋按钮变宽，图标会向左移动约 28px。如果在 `add()` 之前读取目标，clone 会落在旧位置，和真实图标差 28px。必须在 `nextTick()` 之后读取。
+
+实测终点：
+
+```text
+bag clone 最后位置: (1138, 24, 16, 16)
+购物袋图标位置:    (1138, 24, 16, 16)
+```
+
+### 12.2 共享元素测量
+
+产品卡片 hover 后 `article` 的 transform 为 `translateY(-3.91px)`，图片容器的 `scale` 为 `1.035`。paint 计数从 42 增加到 68。
+
+导航下划线的 `::after` transform 从 `scaleX(0)` 变成 `scaleX(1)`。
+
+购物袋行项目在 100ms 时 opacity 约 0.56，transform 约 `translateX(6px)`，600ms 后恢复到 1 和 0。paint 计数从 142 增加到 159。
+
+路由切换在 80ms 时存在两个 `.page-view`，paint 计数从 2 增加到 16，切换完成后为 25。
+
+共享元素 clone 从卡片位置 `(52, 214, 376, 470)` 开始，在 t=34 出现，t=517 到达 `(52, 165, 584, 730)`。clone 生命周期约 480ms。
+
+`prefers-reduced-motion: reduce` 的全局规则会把 CSS transition 和 animation 时长压到 0.01ms。WAAPI 动画在 `createClone()` 里单独检查，减少动态时直接跳过 clone。
 
 ## 13. 支持提示页
 
@@ -397,6 +471,9 @@ pnpm build
 
 - 1280×900 CSS 视口，DPR 2，canvas bitmap 为 2560×1800。
 - 12 个产品、主题切换、语言切换、滚轮滚动、粘性头部、商品详情、加购、购物袋焦点、Escape 关闭、演示结算、hash 导航、后退滚动恢复。
+- 共享元素过渡：clone 从 `(52, 214, 376, 470)` 出发，最后到达详情图片 `(52, 165, 584, 730)`。详情图片在飞行期间保持 `visibility: hidden`。
+- 入袋动画：clone 最后到达购物袋图标 `(1138, 24, 16, 16)`，和图标实际位置一致。
+- 返回列表：点击“Back to collection”后，`scrollTop` 在第二帧直接变为 997，不再从 0 开始平滑滚动。
 - 窗口缩放到 900×700，DPR 2，canvas 变成 1800×1400，抽屉保持对齐。
 - 使用 `--disable-features=OverlayScrollbar` 复现经典滚动条偏移。
 - 使用 `Page.startScreencast` 和 DOM 采样检查缩放和抽屉动画。
@@ -407,6 +484,8 @@ OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面�
 
 - 没有 DPR 上限。2560×1800 下上传加渲染约 0.4 到 3ms，5K 屏或后续 glass shader 可能成为瓶颈。
 - 页面切换时页脚会跟随新页高度跳变。短页面可能看到页脚移动。
+- 共享元素和入袋动画依赖 Web Animations API。pending clone 有 1.2s 超时；如果路由始终没有完成，clone 会被移除。目标图片在飞行期间是 `visibility: hidden`，依赖完成或取消回调恢复。
+- 返回列表的 instant 恢复只对 `#collection` 生效。从详情页跳到 `#approach` 仍然使用平滑滚动，这是预期行为。
 - 浏览器 Find-in-Page 对内部滚动容器的滚动行为没有完整验证。
 - Chrome 端到端检查目前是本地 CDP 脚本，不在 Ubuntu CI 里。
 - three.js 版本固定在 0.187.0。`HTMLTexture` 的 WebGPU API 仍在变化，升级前要重新验证。
@@ -419,17 +498,19 @@ OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面�
 | 路径 | 作用 |
 | --- | --- |
 | `src/stage/CanvasStage.ts` | three.js WebGPU renderer、ExternalTexture、全屏 mesh、paint 上传、resize |
-| `src/stage/support.ts` | HTML-in-Canvas、WebGPU、元素上传的能力检测 |
+| `src/stage/support.ts` | HTML-In-Canvas、WebGPU、元素上传的能力检测 |
 | `src/stage/scroll.ts` | 内层滚动容器和购物袋滚动锁 |
 | `src/stage/types.ts` | StageSupport、StageFault、StageMetrics |
 | `src/types/html-in-canvas.d.ts` | 浏览器 API 和 `drawElementImageToTexture` 的类型声明 |
 | `src/main.ts` | 支持检测、canvas 创建、商店挂载、失败提示 |
-| `src/App.vue` | 内层滚动容器、路由切换 wrapper、购物袋位置 |
+| `src/App.vue` | 内层滚动容器、路由切换 wrapper、共享元素 hook、购物袋位置 |
+| `src/components/transition/SharedTransitionLayer.vue` | 共享元素 clone、详情页飞行、入袋飞行 |
+| `src/composables/sharedTransition.ts` | shared layer 注册、矩形类型、购物袋目标 |
 | `src/pages/UnsupportedView.vue` | 支持提示页 |
-| `src/router/index.ts` | 内层滚动、历史位置保存、hash 偏移 |
+| `src/router/index.ts` | 内层滚动、历史位置保存、instant 恢复、hash 偏移 |
 | `src/components/cart/CartDrawer.vue` | 抽屉、滚动锁、行项目错开动画 |
 | `src/styles/main.css` | stage、drawable 根、滚动容器、路由切换、下划线动画 |
-| `src/components/product/ProductCard.vue` | 卡片 hover、图片缩放、加购按钮反馈 |
+| `src/components/product/ProductCard.vue` | 卡片 hover、图片缩放、共享元素起点、入袋动画、加购反馈 |
 | `src/components/home/HeroSection.vue` | Hero 图片 hover 缩放 |
 | `tests/stage/support.test.ts` | 能力检测测试 |
 | `tests/app/UnsupportedView.test.ts` | 提示页测试 |

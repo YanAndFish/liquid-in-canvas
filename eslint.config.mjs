@@ -10,6 +10,7 @@ export default antfu(
       'coverage',
       'node_modules',
       '.vscode',
+      'HTML_IN_CANVAS_NOTES.md',
     ],
   },
   {
