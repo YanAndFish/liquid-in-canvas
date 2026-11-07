@@ -33,18 +33,18 @@ const themeLabel = computed(() => theme.value === 'dark'
 
 <template>
   <header class="site-header">
-    <div class="header-layout">
+    <div class="header-layout" data-liquid-glass data-glass-layer="0" data-glass-radius="28" data-glass-blur="18" data-glass-refraction="18" data-glass-fusion="40">
       <RouterLink to="/" class="flex items-baseline gap-2.5">
         <span class="text-xl tracking-[0.14em] font-display">STILL</span>
         <span class="hidden text-[9px] text-mist tracking-[0.26em] font-mono uppercase sm:inline">{{ t('brand.tagline') }}</span>
       </RouterLink>
 
-      <nav data-liquid-glass data-glass-radius="999" data-glass-blur="20" data-glass-refraction="12" data-glass-shadow="0.12" data-glass-shadow-size="16" class="header-nav" :aria-label="t('nav.primary')">
+      <nav class="header-nav" :aria-label="t('nav.primary')">
         <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone link-underline">{{ t('nav.collection') }}</RouterLink>
         <RouterLink :to="{ path: '/', hash: '#approach' }" class="transition-colors hover:text-bone link-underline">{{ t('nav.approach') }}</RouterLink>
       </nav>
 
-      <div class="header-actions" data-liquid-glass data-glass-radius="999" data-glass-blur="20" data-glass-refraction="12" data-glass-shadow="0.12" data-glass-shadow-size="16">
+      <div class="header-actions">
         <button
           type="button"
           class="header-icon"
@@ -95,8 +95,8 @@ const themeLabel = computed(() => theme.value === 'dark'
 
 <style scoped>
 .site-header { position: sticky; top: 0; z-index: 40; padding: 18px 0 16px; pointer-events: none; }
-.site-header::before { content: ''; position: absolute; inset: 0 0 -12px; z-index: -1; background: linear-gradient(var(--bg), transparent); pointer-events: none; }
-.header-layout { position: relative; max-width: 1440px; margin: 0 auto; padding: 0 32px; height: 52px; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+
+.header-layout { position: relative; width: calc(100% - 40px); max-width: 1376px; margin: 0 auto; padding: 0 20px; height: 64px; border-radius: 28px; pointer-events: auto; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .header-layout > * { pointer-events: auto; }
 .header-nav { display: flex; height: 52px; align-items: center; padding: 6px; border-radius: 999px; gap: 2px; font-size: 13px; font-weight: 550; }
 .header-nav a { display: flex; align-items: center; min-height: 40px; padding: 0 22px; border-radius: 999px; text-decoration: none; }
@@ -111,7 +111,7 @@ const themeLabel = computed(() => theme.value === 'dark'
 button { cursor: pointer; }
 button:hover { background: var(--hover); }
 @media (max-width: 760px) {
-  .header-layout { padding: 0 18px; gap: 8px; }
+  .header-layout { width: calc(100% - 24px); padding: 0 14px; gap: 8px; }
   .header-nav { display: none; }
   .header-bag { padding: 0 10px; }
   .locale-option { min-width: 32px; }

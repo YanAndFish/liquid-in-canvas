@@ -1,4 +1,5 @@
 import type { Node, Texture } from 'three/webgpu'
+import type { VolumeSurface } from './fusion'
 import type { GlassOptions } from './options'
 import {
   asin,
@@ -26,12 +27,19 @@ import {
   vec4,
 } from 'three/tsl'
 import { Color, MeshBasicNodeMaterial, Vector2, Vector4 } from 'three/webgpu'
+import { createContentMask } from './content-mask'
 import { BLUR_SIGMAS } from './gaussian'
 
 /** 管理一块玻璃的材质参数及内容纹理。 */
 export interface GlassMaterialHandle {
   /** 用于 WebGPU 绘制的节点材质。 */
   material: MeshBasicNodeMaterial
+  /** 只绘制被上层玻璃覆盖的内容，写入背景后参与模糊。 */
+  occludedMaterial: MeshBasicNodeMaterial
+  /** 更新覆盖当前内容的上层玻璃。 */
+  setOccluders: (surfaces: readonly VolumeSurface[]) => void
+  /** 只绘制文字与控件，玻璃体积由融合组绘制。 */
+  setContentOnly: (enabled: boolean) => void
   /** 设置面板、阴影范围和视口的 CSS 尺寸。 */
   setPanel: (size: Vector2, paddedSize: Vector2, viewport: Vector2) => void
   /** 更新折射、模糊与染色参数。 */
@@ -40,8 +48,8 @@ export interface GlassMaterialHandle {
   setBackdrop: (texture: Texture) => void
   /** 更新文字与控件的透明快照。 */
   setContent: (texture: Texture) => void
-  /** 设置指针位置、悬停强度与按压强度。 */
-  setInteraction: (x: number, y: number, hover: number, press: number) => void
+  /** 设置按压位置与按压强度。 */
+  setInteraction: (x: number, y: number, press: number) => void
   /** 设置可绘制范围，单位为 CSS 像素。 */
   setClip: (left: number, top: number, right: number, bottom: number) => void
   /** 设置整个面板的透明度。 */
@@ -77,7 +85,6 @@ export function createGlassMaterial(
 
   const uniforms = {
     pointer: uniform(new Vector2(0, 0)),
-    hover: uniform(0),
     press: uniform(0),
     regular: uniform(1),
     clip: uniform(new Vector4(0, 0, 100000, 100000)),
@@ -122,7 +129,7 @@ export function createGlassMaterial(
     const inside = float(1).sub(smoothstep(-1, 1, distance))
     const insideDepth = distance.negate()
     // 折射带随控件尺寸变化，避免小胶囊整个表面都被挤成透镜。
-    const thickness = max(min(uniforms.refraction.mul(0.65), limit.mul(0.75)), 1)
+    const thickness = max(min(uniforms.refraction.mul(0.85), limit.mul(0.65)), 1)
 
     const epsilon = float(0.75)
     const zero = float(0)
@@ -140,60 +147,85 @@ export function createGlassMaterial(
     ) as unknown as Vec2Node
 
     const ratio = clamp(float(1).sub(insideDepth.div(thickness)), 0, 1)
-    const thetaI = asin(clamp(pow(ratio, 2), 0, 1))
+    // 圆弧截面的坡度在外缘最大，向平坦表面连续收敛。
+    const slope = ratio.mul(0.985)
+    const thetaI = asin(slope)
+    const capHeight = sqrt(max(float(1).sub(slope.mul(slope)), 0))
+    const opticalDepth = min(uniforms.refraction.mul(6), limit.mul(4.5))
+      .mul(float(0.65).add(capHeight.mul(0.35)))
+    const faceOffset = local.div(uniforms.viewport).mul(-0.035).mul(float(1).sub(ratio)).mul(clamp(uniforms.refraction.div(16), 0, 1))
     const refractedOffset = (index: Node<'float'>) => {
       const thetaT = asin(clamp(sin(thetaI).div(index), 0, 1))
-      return normal.mul(tan(thetaT.sub(thetaI))).mul(uniforms.refraction).div(uniforms.viewport)
+      return normal.mul(tan(thetaI.sub(thetaT))).mul(opticalDepth).div(uniforms.viewport).add(faceOffset)
     }
     // 不同波长使用各自的折射率。模糊作用于全部通道，包括轮廓处的透射。
-    const indexSpread = uniforms.dispersion.mul(0.055)
+    const indexSpread = uniforms.dispersion.mul(0.09)
     const redUV = screenUV.add(refractedOffset(float(1.42).sub(indexSpread)))
     const greenUV = screenUV.add(refractedOffset(float(1.42)))
     const blueUV = screenUV.add(refractedOffset(float(1.42).add(indexSpread)))
-    let transmitted: Node<'vec3'> = vec3(
-      backdropNode.sample(redUV).r,
-      backdropNode.sample(greenUV).g,
-      backdropNode.sample(blueUV).b,
-    )
-    let previousSigma = 0
-    // 在相邻卷积层间按方差插值；超过第一层后不混入清晰背景。
-    for (let index = 0; index < BLUR_SIGMAS.length; index++) {
-      const sigma = BLUR_SIGMAS[index]!
-      const node = blurNodes[index]!
-      const level = vec3(node.sample(redUV).r, node.sample(greenUV).g, node.sample(blueUV).b)
-      const weight = clamp(
-        uniforms.blur.mul(uniforms.blur).sub(previousSigma * previousSigma)
-          .div(sigma * sigma - previousSigma * previousSigma),
-        0,
-        1,
+    /** 对同一条光路的三个波长使用相同的背景模糊层。 */
+    const sampleTransmission = (red: typeof redUV, green: typeof greenUV, blue: typeof blueUV) => {
+      let result: Node<'vec3'> = vec3(
+        backdropNode.sample(red).r,
+        backdropNode.sample(green).g,
+        backdropNode.sample(blue).b,
       )
-      transmitted = mix(transmitted, level, weight)
-      previousSigma = sigma
+      let previousSigma = 0
+      for (let index = 0; index < BLUR_SIGMAS.length; index++) {
+        const sigma = BLUR_SIGMAS[index]!
+        const node = blurNodes[index]!
+        const level = vec3(node.sample(red).r, node.sample(green).g, node.sample(blue).b)
+        const weight = clamp(
+          uniforms.blur.mul(uniforms.blur).sub(previousSigma * previousSigma)
+            .div(sigma * sigma - previousSigma * previousSigma),
+          0,
+          1,
+        )
+        result = mix(result, level, weight)
+        previousSigma = sigma
+      }
+      return result
     }
-    const environmentUV = screenUV.add(normal.mul(thickness.add(8)).div(uniforms.viewport))
-    const environment = environmentNode.sample(environmentUV).rgb
+    const face = sampleTransmission(redUV, greenUV, blueUV)
+    // 外沿的回折光路采样面板内侧，形成贴着轮廓延伸的颜色；其余区域使用向外偏移的透镜光路。
+    const folded = sampleTransmission(
+      screenUV.sub(refractedOffset(float(1.42).sub(indexSpread))),
+      screenUV.sub(refractedOffset(float(1.42))),
+      screenUV.sub(refractedOffset(float(1.42).add(indexSpread))),
+    )
+    const foldWeight = float(1).sub(smoothstep(0.6, max(thickness.mul(0.22), 2), insideDepth)).mul(0.85)
+    const transmitted = mix(face, folded, foldWeight)
+
+    // 侧壁同时接收法线方向和沿轮廓两侧的环境颜色，邻近色块可延伸到未直接重叠的边缘。
+    const tangent = vec2(normal.y.negate(), normal.x)
+    const environmentUV = screenUV.add(normal.mul(opticalDepth.mul(0.65).add(6)).div(uniforms.viewport))
+    const spread = tangent.mul(thickness.mul(1.7)).div(uniforms.viewport)
+    const environment = environmentNode.sample(environmentUV).rgb.mul(0.5).add(environmentNode.sample(environmentUV.add(spread)).rgb.mul(0.25)).add(environmentNode.sample(environmentUV.sub(spread)).rgb.mul(0.25))
 
     // Regular 压缩背景明暗反差；Clear 保留媒体色彩，由界面的局部暗色衬底承托白字。
     const luminance = dot(environmentNode.sample(screenUV).rgb, vec3(0.2126, 0.7152, 0.0722))
     const adaptiveTint = uniforms.tintAlpha.add(uniforms.regular.mul(luminance).mul(0.12))
     const tinted = mix(transmitted, uniforms.tint, clamp(adaptiveTint, 0, 0.85))
-    const lightDirection = uniforms.pointer.mul(0.22).add(vec2(-0.55, -0.84)).normalize()
+    const lightDirection = vec2(-0.55, -0.84).normalize()
     const directional = dot(normal, lightDirection)
     const primary = pow(max(directional, 0), 5)
     const opposite = pow(max(directional.negate(), 0), 7).mul(0.55)
     // 掠射角提高环境反射占比，轮廓高光只勾勒受光部分。
-    const cosTheta = sqrt(max(float(1).sub(pow(ratio, 4)), 0))
+    const cosTheta = capHeight
     const fresnel = float(0.03).add(pow(float(1).sub(cosTheta), 5).mul(0.97))
-    const reflection = fresnel.mul(0.48).mul(uniforms.specular)
+    const reflection = fresnel.mul(0.55).add(pow(ratio, 3).mul(0.12)).mul(uniforms.specular)
     const reflected = mix(tinted, environment.mul(0.9).add(shineColor.mul(0.1)), reflection)
-    const rim = exp(insideDepth.abs().mul(-1.5))
+    const rim = exp(insideDepth.abs().mul(-1.7))
+    // 外沿与内侧折痕形成窄的明暗过渡，宽度保持为 CSS 像素。
+    const innerLip = exp(pow(insideDepth.sub(2.1).div(1.2), 2).negate())
+    const valley = exp(pow(insideDepth.sub(4.0).div(2.0), 2).negate())
     const shoulder = exp(max(insideDepth, 0).mul(-0.32))
     const highlight = rim.mul(primary.add(opposite).mul(0.65).add(0.025))
-    const sheen = shoulder.mul(primary.add(opposite)).mul(0.065)
+    const sheen = shoulder.mul(primary.add(opposite)).mul(0.045).add(innerLip.mul(opposite.add(primary.mul(0.35))).mul(0.12))
     const contact = exp(length(local.div(half).sub(uniforms.pointer)).mul(-2.5))
-      .mul(uniforms.press.mul(0.14).add(uniforms.hover.mul(0.018)))
+      .mul(uniforms.press.mul(0.14))
     const glass = reflected
-      .mul(float(1).sub(shoulder.mul(0.04)))
+      .mul(float(1).sub(valley.mul(0.1).mul(uniforms.specular)).sub(shoulder.mul(0.025)))
       .add(shineColor.mul(highlight.add(sheen)).mul(uniforms.specular))
       .add(vec3(contact))
 
@@ -215,6 +247,32 @@ export function createGlassMaterial(
     return vec4(result.rgb, result.a.mul(clip))
   })()
 
+  const masks: ReturnType<typeof createContentMask>[] = []
+  /** 将内容分成清晰部分与被上层玻璃覆盖的部分。 */
+  const buildContentNode = (occluded: boolean) => Fn(() => {
+    const half = uniforms.panelSize.mul(0.5)
+    const local = vec2(uv().x.sub(0.5), float(0.5).sub(uv().y)).mul(uniforms.paddedSize)
+    const contentUV = local.add(half).div(uniforms.panelSize)
+    const pixel = contentNode.sample(contentUV)
+    const position = screenUV.mul(uniforms.viewport)
+    const valid = contentUV.x.greaterThanEqual(0).and(contentUV.x.lessThanEqual(1)).and(contentUV.y.greaterThanEqual(0)).and(contentUV.y.lessThanEqual(1)).and(position.x.greaterThanEqual(uniforms.clip.x)).and(position.x.lessThanEqual(uniforms.clip.z)).and(position.y.greaterThanEqual(uniforms.clip.y)).and(position.y.lessThanEqual(uniforms.clip.w))
+    let coverage: Node<'float'> = float(0)
+    for (const mask of masks)
+      coverage = max(coverage, mask.coverage(position))
+    const portion = occluded
+      ? coverage
+      : float(1).sub(coverage)
+    return vec4(pixel.rgb, pixel.a.mul(select(valid, 1, 0)).mul(portion))
+  })()
+  let contentColorNode = buildContentNode(false)
+  let contentOnly = false
+  const occludedMaterial = new MeshBasicNodeMaterial({
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  })
+  occludedMaterial.colorNode = buildContentNode(true)
   const material = new MeshBasicNodeMaterial({
     transparent: true,
     depthTest: false,
@@ -225,6 +283,28 @@ export function createGlassMaterial(
 
   const handle: GlassMaterialHandle = {
     material,
+    occludedMaterial,
+    setOccluders(surfaces) {
+      if (surfaces.length > masks.length) {
+        while (masks.length < surfaces.length)
+          masks.push(createContentMask())
+        contentColorNode = buildContentNode(false)
+        if (contentOnly) {
+          material.colorNode = contentColorNode
+          material.needsUpdate = true
+        }
+        occludedMaterial.colorNode = buildContentNode(true)
+        occludedMaterial.needsUpdate = true
+      }
+      masks.forEach((mask, i) => mask.update(surfaces[i] ?? null))
+    },
+    setContentOnly(enabled) {
+      if (enabled === contentOnly)
+        return
+      contentOnly = enabled
+      material.colorNode = enabled ? contentColorNode : colorNode
+      material.needsUpdate = true
+    },
     setPanel(size, paddedSize, viewport) {
       uniforms.panelSize.value.copy(size)
       uniforms.paddedSize.value.copy(paddedSize)
@@ -250,9 +330,8 @@ export function createGlassMaterial(
     setContent(texture) {
       contentNode.value = texture
     },
-    setInteraction(x, y, hover, press) {
+    setInteraction(x, y, press) {
       uniforms.pointer.value.set(x, y)
-      uniforms.hover.value = hover
       uniforms.press.value = press
     },
     setClip(left, top, right, bottom) {
@@ -260,9 +339,11 @@ export function createGlassMaterial(
     },
     setOpacity(opacity) {
       material.opacity = opacity
+      occludedMaterial.opacity = opacity
     },
     dispose() {
       material.dispose()
+      occludedMaterial.dispose()
     },
   }
 

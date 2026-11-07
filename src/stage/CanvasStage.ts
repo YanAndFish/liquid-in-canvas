@@ -136,6 +136,7 @@ export class CanvasStage {
     root.setAttribute('drawable', '')
     this.canvas.addEventListener('paint', this.handlePaint)
     root.addEventListener('scroll', this.handleInvalidate, { capture: true, passive: true })
+    root.addEventListener('scrollend', this.handleInvalidate, { capture: true, passive: true })
     root.addEventListener('load', this.handleInvalidate, { capture: true })
     if (typeof document !== 'undefined' && document.fonts)
       void document.fonts.ready.then(() => this.invalidate()).catch(() => {})
@@ -185,6 +186,7 @@ export class CanvasStage {
     const root = this.root
     if (root) {
       root.removeEventListener('scroll', this.handleInvalidate, { capture: true })
+      root.removeEventListener('scrollend', this.handleInvalidate, { capture: true })
       root.removeEventListener('load', this.handleInvalidate, { capture: true })
       this.canvas.clearElementGeometry(root)
       this.detachVideoClock(root)

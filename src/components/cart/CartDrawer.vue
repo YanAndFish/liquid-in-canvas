@@ -124,6 +124,7 @@ onBeforeUnmount(() => {
         aria-modal="true"
         aria-labelledby="cart-title"
         data-liquid-glass
+        data-glass-layer="10"
         data-glass-anchor="#cart-shell"
         data-glass-radius="30"
         :data-glass-blur="theme === 'dark' ? '18' : '28'"

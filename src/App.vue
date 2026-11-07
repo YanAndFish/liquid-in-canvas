@@ -4,6 +4,7 @@ import { RouterView } from 'vue-router'
 import CartDrawer from '@/components/cart/CartDrawer.vue'
 import SiteFooter from '@/components/layout/SiteFooter.vue'
 import SiteHeader from '@/components/layout/SiteHeader.vue'
+import FloatingSupport from '@/components/support/FloatingSupport.vue'
 import SharedTransitionLayer from '@/components/transition/SharedTransitionLayer.vue'
 import { getSharedLayer } from '@/composables/sharedTransition'
 import { useLocale } from '@/composables/useLocale'
@@ -77,6 +78,7 @@ function onPageEnter(element: Element): void {
     </div>
   </div>
 
+  <FloatingSupport :disabled="cartOpen" />
   <SharedTransitionLayer />
   <CartDrawer v-model:open="cartOpen" />
 </template>

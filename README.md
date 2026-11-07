@@ -27,9 +27,11 @@ pnpm build
 - 首页可切换花间、器物和光影三种背景。视频可以暂停，离开可见区域时也会暂停。
 - 右上角外观按钮展开为材质设置，可以对比通透和柔和两种效果。
 - 按住玻璃控件可看到局部亮光和轻微形变。菜单、场景选择和商品筛选使用阻尼弹簧。
-- 导航与购物袋使用柔化的玻璃；商品图片和说明使用普通内容表面。
+- 顶栏、主物信息牌、商品加入按钮与媒体控件使用三维玻璃。同层控件靠近时可融合。
 - 支持中英文、深浅主题、商品详情、分类、购物袋持久化与演示结算。不会创建真实订单。
 - 跟随系统的减少动态效果、减少透明度和增强对比度设置。菜单支持 Escape，购物袋支持键盘焦点循环。
+
+右下角的客服按钮可拖动。点击展开磨砂玻璃对话框，拖到其他玻璃附近可观察融合与遮挡。聊天仅提供本地演示回复。
 
 ## 添加玻璃控件
 
@@ -51,6 +53,10 @@ pnpm build
 
 | 属性 | 含义 |
 | --- | --- |
+| `data-glass-model` | `volume`（默认）使用三维光路，`screen` 使用屏幕透镜供对照 |
+| `data-glass-layer` | 玻璃层级，默认 0，值越大越靠前。同层玻璃可以融合 |
+| `data-glass-fusion` | 融合距离，默认 32 CSS 像素，0 表示关闭 |
+| `data-glass-elevation` | 玻璃底面到背景的距离，默认 16 CSS 像素 |
 | `data-glass-radius` | 圆角，支持 CSS 顺序的一至四个值，单位为 CSS 像素 |
 | `data-glass-variant` | `regular` 或 `clear` |
 | `data-glass-blur` | 目标高斯标准差，0–80 CSS 像素；相邻模糊层间近似插值 |
@@ -70,15 +76,15 @@ pnpm build
 ## 渲染结构
 
 - `src/stage/CanvasStage.ts`：页面上传、绘制、尺寸变化和视频时钟。
-- `src/stage/liquid-glass/`：SDF 材质、多级高斯模糊、表面发现与指针响应。
+- `src/stage/liquid-glass/`：三维距离场、同层融合、HTML 内容遮挡、多级高斯模糊与按压反馈。
 - `src/stage/CanvasOverlay.ts`：将商品共享动画画在导航玻璃上方。
 - `src/composables/useSpring.ts`：菜单与选择器的弹簧动画。
 - `src/components/home/GlassShowcase.vue`：媒体场景、材质选择与播放控制。
 
-玻璃从不含玻璃控件的页面快照取样。控件内容单独上传，文字保持清晰。商品共享动画有独立透明前景层，购物袋在其上方。
+控件内容单独上传。发生重叠时，按玻璃层级、HTML 层叠上下文与 DOM 顺序判断前后关系。下层内容被覆盖的部分加入背景卷积，上层文字保持清晰。商品共享动画有独立透明前景层，购物袋在其上方。
 
 ## 范围与来源
 
-这是对 Apple 视觉行为的 Web 近似实现，不是 Apple 原生材质。完整的背景语义适配、设备姿态光照、跨控件融合和多层相互折射尚未实现。详细限制见 [视觉依据](docs/APPLE_LIQUID_GLASS_REFERENCE.md)。
+这是对 Apple 视觉行为的 Web 近似实现，不是 Apple 原生材质。同层融合使用三维平滑距离场近似表面张力。背景语义适配、设备姿态光照和不同玻璃层间的递归折射尚未实现。详细限制见 [视觉依据](docs/APPLE_LIQUID_GLASS_REFERENCE.md)。
 
 [liquid-glass-studio](https://github.com/iyinchao/liquid-glass-studio) 提供了折射、色散、SDF 和多遍模糊的研究参考。花朵视频使用该项目引用的 Pixabay / Pexels 素材，商品图保存在 `public/products/`。Apple 参考截图只在研究文档中引用，不作为商店素材。

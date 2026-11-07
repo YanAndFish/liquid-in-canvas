@@ -77,7 +77,7 @@ const position = computed(() => {
     </div>
 
     <div class="group relative">
-      <div class="relative aspect-[5/6] overflow-hidden border border-line rounded-[2rem] bg-[var(--media-panel)] sm:aspect-[4/5]">
+      <div class="relative aspect-[5/6] overflow-clip border border-line rounded-[2rem] bg-[var(--media-panel)] sm:aspect-[4/5]">
         <img
           :src="product.image"
           :alt="text(product.name)"
@@ -87,7 +87,7 @@ const position = computed(() => {
           fetchpriority="high"
           decoding="async"
         >
-        <div class="absolute inset-x-4 bottom-4 flex items-end justify-between gap-4 border border-line rounded-2xl bg-[var(--button-glass)] p-4 backdrop-blur-md">
+        <div data-liquid-glass data-glass-layer="0" data-glass-radius="20" data-glass-blur="14" data-glass-refraction="20" data-glass-tint="#14191b" data-glass-tint-alpha="0.64" class="hero-plaque absolute inset-x-4 bottom-4 flex items-end justify-between gap-4 rounded-[20px] p-4">
           <div>
             <p class="text-[9px] text-mist tracking-[0.2em] font-mono uppercase">
               {{ t('hero.heroObject') }}
@@ -110,3 +110,9 @@ const position = computed(() => {
     </div>
   </section>
 </template>
+
+<style scoped>
+.hero-plaque { color: #f5f3ee; }
+.hero-plaque .text-mist { color: #cccac3; }
+.hero-plaque > p { color: #ece9df; }
+</style>

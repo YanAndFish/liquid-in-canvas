@@ -199,7 +199,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.showcase-frame { position: relative; height: min(790px, calc(100svh - 116px)); min-height: 570px; overflow: hidden; border-radius: 36px; color: white; isolation: isolate; }
+.showcase-frame { position: relative; height: min(790px, calc(100svh - 116px)); min-height: 570px; overflow: clip; border-radius: 36px; color: white; isolation: isolate; }
 .showcase-media { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 1; transition: opacity 600ms ease; }
 .showcase-media.is-hidden { opacity: 0; }
 .showcase-object { object-position: center 58%; }
@@ -215,7 +215,7 @@ onBeforeUnmount(() => {
 .showcase-action { display: flex; align-items: center; justify-content: space-between; padding: 0 30px; height: 76px; width: 100%; font-size: 19px; font-weight: 600; border-radius: 999px; }
 .showcase-action-anchor > p { margin-top: 18px; text-align: center; font-size: 11px; color: #ffffffb8; letter-spacing: .08em; }
 .scene-settings { position: absolute; top: 28px; right: 28px; width: 292px; height: 244px; pointer-events: none; z-index: 2; }
-.scene-settings-surface { position: absolute; right: 0; top: 0; overflow: hidden; pointer-events: auto; border-radius: 26px; }
+.scene-settings-surface { position: absolute; right: 0; top: 0; overflow: clip; pointer-events: auto; border-radius: 26px; }
 .scene-settings-toggle { position: absolute; right: 0; top: 0; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; }
 .scene-settings-content { padding: 24px; opacity: 0; width: min(292px, calc(100vw - 56px)); transition: opacity 120ms ease; }
 .scene-settings-content.is-visible { opacity: 1; }

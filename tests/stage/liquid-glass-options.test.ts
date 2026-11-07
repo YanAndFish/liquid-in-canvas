@@ -23,6 +23,10 @@ function anchor(raw: string): string | null {
 describe('parseGlassOptions', () => {
   it('returns the regular dark defaults', () => {
     expect(parseGlassOptions(makeElement(), 'dark')).toEqual({
+      layer: 0,
+      fusion: 32,
+      model: 'volume',
+      elevation: 16,
       radius: [28, 28, 28, 28],
       blur: 18,
       refraction: 24,
@@ -39,6 +43,10 @@ describe('parseGlassOptions', () => {
 
   it('returns the regular light defaults', () => {
     expect(parseGlassOptions(makeElement(), 'light')).toEqual({
+      layer: 0,
+      fusion: 32,
+      model: 'volume',
+      elevation: 16,
       radius: [28, 28, 28, 28],
       blur: 18,
       refraction: 24,
@@ -72,6 +80,10 @@ describe('parseGlassOptions', () => {
 
   it('applies the clear dark preset', () => {
     expect(parseGlassOptions(makeElement({ 'data-glass-variant': 'clear' }), 'dark')).toEqual({
+      layer: 0,
+      fusion: 32,
+      model: 'volume',
+      elevation: 16,
       radius: [28, 28, 28, 28],
       blur: 8,
       refraction: 20,
@@ -104,6 +116,10 @@ describe('parseGlassOptions', () => {
     }), 'light')
 
     expect(options).toEqual({
+      layer: 0,
+      fusion: 32,
+      model: 'volume',
+      elevation: 16,
       radius: [28, 28, 28, 28],
       blur: 40,
       refraction: 20,

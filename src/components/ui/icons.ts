@@ -1,4 +1,5 @@
 export const ICONS = {
+  chat: 'M20 11.5a8 8 0 0 1-8 8H5l-3 2v-7a8 8 0 1 1 18-3ZM7 10h8M7 14h5',
   play: 'M8 5l11 7-11 7V5Z',
   pause: 'M9 5v14M15 5v14',
   adjust: 'M4 7h8M16 7h4M4 17h3M11 17h9M12 4v6M7 14v6',

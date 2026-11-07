@@ -56,7 +56,7 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
 
 <template>
   <article class="group transition-transform duration-500 ease-out hover:-translate-y-1">
-    <div ref="media" data-product-image class="relative aspect-[4/5] overflow-hidden border border-line rounded-[1.6rem] bg-[var(--media-panel)] transition-colors duration-300 group-hover:border-[var(--line-strong)]">
+    <div ref="media" data-product-image class="relative aspect-[4/5] overflow-clip border border-line rounded-[1.6rem] bg-[var(--media-panel)] transition-colors duration-300 group-hover:border-[var(--line-strong)]">
       <RouterLink
         :to="{ name: 'product', params: { slug: product.slug } }"
         class="absolute inset-0 block"
@@ -84,7 +84,12 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
 
       <button
         type="button"
-        class="absolute bottom-4 right-4 inline-flex items-center gap-2 border border-line rounded-full bg-[var(--button-glass)] px-3.5 py-2 text-xs text-bone font-medium backdrop-blur-md transition-all duration-200 active:scale-95 hover:border-bone hover:bg-bone hover:text-ink"
+        data-liquid-glass
+        data-glass-layer="0"
+        data-glass-radius="999"
+        data-glass-blur="12"
+        data-glass-refraction="12"
+        class="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-xs text-bone font-medium"
         :aria-label="t('product.addToBag', { name: text(product.name) })"
         @click="add"
       >

@@ -4,6 +4,14 @@ export type GlassTheme = 'light' | 'dark'
 
 /** HTML 元素声明的玻璃外观参数，长度均使用 CSS 像素。 */
 export interface GlassOptions {
+  /** 玻璃绘制层级。只有同层的表面参与融合，数值越大越靠前。 */
+  layer: number
+  /** 两个表面间形成连接的距离范围，0 表示关闭融合。 */
+  fusion: number
+  /** volume 使用三维光路，screen 用于比较屏幕空间透镜。 */
+  model: 'volume' | 'screen'
+  /** 玻璃底面到背景平面的距离。 */
+  elevation: number
   /** 左上、右上、右下、左下的圆角半径。 */
   radius: GlassRadius
   /** 背景高斯模糊的目标标准差，0 表示清晰透射。 */
@@ -28,7 +36,7 @@ export interface GlassOptions {
   anchor: string | null
 }
 
-type GlassPreset = Omit<GlassOptions, 'radius' | 'variant' | 'anchor'>
+type GlassPreset = Omit<GlassOptions, 'radius' | 'variant' | 'anchor' | 'layer' | 'fusion' | 'model' | 'elevation'>
 
 const DEFAULT_RADIUS = 28
 const RADIUS_MAX = 2000
@@ -167,6 +175,12 @@ export function parseGlassOptions(element: HTMLElement, theme: GlassTheme): Glas
   const preset = PRESETS[variant][theme]
 
   return {
+    layer: Math.round(numberAttribute(element, 'data-glass-layer', 0, -100, 100)),
+    fusion: numberAttribute(element, 'data-glass-fusion', 32, 0, 100),
+    model: element.getAttribute('data-glass-model') === 'screen'
+      ? 'screen'
+      : 'volume',
+    elevation: numberAttribute(element, 'data-glass-elevation', 16, 0, 100),
     radius: parseRadius(element.getAttribute('data-glass-radius')),
     blur: numberAttribute(element, 'data-glass-blur', preset.blur, 0, 80),
     refraction: numberAttribute(element, 'data-glass-refraction', preset.refraction, 0, 80),
@@ -183,6 +197,10 @@ export function parseGlassOptions(element: HTMLElement, theme: GlassTheme): Glas
 
 export function glassOptionsSignature(options: GlassOptions): string {
   return JSON.stringify({
+    layer: options.layer,
+    fusion: options.fusion,
+    model: options.model,
+    elevation: options.elevation,
     radius: options.radius,
     blur: options.blur,
     refraction: options.refraction,
