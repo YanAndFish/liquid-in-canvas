@@ -28,6 +28,13 @@ function isWebGPUBackend(backend: unknown): backend is WebGPUBackendLike {
     && backend.isWebGPUBackend === true
 }
 
+function sameSize(a: StageMetrics, b: StageMetrics): boolean {
+  return a.cssWidth === b.cssWidth
+    && a.cssHeight === b.cssHeight
+    && a.pixelWidth === b.pixelWidth
+    && a.pixelHeight === b.pixelHeight
+}
+
 export class CanvasStage {
   private readonly canvas: HTMLCanvasElement
   private readonly onFault: (cause: unknown) => void
@@ -42,6 +49,7 @@ export class CanvasStage {
   private observer: ResizeObserver | null = null
   private root: HTMLElement | null = null
   private metrics: StageMetrics | null = null
+  private pendingSize: StageMetrics | null = null
   private initialized = false
   private failed = false
   private disposed = false
@@ -99,7 +107,13 @@ export class CanvasStage {
     const dpr = this.pixelRatio()
     const cssWidth = this.canvas.clientWidth
     const cssHeight = this.canvas.clientHeight
-    this.applySize(cssWidth, cssHeight, Math.round(cssWidth * dpr), Math.round(cssHeight * dpr))
+    this.applySize({
+      cssWidth,
+      cssHeight,
+      pixelWidth: Math.round(cssWidth * dpr),
+      pixelHeight: Math.round(cssHeight * dpr),
+      dpr,
+    })
     this.initialized = true
     return this.snapshot()
   }
@@ -180,6 +194,11 @@ export class CanvasStage {
     if (this.failed || this.disposed)
       return
 
+    const pending = this.pendingSize
+    // Resize inside paint so the canvas is not cleared in a separate frame.
+    if (pending && this.applySize(pending))
+      this.pendingSize = null
+
     const device = this.device
     const texture = this.texture
     const root = this.root
@@ -212,33 +231,42 @@ export class CanvasStage {
       return
 
     const dpr = this.pixelRatio()
-    const pixelWidth = Math.max(1, Math.round(entry.contentRect.width * dpr))
-    const pixelHeight = Math.max(1, Math.round(entry.contentRect.height * dpr))
-    this.applySize(entry.contentRect.width, entry.contentRect.height, pixelWidth, pixelHeight)
+    const next: StageMetrics = {
+      cssWidth: entry.contentRect.width,
+      cssHeight: entry.contentRect.height,
+      pixelWidth: Math.max(1, Math.round(entry.contentRect.width * dpr)),
+      pixelHeight: Math.max(1, Math.round(entry.contentRect.height * dpr)),
+      dpr,
+    }
+
+    if (this.metrics && sameSize(this.metrics, next)) {
+      this.pendingSize = null
+      return
+    }
+    if (this.pendingSize && sameSize(this.pendingSize, next))
+      return
+
+    this.pendingSize = next
+    this.invalidate()
   }
 
-  private applySize(cssWidth: number, cssHeight: number, pixelWidth: number, pixelHeight: number): void {
+  private applySize(size: StageMetrics): boolean {
     const renderer = this.renderer
     const device = this.device
     const material = this.material
     if (!renderer || !device || !material)
-      return
-    if (pixelWidth < 1 || pixelHeight < 1)
-      return
-    if (this.metrics
-      && this.metrics.cssWidth === cssWidth
-      && this.metrics.cssHeight === cssHeight
-      && this.metrics.pixelWidth === pixelWidth
-      && this.metrics.pixelHeight === pixelHeight) {
-      return
-    }
+      return false
+    if (size.pixelWidth < 1 || size.pixelHeight < 1)
+      return false
+    if (this.metrics && sameSize(this.metrics, size))
+      return true
 
-    renderer.setSize(pixelWidth, pixelHeight, false)
+    renderer.setSize(size.pixelWidth, size.pixelHeight, false)
 
     const oldExternal = this.external
     const oldTexture = this.texture
     const texture = device.createTexture({
-      size: { width: pixelWidth, height: pixelHeight },
+      size: { width: size.pixelWidth, height: size.pixelHeight },
       format: 'rgba8unorm-srgb',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
     })
@@ -253,20 +281,14 @@ export class CanvasStage {
     oldExternal?.dispose()
     oldTexture?.destroy()
 
-    this.metrics = {
-      cssWidth,
-      cssHeight,
-      pixelWidth,
-      pixelHeight,
-      dpr: this.pixelRatio(),
-    }
+    this.metrics = size
 
     if (this.root) {
       this.canvas.updateElementGeometry(this.root, {
         canvasTransform: new DOMMatrix(),
       })
     }
-    this.invalidate()
+    return true
   }
 
   private pixelRatio(): number {
