@@ -144,12 +144,14 @@ export class CanvasStage {
 
     const scene = this.scene
     const device = this.device
-    if (scene && device) {
+    const renderer = this.renderer
+    if (scene && device && renderer) {
       this.glass = new LiquidGlassLayer({
         canvas: this.canvas,
         root,
         scene,
         device,
+        renderer,
         getBackdrop: () => this.external,
         onInvalidate: () => this.invalidate(),
         onFault: (cause) => {

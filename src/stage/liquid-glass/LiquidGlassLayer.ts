@@ -1,7 +1,8 @@
-import type { Scene } from 'three/webgpu'
+import type { Scene, WebGPURenderer } from 'three/webgpu'
 import type { GlassMaterialHandle } from './material'
 import type { GlassOptions } from './options'
 import { ExternalTexture, Mesh, PlaneGeometry, SRGBColorSpace, Vector2 } from 'three/webgpu'
+import { BackdropBlur } from './blur'
 import { createGlassMaterial } from './material'
 import { glassOptionsSignature, parseGlassOptions } from './options'
 
@@ -39,6 +40,7 @@ export interface LiquidGlassLayerOptions {
   root: HTMLElement
   scene: Scene
   device: GPUDevice
+  renderer: WebGPURenderer
   getBackdrop: () => ExternalTexture | null
   onInvalidate: () => void
   onFault: (cause: unknown) => void
@@ -55,6 +57,15 @@ function intersects(rect: Rect, width: number, height: number): boolean {
     && rect.top + rect.height > 0
     && rect.left < width
     && rect.top < height
+}
+
+function intersectsRect(rect: Rect, other: DOMRect): boolean {
+  return rect.width > 0
+    && rect.height > 0
+    && rect.left + rect.width > other.left
+    && rect.top + rect.height > other.top
+    && rect.left < other.right
+    && rect.top < other.bottom
 }
 
 function colorAlpha(value: string): number {
@@ -75,6 +86,7 @@ export class LiquidGlassLayer {
   private readonly root: HTMLElement
   private readonly scene: Scene
   private readonly device: GPUDevice
+  private readonly renderer: WebGPURenderer
   private readonly getBackdrop: () => ExternalTexture | null
   private readonly onInvalidate: () => void
   private readonly onFault: (cause: unknown) => void
@@ -83,6 +95,7 @@ export class LiquidGlassLayer {
   private readonly viewport = new Vector2(1, 1)
   private observer: MutationObserver | null = null
   private themeObserver: MutationObserver | null = null
+  private blur: BackdropBlur | null = null
   private started = false
   private disposed = false
 
@@ -91,6 +104,7 @@ export class LiquidGlassLayer {
     this.root = options.root
     this.scene = options.scene
     this.device = options.device
+    this.renderer = options.renderer
     this.getBackdrop = options.getBackdrop
     this.onInvalidate = options.onInvalidate
     this.onFault = options.onFault
@@ -116,6 +130,9 @@ export class LiquidGlassLayer {
       attributes: true,
       attributeFilter: ['data-theme'],
     })
+    const backdrop = this.getBackdrop()
+    if (backdrop)
+      this.blur = new BackdropBlur(this.renderer, backdrop)
     window.addEventListener('resize', this.handleWindowResize, { passive: true })
     this.scan()
   }
@@ -135,6 +152,7 @@ export class LiquidGlassLayer {
 
     const changed = (event as PaintEventLike | undefined)?.changedElements ?? []
     const modal = this.modalFactor()
+    let visibleSurfaces = 0
     for (const surface of [
       ...this.surfaces.values(),
     ]) {
@@ -148,7 +166,13 @@ export class LiquidGlassLayer {
       if (size.width !== surface.textureWidth || size.height !== surface.textureHeight)
         this.resizeSurface(surface, size.width, size.height)
 
+      const anchorRect = surface.anchor?.isConnected
+        ? surface.anchor.getBoundingClientRect()
+        : null
       const visible = intersects(rect, this.viewport.x, this.viewport.y)
+        && (!anchorRect || intersectsRect(rect, anchorRect))
+      if (visible)
+        visibleSurfaces++
       if (visible && !surface.wasVisible) {
         this.kickPaint(surface.element)
         surface.dirty = true
@@ -171,6 +195,10 @@ export class LiquidGlassLayer {
           surface.settleFrames = 0
       }
     }
+
+    const backdrop = this.getBackdrop()
+    if (this.blur && backdrop && visibleSurfaces > 0)
+      this.blur.render(backdrop, this.canvas.width, this.canvas.height)
   }
 
   dispose(): void {
@@ -187,6 +215,8 @@ export class LiquidGlassLayer {
     ])
       this.unregister(surface)
     this.surfaces.clear()
+    this.blur?.dispose()
+    this.blur = null
     this.geometry.dispose()
   }
 
@@ -208,7 +238,8 @@ export class LiquidGlassLayer {
       return
 
     const backdrop = this.getBackdrop()
-    if (!backdrop)
+    const blur = this.blur
+    if (!backdrop || !blur)
       return
 
     const size = this.textureSize(element)
@@ -224,7 +255,7 @@ export class LiquidGlassLayer {
       canvasTransform: new DOMMatrix().translate(initial.left, initial.top),
     })
 
-    const material = createGlassMaterial(backdrop, content.external)
+    const material = createGlassMaterial(backdrop, content.external, blur.softTexture, blur.heavyTexture)
     material.setOptions(options)
     const mesh = new Mesh(this.geometry, material.material)
     mesh.frustumCulled = false
