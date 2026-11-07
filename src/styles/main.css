@@ -93,7 +93,7 @@ body {
 #app[drawable] {
   width: 100dvw;
   height: 100dvh;
-  overflow: hidden;
+  overflow: clip;
   background:
     radial-gradient(80rem 42rem at 78% -12%, var(--wash-a), transparent 62%),
     radial-gradient(58rem 34rem at 6% 4%, var(--wash-b), transparent 58%),
