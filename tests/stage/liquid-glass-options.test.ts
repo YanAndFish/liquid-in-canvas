@@ -25,7 +25,6 @@ describe('parseGlassOptions', () => {
     expect(parseGlassOptions(makeElement(), 'dark')).toEqual({
       layer: 0,
       fusion: 32,
-      model: 'volume',
       elevation: 16,
       radius: [28, 28, 28, 28],
       blur: 18,
@@ -45,7 +44,6 @@ describe('parseGlassOptions', () => {
     expect(parseGlassOptions(makeElement(), 'light')).toEqual({
       layer: 0,
       fusion: 32,
-      model: 'volume',
       elevation: 16,
       radius: [28, 28, 28, 28],
       blur: 18,
@@ -82,7 +80,6 @@ describe('parseGlassOptions', () => {
     expect(parseGlassOptions(makeElement({ 'data-glass-variant': 'clear' }), 'dark')).toEqual({
       layer: 0,
       fusion: 32,
-      model: 'volume',
       elevation: 16,
       radius: [28, 28, 28, 28],
       blur: 8,
@@ -118,7 +115,6 @@ describe('parseGlassOptions', () => {
     expect(options).toEqual({
       layer: 0,
       fusion: 32,
-      model: 'volume',
       elevation: 16,
       radius: [28, 28, 28, 28],
       blur: 40,

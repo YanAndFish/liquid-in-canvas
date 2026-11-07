@@ -70,7 +70,6 @@ describe('玻璃层级与融合', () => {
       layer: 3,
       fusion: 48,
       elevation: 24,
-      model: 'volume',
     })
   })
 })

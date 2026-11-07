@@ -53,14 +53,13 @@ pnpm build
 
 | 属性 | 含义 |
 | --- | --- |
-| `data-glass-model` | `volume`（默认）使用三维光路，`screen` 使用屏幕透镜供对照 |
 | `data-glass-layer` | 玻璃层级，默认 0，值越大越靠前。同层玻璃可以融合 |
 | `data-glass-fusion` | 融合距离，默认 32 CSS 像素，0 表示关闭 |
 | `data-glass-elevation` | 玻璃底面到背景的距离，默认 16 CSS 像素 |
 | `data-glass-radius` | 圆角，支持 CSS 顺序的一至四个值，单位为 CSS 像素 |
 | `data-glass-variant` | `regular` 或 `clear` |
 | `data-glass-blur` | 目标高斯标准差，0–80 CSS 像素；相邻模糊层间近似插值 |
-| `data-glass-refraction` | 透镜厚度与位移参考值，0–80 |
+| `data-glass-refraction` | 三维实体的半厚度参考值，0–80，实际厚度受控件短边限制 |
 | `data-glass-dispersion` | RGB 采样分离强度，0–1 |
 | `data-glass-tint` | 十六进制染色值 |
 | `data-glass-tint-alpha` | 染色比例，0–1 |

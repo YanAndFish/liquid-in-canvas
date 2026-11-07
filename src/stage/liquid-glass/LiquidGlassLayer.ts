@@ -1,13 +1,13 @@
 import type { Scene, WebGPURenderer } from 'three/webgpu'
+import type { GlassContentHandle } from './content-material'
 import type { VolumeSurface } from './fusion'
-import type { GlassMaterialHandle } from './material'
 import type { GlassOptions } from './options'
 import { ExternalTexture, Mesh, PlaneGeometry, SRGBColorSpace, Vector2 } from 'three/webgpu'
 import { BackdropBlur } from './blur'
+import { createGlassContent } from './content-material'
 import { compareHtmlPaintOrder, contentOccluders } from './content-order'
 import { ContentBackdrop } from './ContentBackdrop'
 import { glassRenderOrder } from './fusion'
-import { createGlassMaterial } from './material'
 import { glassOptionsSignature, parseGlassOptions } from './options'
 import { advanceSpring } from './spring'
 import { VolumeGroups } from './VolumeGroups'
@@ -24,7 +24,7 @@ interface GlassSurface {
   anchor: HTMLElement | null
   options: GlassOptions
   signature: string
-  material: GlassMaterialHandle
+  material: GlassContentHandle
   mesh: Mesh
   texture: GPUTexture | null
   external: ExternalTexture | null
@@ -101,7 +101,6 @@ export class LiquidGlassLayer {
   private readonly geometry = new PlaneGeometry(1, 1)
   private readonly viewport = new Vector2(1, 1)
   private readonly paintToggle = new WeakSet<HTMLElement>()
-  private pointer = { x: -1000, y: -1000 }
   private pressed: HTMLElement | null = null
   private feedback = new Map<HTMLElement, { press: { value: number, velocity: number } }>()
   private animation = 0
@@ -162,12 +161,6 @@ export class LiquidGlassLayer {
     this.scan()
   }
 
-  setBackdrop(texture: ExternalTexture): void {
-    for (const surface of this.surfaces.values())
-      surface.material.setBackdrop(texture)
-    this.onInvalidate()
-  }
-
   sync(event?: Event): void {
     if (!this.started || this.disposed)
       return
@@ -219,21 +212,14 @@ export class LiquidGlassLayer {
       // 只有明确要求裁剪的媒体区域才限制玻璃，普通定位父元素允许阴影溢出。
       surface.material.setClip(clip?.left ?? 0, clip?.top ?? 0, clip?.right ?? this.viewport.x, clip?.bottom ?? this.viewport.y)
       const feedback = this.feedback.get(surface.element)
-      surface.material.setInteraction(
-        Math.max(-1, Math.min(1, (this.pointer.x - rect.left) / Math.max(rect.width, 1) * 2 - 1)),
-        Math.max(-1, Math.min(1, (this.pointer.y - rect.top) / Math.max(rect.height, 1) * 2 - 1)),
-        feedback?.press.value ?? 0,
-      )
       this.updateGeometry(surface, rect)
       const insideModal = document.getElementById('cart-shell')?.contains(surface.element) ?? false
       const opacity = this.pageOpacity(surface.element) * (insideModal ? 1 : modal)
       surface.material.setOpacity(opacity)
-      const volume = surface.options.model === 'volume'
-      surface.material.setContentOnly(volume)
       surface.mesh.renderOrder = glassRenderOrder(surface.options.layer) + (surface.element.closest('.site-header')
         ? 2
         : 1)
-      if (visible && volume) {
+      if (visible) {
         surfaceById.set(surface.mesh.id, surface)
         volumeSurfaces.push({
           id: surface.mesh.id,
@@ -318,7 +304,6 @@ export class LiquidGlassLayer {
 
   /** 从实际命中的 HTML 控件取得交互目标，键盘焦点由浏览器绘制。 */
   private readonly handlePointer = (event: PointerEvent): void => {
-    this.pointer = { x: event.clientX, y: event.clientY }
     this.pressed = event.target instanceof Element
       ? event.target.closest<HTMLElement>('[data-liquid-glass]')
       : null
@@ -394,8 +379,7 @@ export class LiquidGlassLayer {
       canvasTransform: new DOMMatrix().translate(initial.left, initial.top),
     })
 
-    const material = createGlassMaterial(backdrop, content.external, blur.textures)
-    material.setOptions(options)
+    const material = createGlassContent(content.external)
     const mesh = new Mesh(this.geometry, material.material)
     mesh.frustumCulled = false
     mesh.renderOrder = element.closest('#cart-shell')
@@ -578,7 +562,6 @@ export class LiquidGlassLayer {
     surface.options = options
     surface.signature = signature
     surface.anchor = this.resolveAnchor(surface.element, options)
-    surface.material.setOptions(options)
     surface.dirty = true
     this.onInvalidate()
   }

@@ -1,6 +1,6 @@
 import type { Node, Scene, Texture } from 'three/webgpu'
 import type { VolumeSurface } from './fusion'
-import { clamp, dot, exp, float, Fn, If, max, mix, pow, screenUV, smoothstep, texture, uniform, vec2, vec3, vec4 } from 'three/tsl'
+import { clamp, dot, exp, float, Fn, If, max, mix, pow, reflect, screenUV, smoothstep, texture, uniform, vec2, vec3, vec4 } from 'three/tsl'
 import { Color, Mesh, MeshBasicNodeMaterial, PlaneGeometry, Vector2, Vector4 } from 'three/webgpu'
 import { glassRenderOrder, groupGlassSurfaces } from './fusion'
 import { BLUR_SIGMAS } from './gaussian'
@@ -150,23 +150,25 @@ export class VolumeGroups {
         const greenUV = clamp(green.xy.div(viewport), 0.001, 0.999)
         const blueUV = clamp(blue.xy.div(viewport), 0.001, 0.999)
         /** 按融合后的方差选择高斯层，三条光路使用相同的模糊强度。 */
-        const sampleBlur = (red: Node<'vec2'>, green: Node<'vec2'>, blue: Node<'vec2'>) => {
+        const sampleBlur = (red: Node<'vec2'>, green: Node<'vec2'>, blue: Node<'vec2'>, variance: Node<'float'> = optics.x) => {
           let sampled: Node<'vec3'> = vec3(source.sample(red).r, source.sample(green).g, source.sample(blue).b)
           let previous = 0
           for (let i = 0; i < BLUR_SIGMAS.length; i++) {
             const sigma = BLUR_SIGMAS[i]!
             const blurred = blurs[i]!
             const level = vec3(blurred.sample(red).r, blurred.sample(green).g, blurred.sample(blue).b)
-            const weight = clamp(optics.x.sub(previous * previous).div(sigma * sigma - previous * previous), 0, 1)
+            const weight = clamp(variance.sub(previous * previous).div(sigma * sigma - previous * previous), 0, 1)
             sampled = mix(sampled, level, weight)
             previous = sigma
           }
           return sampled
         }
         const transmitted = sampleBlur(redUV, greenUV, blueUV)
-        // 反射环境来自页面邻域；折射路径由实体求交，反射环境属于屏幕空间近似。
-        const environmentUV = clamp(screenUV.add(normal.xy.mul(80).div(viewport)), 0.001, 0.999)
-        const environment = sampleBlur(environmentUV, environmentUV, environmentUV)
+        // 反射方向由三维法线决定；有限距离的页面环境近似用柔化采样表示表面粗糙度。
+        const reflection = reflect(vec3(0, 0, -1), normal)
+        const environmentUV = clamp(screenUV.add(reflection.xy.mul(48).div(viewport)), 0.001, 0.999)
+        const reflectionVariance = optics.x.add(64)
+        const environment = sampleBlur(environmentUV, environmentUV, environmentUV, reflectionVariance)
         const fresnel = float(0.034).add(pow(float(1).sub(clamp(normal.z, 0, 1)), 5).mul(0.966))
         const tinted = mix(transmitted, color, optics.z)
         const valid = vec3(red.w, green.w, blue.w)

@@ -22,19 +22,15 @@ vi.mock('@/stage/liquid-glass/blur', () => ({
     dispose() {}
   },
 }))
-vi.mock('@/stage/liquid-glass/material', async () => {
+vi.mock('@/stage/liquid-glass/content-material', async () => {
   const { MeshBasicMaterial } = await import('three/webgpu')
   return {
-    createGlassMaterial: () => ({
+    createGlassContent: () => ({
       material: new MeshBasicMaterial(),
       occludedMaterial: new MeshBasicMaterial(),
       setOccluders() {},
-      setContentOnly() {},
       setPanel() {},
-      setOptions() {},
-      setBackdrop() {},
       setContent() {},
-      setInteraction() {},
       setClip() {},
       setOpacity() {},
       dispose() {},

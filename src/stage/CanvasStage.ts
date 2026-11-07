@@ -316,7 +316,6 @@ export class CanvasStage {
     this.external = external
     material.map = external
     material.needsUpdate = true
-    this.glass?.setBackdrop(external)
 
     oldExternal?.dispose()
     oldTexture?.destroy()

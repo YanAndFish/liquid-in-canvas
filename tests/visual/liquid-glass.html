@@ -40,7 +40,6 @@
   <div class="controls">
     <label>模糊 <input id="blur" type="range" min="0" max="40" value="3"></label>
     <label>透镜厚度 <input id="refraction" type="range" min="0" max="60" value="24"></label>
-    <label>光学模型 <select id="model"><option value="volume">三维体积</option><option value="screen">屏幕透镜</option></select></label>
     <label>圆形层级 <select id="layer"><option value="0">同层融合</option><option value="1">上层分离</option></select></label>
     <label><input id="mixed" type="checkbox" checked>异材质过渡</label>
     <label>间距 <input id="gap" type="range" min="-80" max="120" value="12"></label>
@@ -55,7 +54,6 @@
   /** 将可见滑块值应用到三块玻璃，便于固定背景对照。 */
   function update() {
     for (const surface of surfaces) {
-      surface.dataset.glassModel = document.getElementById('model').value
       surface.dataset.glassVariant = 'clear'
       surface.dataset.glassTintAlpha = '0.025'
       surface.dataset.glassTint = '#ffffff'
