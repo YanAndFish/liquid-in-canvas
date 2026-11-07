@@ -1,10 +1,14 @@
 # STILL
 
-A storefront built as a test bench for Apple's Liquid Glass effect over live HTML rendered into canvas. This is stage 02: the whole page is live HTML composited through a three.js WebGPU canvas.
+A storefront built as a test bench for Apple's Liquid Glass effect over live HTML rendered into canvas. This is stage 03: the whole page is live HTML composited through a three.js WebGPU canvas, and the cart drawer plus the showreel panels are rendered with a WebGPU liquid-glass material.
 
 The store sells twelve home and daily objects. It ships in English and Simplified Chinese, with dark and light themes. It has category filters, product detail pages, a cart that survives reload, and a demo checkout. Product photography was generated for this storefront and stored as WebP under `public/products/`.
 
 ![STILL storefront in the light theme](docs/preview.webp)
+
+![Liquid glass over the showreel video](docs/liquid-glass-showreel.webp)
+
+![The cart drawer rendered as liquid glass](docs/liquid-glass-drawer.webp)
 
 ## Requirements
 
@@ -12,7 +16,7 @@ Desktop Chrome 157 or newer with WebGPU. Unsupported browsers see a support noti
 
 ![STILL support notice](docs/support-notice.webp)
 
-Implementation notes and the problems found along the way live in [HTML_IN_CANVAS_NOTES.md](HTML_IN_CANVAS_NOTES.md).
+Implementation notes and the problems found along the way live in [HTML_IN_CANVAS_NOTES.md](HTML_IN_CANVAS_NOTES.md) and [LIQUID_GLASS_NOTES.md](LIQUID_GLASS_NOTES.md).
 
 ## Run it
 
@@ -37,19 +41,60 @@ Open http://localhost:5173.
 
 | Route | Shows |
 | --- | --- |
-| `/` | Hero, collection filters, product grid, and the approach section. |
+| `/` | Hero, liquid-glass showreel, collection filters, product grid, and the approach section. |
 | `/product/:slug` | Product detail with copy, specs, add to bag, and three related objects. |
 | Any other path | A not found page. |
+
+## Liquid glass
+
+The drawer and the showreel cards are ordinary DOM elements with attributes:
+
+```html
+<aside
+  data-liquid-glass
+  data-glass-anchor="#cart-shell"
+  data-glass-radius="28 0 0 28"
+  data-glass-blur="20"
+  data-glass-refraction="26"
+  data-glass-dispersion="0.36"
+  data-glass-tint="#0b0d12"
+  data-glass-tint-alpha="0.34"
+  data-glass-specular="0.62"
+  data-glass-shadow="0.55"
+  data-glass-shadow-size="38"
+>
+  ...
+</aside>
+```
+
+| Attribute | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| `data-liquid-glass` | absent | attribute | Marks the surface. The stage adds `drawable`. |
+| `data-glass-anchor` | offset parent | CSS selector | Non-drawable ancestor used for measurement. |
+| `data-glass-radius` | `28` | 0 to 2000 | One to four corner radii, CSS order. |
+| `data-glass-blur` | 18 regular, 8 clear | 0 to 80 | Backdrop blur radius in CSS pixels. |
+| `data-glass-refraction` | 22 regular, 18 clear | 0 to 80 | Edge lens offset in CSS pixels. |
+| `data-glass-dispersion` | 0.25 regular, 0.34 clear | 0 to 1 | Per-channel offset difference. |
+| `data-glass-tint` | `#ffffff` dark, `#f7f2e8` light | `#rgb` or `#rrggbb` | Colour mixed into the glass. |
+| `data-glass-tint-alpha` | 0.08 dark, 0.34 light | 0 to 1 | Tint strength. |
+| `data-glass-specular` | 0.7 regular, 0.9 clear | 0 to 2 | Rim and glare strength. |
+| `data-glass-shadow` | 0.4 regular, 0.3 clear | 0 to 1 | Shadow opacity. |
+| `data-glass-shadow-size` | 32 regular, 28 clear | 0 to 100 | Shadow falloff and mesh padding. |
+| `data-glass-variant` | `regular` | `regular` or `clear` | Preset before explicit attributes override it. |
+
+Each surface is a nested `drawable` element. The root snapshot leaves a hole where it sits, and the surface is captured separately with a transparent background. A TSL mesh samples the page snapshot behind the panel, applies refraction, dispersion, blur, tint, specular and shadow, then composites the panel's own crisp content texture. The drawer slides with a `right` transition because a CSS transform makes the drawable snapshot empty in Chrome 157.
+
+The showreel video is a trimmed, compressed copy of the fish sample used by [liquid-glass-studio](https://github.com/iyinchao/liquid-glass-studio). Its original credit is Tom Fisk on Pexels.
 
 ## Structure
 
 `src/pages/` holds the route views: `HomeView`, `ProductView`, and `NotFoundView`. `UnsupportedView` is the standalone support page, mounted outside the router when the browser lacks the canvas APIs.
 
-`src/components/` is grouped by feature. `layout/` holds the header and footer. `home/` holds the hero, collection, filter, and approach. `product/` holds the card and grid. `cart/` holds the drawer and line row. `ui/` holds shared icons.
+`src/components/` is grouped by feature. `layout/` holds the header and footer. `home/` holds the hero, glass showreel, collection, filter, and approach. `product/` holds the card and grid. `cart/` holds the drawer and line row. `ui/` holds shared icons.
 
 `src/router/` exports the route table and the browser router. `routes.ts` is separate so tests can build a memory router from the same table.
 
-`src/stage/` owns the canvas host. `support.ts` detects HTML-in-Canvas, WebGPU, and `drawElementImageToTexture`. `CanvasStage.ts` creates the three.js WebGPU renderer, uploads the drawable root on every `paint` event, and renders a full-screen quad. `scroll.ts` resolves the inner scroller. `src/types/html-in-canvas.d.ts` declares the browser APIs that TypeScript does not ship yet.
+`src/stage/` owns the canvas host. `support.ts` detects HTML-in-Canvas, WebGPU, and `drawElementImageToTexture`. `CanvasStage.ts` creates the three.js WebGPU renderer, uploads the drawable root on every `paint` event, forwards changed elements and the video clock, and renders the page mesh. `liquid-glass/` holds the attribute parser, the TSL material and the surface layer. `scroll.ts` resolves the inner scroller. `src/types/html-in-canvas.d.ts` declares the browser APIs that TypeScript does not ship yet.
 
 `src/stores/cart.ts` is the cart store. It exposes readonly state, derived lines and totals, and the actions `add`, `increment`, `decrement`, `remove`, and `clear`. `createCartStore` is provided through `CART_KEY`, so components call `useCart()` and no state library is needed.
 
@@ -71,10 +116,12 @@ The cart persists under `still.cart.v1`. Reads validate every line: unknown ids,
 
 Vite 8, Vue 3.5, Vue Router 5, TypeScript 6, UnoCSS, three.js r187 with the WebGPU renderer, Vitest with jsdom, ESLint with `@antfu/eslint-config`, and pnpm. CI runs lint, typecheck, test, and build on every push and pull request.
 
-## Stage 02
+## Stage 03
 
 The drawable root is `#app`, with explicit `100dvw` and `100dvh` sizes because canvas descendants are laid out without document flow. Inside it, `#stage-scroll` is the only scroller, so routing and the cart lock move the inner element instead of the window.
 
 Every canvas `paint` event uploads the root with `drawElementImageToTexture()` into an `rgba8unorm-srgb` texture, then renders a full-screen mesh with `MeshBasicMaterial`. The stage wraps a `GPUTexture` in three's `ExternalTexture` instead of using `HTMLTexture`, because three's WebGPU path for `HTMLTexture` still calls the removed `copyElementImageToTexture` API.
 
-The liquid-glass refraction shader is the next stage.
+Liquid-glass surfaces are excluded from the root snapshot by their own `drawable` attribute. Each surface is uploaded into a second texture, placed over the page mesh with a padded plane, and rendered with a TSL `MeshBasicNodeMaterial` that performs the SDF, refraction, 17-tap blur, tint, specular and shadow work. The drawer starts below the 64px header, uses a theme-specific tint, and slides with a `right` transition. The showreel is a sticky video frame with three glass surfaces and a small video clock that repaints the canvas while the clip plays.
+
+See [LIQUID_GLASS_NOTES.md](LIQUID_GLASS_NOTES.md) for the shader math, the Chrome snapshot pitfalls and the measurements.

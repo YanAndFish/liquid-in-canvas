@@ -465,7 +465,7 @@ pnpm test
 pnpm build
 ```
 
-当前 45 个 Vitest 测试全部通过。测试环境是 jsdom，不会加载 WebGPU，也不会挂载 stage。`App.vue` 和组件测试不导入 `CanvasStage`，所以 jsdom 不会因为缺少 `navigator.gpu` 失败。
+当前 60 个 Vitest 测试全部通过。测试环境是 jsdom，不会加载 WebGPU，也不会挂载 stage。`App.vue` 和组件测试不导入 `CanvasStage`，所以 jsdom 不会因为缺少 `navigator.gpu` 失败。
 
 真实浏览器验证使用 Chrome 157 加 CDP：
 
@@ -477,6 +477,7 @@ pnpm build
 - 窗口缩放到 900×700，DPR 2，canvas 变成 1800×1400，抽屉保持对齐。
 - 使用 `--disable-features=OverlayScrollbar` 复现经典滚动条偏移。
 - 使用 `Page.startScreencast` 和 DOM 采样检查缩放和抽屉动画。
+- 阶段 03 增加液态玻璃后，Chrome 157 再次验证 1280×900 与 390×844，暗色与亮色主题，视频播放、三块玻璃卡片、有商品和空购物袋、结算确认以及 Escape 关闭。
 
 OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面。
 
@@ -508,9 +509,31 @@ OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面�
 | `src/composables/sharedTransition.ts` | shared layer 注册、矩形类型、购物袋目标 |
 | `src/pages/UnsupportedView.vue` | 支持提示页 |
 | `src/router/index.ts` | 内层滚动、历史位置保存、instant 恢复、hash 偏移 |
-| `src/components/cart/CartDrawer.vue` | 抽屉、滚动锁、行项目错开动画 |
+| `src/components/cart/CartDrawer.vue` | 液态玻璃抽屉、滚动锁、行项目错开动画、`right` 滑入 |
+| `src/components/home/GlassShowcase.vue` | 视频 showreel 和三块玻璃表面 |
+| `src/stage/liquid-glass/options.ts` | `data-glass-*` 参数解析 |
+| `src/stage/liquid-glass/material.ts` | TSL 液态玻璃材质 |
+| `src/stage/liquid-glass/LiquidGlassLayer.ts` | 表面发现、内容纹理、网格、锚点和脏标记 |
+| `public/media/liquid-glass.mp4` | 9 秒 720p showreel |
 | `src/styles/main.css` | stage、drawable 根、滚动容器、路由切换、下划线动画 |
 | `src/components/product/ProductCard.vue` | 卡片 hover、图片缩放、共享元素起点、入袋动画、加购反馈 |
 | `src/components/home/HeroSection.vue` | Hero 图片 hover 缩放 |
 | `tests/stage/support.test.ts` | 能力检测测试 |
+| `tests/stage/liquid-glass-options.test.ts` | 液态玻璃参数解析测试 |
 | `tests/app/UnsupportedView.test.ts` | 提示页测试 |
+
+## 17. 阶段 03 补充：液态玻璃
+
+完整设计、参数表、着色器公式和测量见 [LIQUID_GLASS_NOTES.md](LIQUID_GLASS_NOTES.md)。这里只记录阶段 03 新发现的 HTML-in-Canvas 坑。
+
+- 嵌套 `drawable` 是分层的核心。父快照会排除子 `drawable`，所以 `#app` 的页面纹理在玻璃面板位置是空的，面板内容纹理可以单独上传。文字不经过模糊，保持清晰。
+- `drawElementImageToTexture` 必须在 canvas 的 WebGPU context 初始化之后调用。最小探针漏掉 `renderer.getContext()` 时会报 `containing canvas does not have a rendering context`。
+- 带 CSS `transform` 的 drawable 元素会得到全透明快照。抽屉不能用 `translateX(100%)` 滑入，改为 `right: -100%` 到 `0` 的布局动画。
+- 元素自己 `position: fixed` 时快照为空。固定外壳加 `position: absolute` 的 drawable 面板可以正常捕获。
+- 首次出现在视口外的 drawable 元素可能带着空 paint record 进入视口。滚动并不会自动补内容。`LiquidGlassLayer.kickPaint()` 给表面加一个透明 box-shadow 强制重绘，随后重新上传内容纹理。
+- 视频帧不会自动触发 canvas 的 `paint`。`CanvasStage` 监听 `play` / `pause` / `ended`，在视频播放期间用 `requestAnimationFrame` 驱动 `requestPaint()`。
+- 玻璃面板本身必须保持透明背景。给面板加不透明背景会把背景一起写进内容纹理，shader 会在玻璃上再盖一层实心矩形。
+- 玻璃网格要按 `shadowSize` 向外扩，否则投影会被面板裁掉。
+- 玻璃叠玻璃不划算。当前每块玻璃只采样页面快照，不采样其他玻璃网格。抽屉覆盖 showreel 时，卡片会被抽屉遮住，而不是在抽屉玻璃里再折射一次。
+- 页头保持不透明。把页头做成玻璃会让共享商品图片和入袋 clone 在到达页头时被玻璃网格盖住，因为 clone 在根快照里。要解决需要把 shared layer 也提到玻璃层之上。
+- 这是 Chrome 157 的行为。升级 Chrome 或 three.js 前要重新验证嵌套 `drawable`、离屏快照和 TSL 编译。
