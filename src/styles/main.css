@@ -15,6 +15,7 @@ html {
   --accent-line: rgba(184, 245, 208, 0.4);
   --header-bg: rgba(8, 8, 10, 0.72);
   --scrim: rgba(4, 4, 6, 0.72);
+  --cart-scrim: rgba(4, 4, 6, 0.52);
   --button-glass: rgba(8, 8, 10, 0.55);
   --hover: rgba(255, 255, 255, 0.05);
   --inset: rgba(255, 255, 255, 0.03);
@@ -42,6 +43,7 @@ html[data-theme='light'] {
   --accent-line: rgba(29, 106, 75, 0.4);
   --header-bg: rgba(244, 241, 234, 0.74);
   --scrim: rgba(30, 27, 22, 0.38);
+  --cart-scrim: rgba(30, 27, 22, 0.28);
   --button-glass: rgba(255, 255, 255, 0.58);
   --hover: rgba(23, 21, 17, 0.05);
   --inset: rgba(255, 255, 255, 0.42);
