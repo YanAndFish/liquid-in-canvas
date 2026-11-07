@@ -12,6 +12,8 @@ Desktop Chrome 157 or newer with WebGPU. Unsupported browsers see a support noti
 
 ![STILL support notice](docs/support-notice.webp)
 
+Implementation notes and the problems found along the way live in [HTML_IN_CANVAS_NOTES.md](HTML_IN_CANVAS_NOTES.md).
+
 ## Run it
 
 ```sh
