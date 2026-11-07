@@ -7,13 +7,21 @@ const savedPositions = new Map<string, number>()
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
-  scrollBehavior(to, _from, savedPosition) {
+  scrollBehavior(to, from, savedPosition) {
     const scroller = getStageScroller()
 
     if (scroller) {
+      const saved = savedPositions.get(to.fullPath) ?? savedPositions.get(to.path)
+
       if (savedPosition) {
         scroller.scrollTo({
-          top: savedPositions.get(to.fullPath) ?? 0,
+          top: saved ?? 0,
+          behavior: 'instant',
+        })
+      }
+      else if (to.hash === '#collection' && from.path !== to.path && saved !== undefined) {
+        scroller.scrollTo({
+          top: saved,
           behavior: 'instant',
         })
       }
