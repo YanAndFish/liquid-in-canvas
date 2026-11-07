@@ -125,16 +125,16 @@ onBeforeUnmount(() => {
         aria-labelledby="cart-title"
         data-liquid-glass
         data-glass-anchor="#cart-shell"
-        data-glass-radius="28 0 0 28"
+        data-glass-radius="30"
         :data-glass-blur="theme === 'dark' ? '18' : '28'"
-        data-glass-refraction="26"
-        data-glass-dispersion="0.36"
+        data-glass-refraction="20"
+        data-glass-dispersion="0.15"
         :data-glass-tint="theme === 'dark' ? '#0b0d12' : undefined"
-        :data-glass-tint-alpha="theme === 'dark' ? '0.1' : '0.45'"
+        :data-glass-tint-alpha="theme === 'dark' ? '0.32' : '0.58'"
         :data-glass-specular="theme === 'dark' ? '0.62' : undefined"
         data-glass-shadow="0.55"
         data-glass-shadow-size="38"
-        class="absolute bottom-0 right-0 top-16 max-w-[26rem] w-full flex flex-col overflow-hidden"
+        class="cart-panel absolute bottom-3 right-3 top-[86px] max-w-[26rem] flex flex-col overflow-hidden"
       >
         <header class="flex items-center justify-between gap-4 border-b border-line px-5 py-5 sm:px-6">
           <div>
@@ -256,6 +256,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.cart-panel { width: calc(100% - 24px); border-radius: 30px; }
 .cart-enter-active,
 .cart-leave-active {
   transition: opacity 240ms ease;

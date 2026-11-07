@@ -2,30 +2,33 @@ export type GlassVariant = 'regular' | 'clear'
 export type GlassRadius = readonly [number, number, number, number]
 export type GlassTheme = 'light' | 'dark'
 
+/** HTML 元素声明的玻璃外观参数，长度均使用 CSS 像素。 */
 export interface GlassOptions {
+  /** 左上、右上、右下、左下的圆角半径。 */
   radius: GlassRadius
+  /** 背景高斯模糊的目标标准差，0 表示清晰透射。 */
   blur: number
+  /** 边缘透镜的最大位移和厚度参考值。 */
   refraction: number
+  /** RGB 采样位置的分离强度。 */
   dispersion: number
+  /** 用于承托前景文字的十六进制颜色。 */
   tint: string
+  /** 染色比例，0 表示无染色。 */
   tintAlpha: number
+  /** 轮廓反光强度。 */
   specular: number
+  /** 外侧阴影的不透明度。 */
   shadow: number
+  /** 阴影的延伸范围。 */
   shadowSize: number
+  /** regular 根据背景亮度调整染色，clear 保留媒体细节。 */
   variant: GlassVariant
+  /** 用于定位的非 drawable 祖先选择器，null 表示使用 offsetParent。 */
   anchor: string | null
 }
 
-interface GlassPreset {
-  blur: number
-  refraction: number
-  dispersion: number
-  tint: string
-  tintAlpha: number
-  specular: number
-  shadow: number
-  shadowSize: number
-}
+type GlassPreset = Omit<GlassOptions, 'radius' | 'variant' | 'anchor'>
 
 const DEFAULT_RADIUS = 28
 const RADIUS_MAX = 2000
@@ -36,8 +39,8 @@ const PRESETS: Record<GlassVariant, Record<GlassTheme, GlassPreset>> = {
       blur: 18,
       refraction: 24,
       dispersion: 0.3,
-      tint: '#ffffff',
-      tintAlpha: 0.04,
+      tint: '#171b20',
+      tintAlpha: 0.28,
       specular: 0.7,
       shadow: 0.32,
       shadowSize: 32,
@@ -46,8 +49,8 @@ const PRESETS: Record<GlassVariant, Record<GlassTheme, GlassPreset>> = {
       blur: 18,
       refraction: 24,
       dispersion: 0.3,
-      tint: '#f7f2e8',
-      tintAlpha: 0.12,
+      tint: '#f6f6f8',
+      tintAlpha: 0.32,
       specular: 0.7,
       shadow: 0.32,
       shadowSize: 32,

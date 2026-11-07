@@ -25,8 +25,8 @@ function addToBag(productId: Product['id']) {
 </script>
 
 <template>
-  <HeroSection :product="heroProduct" />
   <GlassShowcase />
+  <HeroSection :product="heroProduct" />
   <CollectionSection
     v-model="activeCategory"
     :products="visibleProducts"

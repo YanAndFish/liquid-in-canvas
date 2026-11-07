@@ -61,7 +61,7 @@ function onPageEnter(element: Element): void {
 
       <SiteHeader :count="totals.itemCount" @open-cart="cartOpen = true" />
 
-      <main id="main" tabindex="-1" class="mx-auto max-w-[1240px] w-full flex-1 px-5 sm:px-8">
+      <main id="main" tabindex="-1" class="mx-auto max-w-[1440px] w-full flex-1 px-3 sm:px-8">
         <div class="page-stage">
           <RouterView v-slot="{ Component, route }">
             <Transition name="page" @enter="onPageEnter">

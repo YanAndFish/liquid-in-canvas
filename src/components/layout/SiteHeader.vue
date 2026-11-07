@@ -32,22 +32,22 @@ const themeLabel = computed(() => theme.value === 'dark'
 </script>
 
 <template>
-  <header class="sticky top-0 z-40 border-b border-line bg-[var(--header-bg)] backdrop-blur-xl">
-    <div class="mx-auto h-16 max-w-[1240px] flex items-center justify-between gap-4 px-5 sm:px-8">
+  <header class="site-header">
+    <div class="header-layout">
       <RouterLink to="/" class="flex items-baseline gap-2.5">
         <span class="text-xl tracking-[0.14em] font-display">STILL</span>
         <span class="hidden text-[9px] text-mist tracking-[0.26em] font-mono uppercase sm:inline">{{ t('brand.tagline') }}</span>
       </RouterLink>
 
-      <nav class="hidden items-center gap-8 text-[13px] text-mist md:flex" :aria-label="t('nav.primary')">
+      <nav data-liquid-glass data-glass-radius="999" data-glass-blur="20" data-glass-refraction="12" data-glass-shadow="0.12" data-glass-shadow-size="16" class="header-nav" :aria-label="t('nav.primary')">
         <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone link-underline">{{ t('nav.collection') }}</RouterLink>
         <RouterLink :to="{ path: '/', hash: '#approach' }" class="transition-colors hover:text-bone link-underline">{{ t('nav.approach') }}</RouterLink>
       </nav>
 
-      <div class="flex items-center gap-1.5 sm:gap-2">
+      <div class="header-actions" data-liquid-glass data-glass-radius="999" data-glass-blur="20" data-glass-refraction="12" data-glass-shadow="0.12" data-glass-shadow-size="16">
         <button
           type="button"
-          class="border border-line rounded-full p-2 text-mist transition-colors hover:border-[var(--line-strong)] hover:text-bone"
+          class="header-icon"
           :aria-label="themeLabel"
           :title="themeLabel"
           @click="toggleTheme"
@@ -55,13 +55,13 @@ const themeLabel = computed(() => theme.value === 'dark'
           <AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="15" />
         </button>
 
-        <div class="flex items-center border border-line rounded-full p-0.5" role="group" :aria-label="t('locale.label')">
+        <div class="header-locale" role="group" :aria-label="t('locale.label')">
           <button
             v-for="option in LOCALES"
             :key="option.id"
             type="button"
-            class="rounded-full px-2 py-1 text-[10px] leading-none font-mono transition-colors"
-            :class="locale === option.id ? 'bg-bone text-ink' : 'text-mist hover:text-bone'"
+            class="locale-option"
+            :class="locale === option.id ? 'is-selected' : ''"
             :aria-label="t(option.labelKey)"
             :aria-pressed="locale === option.id"
             @click="setLocale(option.id)"
@@ -72,7 +72,7 @@ const themeLabel = computed(() => theme.value === 'dark'
 
         <button
           type="button"
-          class="inline-flex items-center gap-2 border border-line rounded-full px-3.5 py-2 text-[13px] text-bone transition-colors hover:border-[var(--line-strong)] hover:bg-[var(--hover)]"
+          class="header-bag"
           :aria-label="bagLabel"
           @click="emit('openCart')"
         >
@@ -92,3 +92,28 @@ const themeLabel = computed(() => theme.value === 'dark'
     </div>
   </header>
 </template>
+
+<style scoped>
+.site-header { position: sticky; top: 0; z-index: 40; padding: 18px 0 16px; pointer-events: none; }
+.site-header::before { content: ''; position: absolute; inset: 0 0 -12px; z-index: -1; background: linear-gradient(var(--bg), transparent); pointer-events: none; }
+.header-layout { position: relative; max-width: 1440px; margin: 0 auto; padding: 0 32px; height: 52px; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.header-layout > * { pointer-events: auto; }
+.header-nav { display: flex; height: 52px; align-items: center; padding: 6px; border-radius: 999px; gap: 2px; font-size: 13px; font-weight: 550; }
+.header-nav a { display: flex; align-items: center; min-height: 40px; padding: 0 22px; border-radius: 999px; text-decoration: none; }
+.header-nav a:hover { background: var(--hover); }
+.header-nav a::after { display: none; }
+.header-actions { display: flex; height: 52px; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; }
+.header-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; }
+.header-locale { display: flex; align-items: center; gap: 2px; }
+.locale-option { min-width: 38px; height: 40px; font-size: 11px; border-radius: 999px; }
+.locale-option.is-selected { background: var(--hover); font-weight: 700; }
+.header-bag { height: 44px; display: flex; align-items: center; padding: 0 14px; gap: 8px; font-size: 13px; border-radius: 999px; }
+button { cursor: pointer; }
+button:hover { background: var(--hover); }
+@media (max-width: 760px) {
+  .header-layout { padding: 0 18px; gap: 8px; }
+  .header-nav { display: none; }
+  .header-bag { padding: 0 10px; }
+  .locale-option { min-width: 32px; }
+}
+</style>

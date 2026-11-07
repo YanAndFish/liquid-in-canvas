@@ -1,127 +1,84 @@
-# STILL
+# STILL · Liquid Glass in Canvas
 
-A storefront built as a test bench for Apple's Liquid Glass effect over live HTML rendered into canvas. This is stage 03: the whole page is live HTML composited through a three.js WebGPU canvas, and the cart drawer plus the showreel panels are rendered with a WebGPU liquid-glass material.
+一个使用 **HTML-in-Canvas + three.js WebGPU** 实现液态玻璃的交互商店。页面与控件都是可点击、可聚焦的实时 HTML。浏览器把页面与玻璃控件分别上传为纹理，再合成到同一张画布。
 
-The store sells twelve home and daily objects. It ships in English and Simplified Chinese, with dark and light themes. It has category filters, product detail pages, a cart that survives reload, and a demo checkout. Product photography was generated for this storefront and stored as WebP under `public/products/`.
+视觉依据包括 Apple 的 Liquid Glass 演示，以及 iOS 26 用户指南中的照片和 Safari 实际 UI。参考截图、观察结果和实现范围见 [视觉依据](docs/APPLE_LIQUID_GLASS_REFERENCE.md)。
 
-![STILL storefront in the light theme](docs/preview.webp)
+## 运行
 
-![Liquid glass over the showreel video](docs/liquid-glass-showreel.webp)
-
-![The cart drawer rendered as liquid glass](docs/liquid-glass-drawer.webp)
-
-## Requirements
-
-Desktop Chrome 157 or newer with WebGPU. Unsupported browsers see a support notice that explains what is missing. There is no fallback storefront.
-
-![STILL support notice](docs/support-notice.webp)
-
-Implementation notes and the problems found along the way live in [HTML_IN_CANVAS_NOTES.md](HTML_IN_CANVAS_NOTES.md) and [LIQUID_GLASS_NOTES.md](LIQUID_GLASS_NOTES.md).
-
-## Run it
+需要支持 HTML-in-Canvas、WebGPU 和 `GPUQueue.drawElementImageToTexture()` 的浏览器。启动时逐项检查能力；缺少能力时显示说明页。项目开发检查使用 Chrome 157 对应的 API，不提供 CSS 玻璃替代版。
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-Open http://localhost:5173.
+打开终端显示的本地地址，默认是 http://localhost:5173。
 
-## Scripts
-
-| Command | Does |
-| --- | --- |
-| `pnpm dev` | Start the Vite dev server. |
-| `pnpm build` | Type-check and build to `dist/`. |
-| `pnpm test` | Run the Vitest suite. |
-| `pnpm lint` | Run ESLint with `@antfu/eslint-config`. |
-| `pnpm typecheck` | Run `vue-tsc` only. |
-
-## Routes
-
-| Route | Shows |
-| --- | --- |
-| `/` | Hero, liquid-glass showreel, collection filters, product grid, and the approach section. |
-| `/product/:slug` | Product detail with copy, specs, add to bag, and three related objects. |
-| Any other path | A not found page. |
-
-## Liquid glass
-
-The drawer and the showreel cards are ordinary DOM elements with attributes:
-
-```html
-<aside
-  data-liquid-glass
-  data-glass-anchor="#cart-shell"
-  data-glass-radius="28 0 0 28"
-  data-glass-blur="18"
-  data-glass-refraction="26"
-  data-glass-dispersion="0.36"
-  data-glass-tint="#0b0d12"
-  data-glass-tint-alpha="0.1"
-  data-glass-specular="0.62"
-  data-glass-shadow="0.55"
-  data-glass-shadow-size="38"
->
-  ...
-</aside>
+```sh
+pnpm typecheck
+pnpm test
+pnpm lint
+pnpm build
 ```
 
-| Attribute | Default | Range | Meaning |
-| --- | --- | --- | --- |
-| `data-liquid-glass` | absent | attribute | Marks the surface. The stage adds `drawable`. |
-| `data-glass-anchor` | offset parent | CSS selector | Non-drawable ancestor used for measurement. |
-| `data-glass-radius` | `28` | 0 to 2000 | One to four corner radii, CSS order. |
-| `data-glass-blur` | 18 regular, 8 clear | 0 to 80 | Blur strength and soft/heavy layer mix. |
-| `data-glass-refraction` | 24 regular, 20 clear | 0 to 80 | Edge lens offset in CSS pixels. |
-| `data-glass-dispersion` | 0.3 regular, 0.4 clear | 0 to 1 | Per-channel offset difference. |
-| `data-glass-tint` | `#ffffff` dark, `#f7f2e8` light | `#rgb` or `#rrggbb` | Colour mixed into the glass. |
-| `data-glass-tint-alpha` | 0.04 dark, 0.12 light | 0 to 1 | Tint strength. |
-| `data-glass-specular` | 0.7 regular, 0.9 clear | 0 to 2 | Rim and glare strength. |
-| `data-glass-shadow` | 0.32 regular, 0.26 clear | 0 to 1 | Shadow opacity. |
-| `data-glass-shadow-size` | 32 regular, 28 clear | 0 to 100 | Shadow falloff and mesh padding. |
-| `data-glass-variant` | `regular` | `regular` or `clear` | Preset before explicit attributes override it. |
+## 体验
 
-Each surface is a nested `drawable` element. The root snapshot leaves a hole where it sits, and the surface is captured separately with a transparent background. A TSL mesh samples the page snapshot behind the panel, applies refraction, dispersion, a two-level separable Gaussian blur, tint, specular and shadow, then composites the panel's own crisp content texture. The drawer slides with a `right` transition because a CSS transform makes the drawable snapshot empty in Chrome 157.
+- 首页可切换花间、器物和光影三种背景。视频可以暂停，离开可见区域时也会暂停。
+- 右上角外观按钮展开为材质设置，可以对比通透和柔和两种效果。
+- 按住玻璃控件可看到局部亮光和轻微形变。菜单、场景选择和商品筛选使用阻尼弹簧。
+- 导航与购物袋使用柔化的玻璃；商品图片和说明使用普通内容表面。
+- 支持中英文、深浅主题、商品详情、分类、购物袋持久化与演示结算。不会创建真实订单。
+- 跟随系统的减少动态效果、减少透明度和增强对比度设置。菜单支持 Escape，购物袋支持键盘焦点循环。
 
-The showreel video is a trimmed, compressed copy of the flower sample used by [liquid-glass-studio](https://github.com/iyinchao/liquid-glass-studio). Its original source is credited there to Pixabay.
+## 添加玻璃控件
 
-## Structure
+在 HTML 元素上添加 `data-liquid-glass`。它的定位父元素应当是没有 `drawable` 属性的普通元素。
 
-`src/pages/` holds the route views: `HomeView`, `ProductView`, and `NotFoundView`. `UnsupportedView` is the standalone support page, mounted outside the router when the browser lacks the canvas APIs.
+```html
+<div class="positioning-parent" style="position: relative">
+  <button
+    data-liquid-glass
+    data-glass-radius="999"
+    data-glass-variant="regular"
+    data-glass-refraction="12"
+    data-glass-blur="20"
+  >
+    浏览系列
+  </button>
+</div>
+```
 
-`src/components/` is grouped by feature. `layout/` holds the header and footer. `home/` holds the hero, glass showreel, collection, filter, and approach. `product/` holds the card and grid. `cart/` holds the drawer and line row. `ui/` holds shared icons.
+| 属性 | 含义 |
+| --- | --- |
+| `data-glass-radius` | 圆角，支持 CSS 顺序的一至四个值，单位为 CSS 像素 |
+| `data-glass-variant` | `regular` 或 `clear` |
+| `data-glass-blur` | 目标高斯标准差，0–80 CSS 像素；相邻模糊层间近似插值 |
+| `data-glass-refraction` | 透镜厚度与位移参考值，0–80 |
+| `data-glass-dispersion` | RGB 采样分离强度，0–1 |
+| `data-glass-tint` | 十六进制染色值 |
+| `data-glass-tint-alpha` | 染色比例，0–1 |
+| `data-glass-specular` | 轮廓高光强度，0–2 |
+| `data-glass-shadow` | 外侧阴影强度，0–1 |
+| `data-glass-shadow-size` | 阴影范围，0–100 CSS 像素 |
+| `data-glass-anchor` | 用于定位的祖先选择器，缺省使用 offsetParent |
 
-`src/router/` exports the route table and the browser router. `routes.ts` is separate so tests can build a memory router from the same table.
+在需要裁剪的普通祖先上添加 `data-glass-clip`。玻璃和阴影会限制在该祖先的矩形内，适合媒体视图。
 
-`src/stage/` owns the canvas host. `support.ts` detects HTML-in-Canvas, WebGPU, and `drawElementImageToTexture`. `CanvasStage.ts` creates the three.js WebGPU renderer, uploads the drawable root on every `paint` event, forwards changed elements and the video clock, and renders the page mesh. `liquid-glass/` holds the attribute parser, the TSL material and the surface layer. `scroll.ts` resolves the inner scroller. `src/types/html-in-canvas.d.ts` declares the browser APIs that TypeScript does not ship yet.
+玻璃元素的背景应当透明。背景色会进入内容纹理并遮住透镜。`drawable` 元素自身的 CSS transform 在目标浏览器中可能产生空快照，因此菜单动画使用布局尺寸，按压形变由材质完成。
 
-`src/stores/cart.ts` is the cart store. It exposes readonly state, derived lines and totals, and the actions `add`, `increment`, `decrement`, `remove`, and `clear`. `createCartStore` is provided through `CART_KEY`, so components call `useCart()` and no state library is needed.
+## 渲染结构
 
-`src/domain/` holds the catalog, money helpers, cart selectors, and the localStorage boundary. Product names, descriptions, details, and specs are `LocalizedText`, so every object carries English and Simplified Chinese copy. The cart state stores product ids and quantities only. Prices are joined from the catalog when the UI reads the cart, so a price change cannot leave stale copies behind.
+- `src/stage/CanvasStage.ts`：页面上传、绘制、尺寸变化和视频时钟。
+- `src/stage/liquid-glass/`：SDF 材质、多级高斯模糊、表面发现与指针响应。
+- `src/stage/CanvasOverlay.ts`：将商品共享动画画在导航玻璃上方。
+- `src/composables/useSpring.ts`：菜单与选择器的弹簧动画。
+- `src/components/home/GlassShowcase.vue`：媒体场景、材质选择与播放控制。
 
-`src/i18n/messages.ts` is the typed message dictionary. `translate()` replaces named parameters. The locale follows the browser on first load, persists under `still.locale`, and updates `<html lang>`, the document title, and the meta description.
+玻璃从不含玻璃控件的页面快照取样。控件内容单独上传，文字保持清晰。商品共享动画有独立透明前景层，购物袋在其上方。
 
-`src/styles/main.css` defines the palette as CSS variables on `html`. `useTheme()` writes `data-theme` on the same element, persists the choice under `still.theme`, and updates the browser theme color. The first paint reads the stored theme from a small inline script in `index.html`, so the page does not flash the wrong palette.
+## 范围与来源
 
-`tests/` holds every test, split into `domain/`, `stores/`, `i18n/`, `stage/`, and `app/`. Colocated test files are gone.
+这是对 Apple 视觉行为的 Web 近似实现，不是 Apple 原生材质。完整的背景语义适配、设备姿态光照、跨控件融合和多层相互折射尚未实现。详细限制见 [视觉依据](docs/APPLE_LIQUID_GLASS_REFERENCE.md)。
 
-## Cart model
-
-`CartState` is an ordered list of `{ productId, quantity }`. The store keeps one line per product, preserves first-add order, clamps quantity to 99, and removes a line when its quantity drops below one. Shipping is free from $150, otherwise it is a flat $12.
-
-The cart persists under `still.cart.v1`. Reads validate every line: unknown ids, non-integer quantities, and zero quantities are dropped, and duplicate ids are merged. A failed read or write leaves the app working.
-
-## Stack
-
-Vite 8, Vue 3.5, Vue Router 5, TypeScript 6, UnoCSS, three.js r187 with the WebGPU renderer, Vitest with jsdom, ESLint with `@antfu/eslint-config`, and pnpm. CI runs lint, typecheck, test, and build on every push and pull request.
-
-## Stage 03
-
-The drawable root is `#app`, with explicit `100dvw` and `100dvh` sizes because canvas descendants are laid out without document flow. Inside it, `#stage-scroll` is the only scroller, so routing and the cart lock move the inner element instead of the window.
-
-Every canvas `paint` event uploads the root with `drawElementImageToTexture()` into an `rgba8unorm-srgb` texture, then renders a full-screen mesh with `MeshBasicMaterial`. The stage wraps a `GPUTexture` in three's `ExternalTexture` instead of using `HTMLTexture`, because three's WebGPU path for `HTMLTexture` still calls the removed `copyElementImageToTexture` API.
-
-Liquid-glass surfaces are excluded from the root snapshot by their own `drawable` attribute. Each surface is uploaded into a second texture, placed over the page mesh with a padded plane, and rendered with a TSL `MeshBasicNodeMaterial` that performs the SDF, finite-difference refraction, two-level separable Gaussian blur, tint, specular and shadow work. The drawer starts below the 64px header, uses a theme-specific tint, and slides with a `right` transition. The showreel is a sticky video frame with three glass surfaces and a small video clock that repaints the canvas while the clip plays.
-
-See [LIQUID_GLASS_NOTES.md](LIQUID_GLASS_NOTES.md) for the shader math, the Chrome snapshot pitfalls and the measurements.
+[liquid-glass-studio](https://github.com/iyinchao/liquid-glass-studio) 提供了折射、色散、SDF 和多遍模糊的研究参考。花朵视频使用该项目引用的 Pixabay / Pexels 素材，商品图保存在 `public/products/`。Apple 参考截图只在研究文档中引用，不作为商店素材。

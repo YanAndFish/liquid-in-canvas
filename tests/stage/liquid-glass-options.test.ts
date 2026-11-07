@@ -27,8 +27,8 @@ describe('parseGlassOptions', () => {
       blur: 18,
       refraction: 24,
       dispersion: 0.3,
-      tint: '#ffffff',
-      tintAlpha: 0.04,
+      tint: '#171b20',
+      tintAlpha: 0.28,
       specular: 0.7,
       shadow: 0.32,
       shadowSize: 32,
@@ -43,8 +43,8 @@ describe('parseGlassOptions', () => {
       blur: 18,
       refraction: 24,
       dispersion: 0.3,
-      tint: '#f7f2e8',
-      tintAlpha: 0.12,
+      tint: '#f6f6f8',
+      tintAlpha: 0.32,
       specular: 0.7,
       shadow: 0.32,
       shadowSize: 32,
@@ -133,7 +133,7 @@ describe('parseGlassOptions', () => {
       blur: 18,
       refraction: 24,
       dispersion: 0.3,
-      tintAlpha: 0.04,
+      tintAlpha: 0.28,
       specular: 2,
       shadow: 0,
       shadowSize: 100,
@@ -141,10 +141,10 @@ describe('parseGlassOptions', () => {
   })
 
   it('falls back on invalid hex colors', () => {
-    expect(tint('#12')).toBe('#ffffff')
-    expect(tint('#gggggg')).toBe('#ffffff')
-    expect(tint('red')).toBe('#ffffff')
-    expect(tint('#zzz', 'light')).toBe('#f7f2e8')
+    expect(tint('#12')).toBe('#171b20')
+    expect(tint('#gggggg')).toBe('#171b20')
+    expect(tint('red')).toBe('#171b20')
+    expect(tint('#zzz', 'light')).toBe('#f6f6f8')
   })
 
   it('normalizes valid hex colors', () => {

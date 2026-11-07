@@ -28,13 +28,13 @@ const position = computed(() => {
         </p>
       </div>
 
-      <h1
-        class="mt-7 text-balance text-[clamp(3.4rem,9vw,7.2rem)] tracking-[-0.03em] font-display"
+      <h2
+        class="mt-7 text-balance text-[clamp(2.8rem,5.6vw,5.2rem)] tracking-[-0.03em] font-display"
         :class="locale === 'zh' ? 'leading-[1.02]' : 'leading-[0.86]'"
       >
-        {{ t('hero.titleLine1') }}<br>
-        <span class="text-[var(--text-soft)]" :class="locale === 'en' ? 'italic' : ''">{{ t('hero.titleLine2') }}</span>
-      </h1>
+        {{ t('hero.editorialLine1') }}<br>
+        <span class="text-[var(--text-soft)]" :class="locale === 'en' ? 'italic' : ''">{{ t('hero.editorialLine2') }}</span>
+      </h2>
 
       <p class="mt-8 max-w-[40ch] text-[15px] text-mist leading-relaxed sm:text-base">
         {{ t('hero.subtitle') }}

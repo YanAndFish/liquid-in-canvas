@@ -10,6 +10,7 @@ import {
   SRGBColorSpace,
   WebGPURenderer,
 } from 'three/webgpu'
+import { CanvasOverlay } from './CanvasOverlay'
 import { LiquidGlassLayer } from './liquid-glass/LiquidGlassLayer'
 
 interface CanvasStageOptions {
@@ -49,6 +50,7 @@ export class CanvasStage {
   private external: ExternalTexture | null = null
   private observer: ResizeObserver | null = null
   private root: HTMLElement | null = null
+  private overlay: CanvasOverlay | null = null
   private glass: LiquidGlassLayer | null = null
   private metrics: StageMetrics | null = null
   private pendingSize: StageMetrics | null = null
@@ -160,6 +162,9 @@ export class CanvasStage {
         },
       })
       this.glass.start()
+      const foreground = root.querySelector<HTMLElement>('.shared-layer')
+      if (foreground && this.geometry)
+        this.overlay = new CanvasOverlay(this.canvas, foreground, device, scene, this.geometry)
     }
     this.attachVideoClock(root)
     this.invalidate()
@@ -185,6 +190,8 @@ export class CanvasStage {
       this.detachVideoClock(root)
     }
 
+    this.overlay?.dispose()
+    this.overlay = null
     this.glass?.dispose()
     this.glass = null
     this.observer?.disconnect()
@@ -246,6 +253,7 @@ export class CanvasStage {
         },
       )
       this.glass?.sync(event)
+      this.overlay?.sync()
       renderer.render(scene, camera)
     }
     catch (cause) {

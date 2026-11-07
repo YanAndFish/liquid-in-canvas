@@ -5,6 +5,7 @@ import { ExternalTexture, Mesh, PlaneGeometry, SRGBColorSpace, Vector2 } from 't
 import { BackdropBlur } from './blur'
 import { createGlassMaterial } from './material'
 import { glassOptionsSignature, parseGlassOptions } from './options'
+import { advanceSpring } from './spring'
 
 interface Rect {
   left: number
@@ -93,6 +94,14 @@ export class LiquidGlassLayer {
   private readonly surfaces = new Map<HTMLElement, GlassSurface>()
   private readonly geometry = new PlaneGeometry(1, 1)
   private readonly viewport = new Vector2(1, 1)
+  private readonly paintToggle = new WeakSet<HTMLElement>()
+  private pointer = { x: -1000, y: -1000 }
+  private hovered: HTMLElement | null = null
+  private pressed: HTMLElement | null = null
+  private feedback = new Map<HTMLElement, { hover: { value: number, velocity: number }, press: { value: number, velocity: number } }>()
+  private animation = 0
+  private previousTime = 0
+  private reducedMotion: MediaQueryList | null = null
   private observer: MutationObserver | null = null
   private themeObserver: MutationObserver | null = null
   private blur: BackdropBlur | null = null
@@ -134,6 +143,13 @@ export class LiquidGlassLayer {
     if (backdrop)
       this.blur = new BackdropBlur(this.renderer, backdrop)
     window.addEventListener('resize', this.handleWindowResize, { passive: true })
+    this.root.addEventListener('pointermove', this.handlePointer, { passive: true })
+    this.root.addEventListener('pointerdown', this.handlePointer, { passive: true })
+    this.root.addEventListener('pointerleave', this.handlePointerLeave)
+    window.addEventListener('pointerup', this.handlePointerUp)
+    window.addEventListener('pointercancel', this.handlePointerUp)
+    window.addEventListener('blur', this.handlePointerLeave)
+    this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
     this.scan()
   }
 
@@ -169,7 +185,10 @@ export class LiquidGlassLayer {
       const anchorRect = surface.anchor?.isConnected
         ? surface.anchor.getBoundingClientRect()
         : null
-      const visible = intersects(rect, this.viewport.x, this.viewport.y)
+      const style = getComputedStyle(surface.element)
+      const visible = style.visibility !== 'hidden' && style.display !== 'none'
+        && surface.element.getClientRects().length > 0
+        && intersects(rect, this.viewport.x, this.viewport.y)
         && (!anchorRect || intersectsRect(rect, anchorRect))
       if (visible)
         visibleSurfaces++
@@ -181,6 +200,16 @@ export class LiquidGlassLayer {
       surface.wasVisible = visible
       surface.mesh.visible = visible
       this.placeSurface(surface, rect)
+      // 只有明确要求裁剪的媒体区域才限制玻璃，普通定位父元素允许阴影溢出。
+      const clip = surface.element.closest<HTMLElement>('[data-glass-clip]')?.getBoundingClientRect()
+      surface.material.setClip(clip?.left ?? 0, clip?.top ?? 0, clip?.right ?? this.viewport.x, clip?.bottom ?? this.viewport.y)
+      const feedback = this.feedback.get(surface.element)
+      surface.material.setInteraction(
+        Math.max(-1, Math.min(1, (this.pointer.x - rect.left) / Math.max(rect.width, 1) * 2 - 1)),
+        Math.max(-1, Math.min(1, (this.pointer.y - rect.top) / Math.max(rect.height, 1) * 2 - 1)),
+        feedback?.hover.value ?? 0,
+        feedback?.press.value ?? 0,
+      )
       this.updateGeometry(surface, rect)
       const insideModal = document.getElementById('cart-shell')?.contains(surface.element) ?? false
       surface.material.setOpacity(this.pageOpacity(surface.element) * (insideModal ? 1 : modal))
@@ -194,17 +223,27 @@ export class LiquidGlassLayer {
         else
           surface.settleFrames = 0
       }
+      if (visible && surface.settleFrames > 0)
+        this.onInvalidate()
     }
 
     const backdrop = this.getBackdrop()
     if (this.blur && backdrop && visibleSurfaces > 0)
-      this.blur.render(backdrop, this.canvas.width, this.canvas.height)
+      this.blur.render(backdrop, this.viewport.x, this.viewport.y)
   }
 
   dispose(): void {
     if (this.disposed)
       return
     this.disposed = true
+    cancelAnimationFrame(this.animation)
+    this.root.removeEventListener('pointermove', this.handlePointer)
+    this.root.removeEventListener('pointerdown', this.handlePointer)
+    this.root.removeEventListener('pointerleave', this.handlePointerLeave)
+    window.removeEventListener('pointerup', this.handlePointerUp)
+    window.removeEventListener('pointercancel', this.handlePointerUp)
+    window.removeEventListener('blur', this.handlePointerLeave)
+    this.feedback.clear()
     this.observer?.disconnect()
     this.observer = null
     this.themeObserver?.disconnect()
@@ -218,6 +257,56 @@ export class LiquidGlassLayer {
     this.blur?.dispose()
     this.blur = null
     this.geometry.dispose()
+  }
+
+  /** 从实际命中的 HTML 控件取得交互目标，键盘焦点由浏览器绘制。 */
+  private readonly handlePointer = (event: PointerEvent): void => {
+    this.pointer = { x: event.clientX, y: event.clientY }
+    this.hovered = event.target instanceof Element
+      ? event.target.closest<HTMLElement>('[data-liquid-glass]')
+      : null
+    if (event.type === 'pointerdown')
+      this.pressed = this.hovered
+    this.startFeedback()
+    this.onInvalidate()
+  }
+
+  private readonly handlePointerUp = (): void => {
+    this.pressed = null
+    this.startFeedback()
+  }
+
+  private readonly handlePointerLeave = (): void => {
+    this.hovered = null
+    this.pressed = null
+    this.startFeedback()
+  }
+
+  /** 交互结束且弹簧静止后停止请求帧，静态页面无需持续重绘。 */
+  private startFeedback(): void {
+    if (this.animation || this.disposed)
+      return
+    this.previousTime = performance.now()
+    this.animation = requestAnimationFrame(this.animateFeedback)
+  }
+
+  private readonly animateFeedback = (now: number): void => {
+    let moving = false
+    for (const [element, feedback] of this.feedback) {
+      const hover = element === this.hovered
+        ? 1
+        : 0
+      const press = element === this.pressed && !this.reducedMotion?.matches
+        ? 1
+        : 0
+      moving = advanceSpring(feedback.hover, hover, (now - this.previousTime) / 1000) || moving
+      moving = advanceSpring(feedback.press, press, (now - this.previousTime) / 1000) || moving
+    }
+    this.previousTime = now
+    this.onInvalidate()
+    this.animation = moving
+      ? requestAnimationFrame(this.animateFeedback)
+      : 0
   }
 
   private scan(): void {
@@ -255,13 +344,15 @@ export class LiquidGlassLayer {
       canvasTransform: new DOMMatrix().translate(initial.left, initial.top),
     })
 
-    const material = createGlassMaterial(backdrop, content.external, blur.softTexture, blur.heavyTexture)
+    const material = createGlassMaterial(backdrop, content.external, blur.textures)
     material.setOptions(options)
     const mesh = new Mesh(this.geometry, material.material)
     mesh.frustumCulled = false
     mesh.renderOrder = element.closest('#cart-shell')
       ? 1000
-      : 10 + this.surfaces.size
+      : element.closest('.site-header')
+        ? 900
+        : 10 + this.surfaces.size
     mesh.visible = false
     this.scene.add(mesh)
 
@@ -301,6 +392,10 @@ export class LiquidGlassLayer {
     element.addEventListener('scroll', surface.onScroll, { capture: true, passive: true })
     element.addEventListener('transitionend', surface.onTransitionEnd)
 
+    this.feedback.set(element, {
+      hover: { value: 0, velocity: 0 },
+      press: { value: 0, velocity: 0 },
+    })
     this.surfaces.set(element, surface)
     this.placeSurface(surface, initial)
     this.updateGeometry(surface, initial)
@@ -311,6 +406,7 @@ export class LiquidGlassLayer {
     if (!this.surfaces.has(surface.element))
       return
     this.surfaces.delete(surface.element)
+    this.feedback.delete(surface.element)
     surface.resizeObserver?.disconnect()
     if (surface.retryTimer !== null) {
       window.clearTimeout(surface.retryTimer)
@@ -333,6 +429,11 @@ export class LiquidGlassLayer {
 
   private readonly handleWindowResize = (): void => {
     this.scan()
+    for (const surface of this.surfaces.values()) {
+      this.kickPaint(surface.element)
+      surface.dirty = true
+      surface.settleFrames = 4
+    }
     this.onInvalidate()
   }
 
@@ -542,10 +643,15 @@ export class LiquidGlassLayer {
     surface.lastGeometry = rect
   }
 
+  /** 强制浏览器更新嵌套 drawable 快照，供首次可见和尺寸变化后使用。 */
   private kickPaint(element: HTMLElement): void {
-    // A drawable element that first appears outside the viewport can carry an empty
-    // paint record. A transparent shadow forces the subtree to be painted.
-    element.style.boxShadow = '0 0 0 1px rgba(0, 0, 0, 0)'
+    const alternate = !this.paintToggle.has(element)
+    if (alternate)
+      this.paintToggle.add(element)
+    else
+      this.paintToggle.delete(element)
+    // 两个完全透明的阴影交替，重复进入视口也会触发新的绘制记录。
+    element.style.boxShadow = `${alternate ? 0.001 : 0}px 0 0 1px rgba(0, 0, 0, 0)`
   }
 
   private modalFactor(): number {
@@ -622,6 +728,8 @@ export class LiquidGlassLayer {
     surface.textureWidth = width
     surface.textureHeight = height
     surface.dirty = true
+    surface.settleFrames = 4
+    this.kickPaint(surface.element)
   }
 
   private upload(surface: GlassSurface): boolean {

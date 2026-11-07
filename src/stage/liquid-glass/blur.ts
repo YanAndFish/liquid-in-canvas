@@ -1,12 +1,5 @@
 import type { Texture, WebGPURenderer } from 'three/webgpu'
-import {
-  Fn,
-  texture,
-  uniform,
-  uv,
-  vec3,
-  vec4,
-} from 'three/tsl'
+import { Fn, texture, uniform, uv, vec3, vec4 } from 'three/tsl'
 import {
   BufferGeometry,
   Float32BufferAttribute,
@@ -18,153 +11,112 @@ import {
   Scene,
   Vector2,
 } from 'three/webgpu'
+import { BLUR_SIGMAS, gaussianKernel, incrementalSigma } from './gaussian'
 
-const TAPS = [0, 1, 2, 3, 4, 5, 6, 7, 8]
-const SIGMA = 4.5
-
-const KERNEL = TAPS.map(offset => Math.exp(-(offset * offset) / (2 * SIGMA * SIGMA)))
-const TOTAL = KERNEL[0]! + 2 * KERNEL.slice(1).reduce((sum, weight) => sum + weight, 0)
-
-interface TargetPair {
+/** 一层模糊的两遍绘制目标。 */
+interface BlurLevel {
+  /** 目标标准差，单位为 CSS 像素。 */
+  sigma: number
+  /** 横向卷积结果。 */
   horizontal: RenderTarget
+  /** 纵向卷积结果，也是供玻璃采样的最终纹理。 */
   vertical: RenderTarget
 }
 
-interface BlurMaterial {
-  material: MeshBasicNodeMaterial
-  sourceNode: ReturnType<typeof texture>
-}
-
+/** 创建无需深度缓存的线性颜色纹理。 */
 function createTarget(): RenderTarget {
-  return new RenderTarget(1, 1, {
-    depthBuffer: false,
-    type: HalfFloatType,
-  })
+  return new RenderTarget(1, 1, { depthBuffer: false, type: HalfFloatType })
 }
 
+/** 逐级卷积页面背景，生成与设备像素密度无关的高斯模糊纹理。 */
 export class BackdropBlur {
-  private readonly renderer: WebGPURenderer
   private readonly scene = new Scene()
   private readonly camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1)
-  private readonly horizontal: BlurMaterial
-  private readonly vertical: BlurMaterial
+  private readonly sourceNode: ReturnType<typeof texture<'vec4'>>
+  private readonly step = uniform(new Vector2())
+  private readonly material: MeshBasicNodeMaterial
   private readonly mesh: Mesh
-  private readonly direction = uniform(new Vector2(1, 0))
-  private readonly texel = uniform(new Vector2(1, 1))
-  private readonly soft: TargetPair = {
+  private readonly levels: BlurLevel[] = BLUR_SIGMAS.map(sigma => ({
+    sigma,
     horizontal: createTarget(),
     vertical: createTarget(),
-  }
+  }))
 
-  private readonly heavy: TargetPair = {
-    horizontal: createTarget(),
-    vertical: createTarget(),
-  }
-
-  private width = 0
-  private height = 0
+  private readonly renderer: WebGPURenderer
   private disposed = false
 
   constructor(renderer: WebGPURenderer, source: Texture) {
     this.renderer = renderer
-    this.horizontal = this.createMaterial(source)
-    this.vertical = this.createMaterial(this.soft.horizontal.texture)
-
+    this.sourceNode = texture(source)
+    const taps = gaussianKernel()
+    const colorNode = Fn(() => {
+      let sum = vec3(0) as unknown as ReturnType<typeof vec3>
+      for (const tap of taps) {
+        const sample = this.sourceNode.sample(uv().add(this.step.mul(tap.offset))).rgb
+        sum = sum.add(sample.mul(tap.weight)) as unknown as ReturnType<typeof vec3>
+      }
+      return vec4(sum, 1)
+    })()
+    this.material = new MeshBasicNodeMaterial({ depthTest: false, depthWrite: false, toneMapped: false })
+    this.material.colorNode = colorNode
     const geometry = new BufferGeometry()
     geometry.setAttribute('position', new Float32BufferAttribute([-1, 3, 0, -1, -1, 0, 3, -1, 0], 3))
     geometry.setAttribute('uv', new Float32BufferAttribute([0, -1, 0, 1, 2, 1], 2))
-    this.mesh = new Mesh(geometry, this.horizontal.material)
+    this.mesh = new Mesh(geometry, this.material)
     this.mesh.frustumCulled = false
     this.scene.add(this.mesh)
   }
 
-  get softTexture(): Texture {
-    return this.soft.vertical.texture
+  /** 按标准差从小到大返回模糊纹理。 */
+  get textures(): Texture[] {
+    return this.levels.map(level => level.vertical.texture)
   }
 
-  get heavyTexture(): Texture {
-    return this.heavy.vertical.texture
-  }
-
+  /** 使用 CSS 视口尺寸计算采样间距，依次生成各级模糊。 */
   render(source: Texture, width: number, height: number): void {
-    if (this.disposed)
+    if (this.disposed || width < 1 || height < 1)
       return
-    this.resize(width, height)
-    if (this.width < 1 || this.height < 1)
-      return
-
-    this.horizontal.sourceNode.value = source
-    this.mesh.material = this.horizontal.material
-    this.pass(this.soft.horizontal, 1, 0)
-    this.pass(this.soft.vertical, 0, 1)
-    this.horizontal.sourceNode.value = source
-    this.mesh.material = this.horizontal.material
-    this.pass(this.heavy.horizontal, 1, 0)
-    this.pass(this.heavy.vertical, 0, 1)
-    this.renderer.setRenderTarget(null)
+    const previousTarget = this.renderer.getRenderTarget()
+    let input = source
+    let previousSigma = 0
+    try {
+      for (const level of this.levels) {
+        // 上一级已移除高频细节，因此较宽的模糊可以使用较小的纹理。
+        const downsample = Math.min(level.sigma, 16)
+        const targetWidth = Math.max(1, Math.ceil(width / downsample))
+        const targetHeight = Math.max(1, Math.ceil(height / downsample))
+        level.horizontal.setSize(targetWidth, targetHeight)
+        level.vertical.setSize(targetWidth, targetHeight)
+        const sigma = incrementalSigma(previousSigma, level.sigma)
+        this.pass(input, level.horizontal, sigma / width, 0)
+        this.pass(level.horizontal.texture, level.vertical, 0, sigma / height)
+        input = level.vertical.texture
+        previousSigma = level.sigma
+      }
+    }
+    finally {
+      this.renderer.setRenderTarget(previousTarget)
+    }
   }
 
+  /** 释放卷积材质、几何体与所有模糊纹理。 */
   dispose(): void {
     if (this.disposed)
       return
     this.disposed = true
-    this.renderer.setRenderTarget(null)
-    this.soft.horizontal.dispose()
-    this.soft.vertical.dispose()
-    this.heavy.horizontal.dispose()
-    this.heavy.vertical.dispose()
-    this.horizontal.material.dispose()
-    this.vertical.material.dispose()
+    for (const level of this.levels) {
+      level.horizontal.dispose()
+      level.vertical.dispose()
+    }
+    this.material.dispose()
     this.mesh.geometry.dispose()
   }
 
-  private createMaterial(source: Texture): BlurMaterial {
-    const sourceNode = texture(source)
-    const colorNode = Fn(() => {
-      const step = this.texel.mul(this.direction)
-      let sum = vec3(0) as unknown as ReturnType<typeof vec3>
-      for (const offset of TAPS) {
-        const weight = KERNEL[offset]! / TOTAL
-        sum = sum.add(sourceNode.sample(uv().add(step.mul(offset))).rgb.mul(weight)) as unknown as ReturnType<typeof vec3>
-        if (offset > 0)
-          sum = sum.add(sourceNode.sample(uv().sub(step.mul(offset))).rgb.mul(weight)) as unknown as ReturnType<typeof vec3>
-      }
-      return vec4(sum, 1)
-    })()
-    const material = new MeshBasicNodeMaterial({
-      depthTest: false,
-      depthWrite: false,
-      toneMapped: false,
-    })
-    material.colorNode = colorNode
-    return { material, sourceNode }
-  }
-
-  private pass(target: RenderTarget, x: number, y: number): void {
-    if (y > 0) {
-      this.vertical.sourceNode.value = target === this.soft.vertical
-        ? this.soft.horizontal.texture
-        : this.heavy.horizontal.texture
-      this.mesh.material = this.vertical.material
-    }
-    this.direction.value.set(x, y)
-    this.texel.value.set(1 / target.width, 1 / target.height)
+  /** 沿指定方向执行一遍卷积，偏移量使用归一化纹理坐标。 */
+  private pass(source: Texture, target: RenderTarget, x: number, y: number): void {
+    this.sourceNode.value = source
+    this.step.value.set(x, y)
     this.renderer.setRenderTarget(target)
     this.renderer.render(this.scene, this.camera)
-  }
-
-  private resize(width: number, height: number): void {
-    const nextSoftWidth = Math.max(1, Math.floor(width / 4))
-    const nextSoftHeight = Math.max(1, Math.floor(height / 4))
-    const nextHeavyWidth = Math.max(1, Math.floor(width / 8))
-    const nextHeavyHeight = Math.max(1, Math.floor(height / 8))
-    if (this.width === width && this.height === height)
-      return
-    this.width = width
-    this.height = height
-    this.soft.horizontal.setSize(nextSoftWidth, nextSoftHeight)
-    this.soft.vertical.setSize(nextSoftWidth, nextSoftHeight)
-    this.heavy.horizontal.setSize(nextHeavyWidth, nextHeavyHeight)
-    this.heavy.vertical.setSize(nextHeavyWidth, nextHeavyHeight)
   }
 }

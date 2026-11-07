@@ -1,4 +1,7 @@
 export const ICONS = {
+  play: 'M8 5l11 7-11 7V5Z',
+  pause: 'M9 5v14M15 5v14',
+  adjust: 'M4 7h8M16 7h4M4 17h3M11 17h9M12 4v6M7 14v6',
   bag: 'M6.5 8h11l-.9 12.5h-9.2L6.5 8Zm3.2 0V6a2.3 2.3 0 0 1 4.6 0v2',
   close: 'M6 6l12 12M18 6 6 18',
   plus: 'M12 5v14M5 12h14',
