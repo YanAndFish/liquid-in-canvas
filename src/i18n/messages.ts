@@ -334,8 +334,92 @@ export const messages = {
     zh: '日常器物。',
   },
   'footer.note': {
-    en: '© 2026 STILL. A demo storefront. No orders are fulfilled. Built as a stage for liquid glass over live HTML in canvas. Stage 01, storefront foundation.',
-    zh: '© 2026 STILL。演示商店，不处理真实订单。本项目用于测试 HTML-in-Canvas 上的液态玻璃效果。阶段 01，商店基础。',
+    en: '© 2026 STILL. A demo storefront. No orders are fulfilled. Built as a stage for liquid glass over live HTML in canvas. Stage 02, live HTML in one WebGPU canvas.',
+    zh: '© 2026 STILL。演示商店，不处理真实订单。本项目用于测试 HTML-in-Canvas 上的液态玻璃效果。阶段 02，实时 HTML 合成在一张 WebGPU 画布中。',
+  },
+  'support.eyebrow': {
+    en: 'Stage 02 · Support',
+    zh: '阶段 02 · 支持',
+  },
+  'support.title': {
+    en: 'This browser cannot run the STILL stage.',
+    zh: '这个浏览器无法运行 STILL 舞台。',
+  },
+  'support.body': {
+    en: 'The storefront is live HTML composited inside a WebGPU canvas. This browser is missing one or more capabilities, so there is no storefront to show.',
+    zh: '商店界面是合成在一张 WebGPU 画布里的实时 HTML。这个浏览器缺少一项或多项能力，因此没有可显示的商店。',
+  },
+  'support.initTitle': {
+    en: 'The stage could not start.',
+    zh: '舞台无法启动。',
+  },
+  'support.initBody': {
+    en: 'This browser reports the required capabilities, but the WebGPU canvas could not initialize. Reload, or check that hardware acceleration is on.',
+    zh: '浏览器声称支持所需能力，但 WebGPU 画布初始化失败。请重新加载，或确认已开启硬件加速。',
+  },
+  'support.runtimeTitle': {
+    en: 'The stage stopped.',
+    zh: '舞台已停止。',
+  },
+  'support.runtimeBody': {
+    en: 'The WebGPU canvas failed while rendering. Reload to try again.',
+    zh: 'WebGPU 画布在渲染时出错。请重新加载再试。',
+  },
+  'support.checks': {
+    en: 'Capability check',
+    zh: '能力检查',
+  },
+  'support.htmlInCanvas': {
+    en: 'HTML-in-Canvas',
+    zh: 'HTML-in-Canvas',
+  },
+  'support.webgpu': {
+    en: 'WebGPU',
+    zh: 'WebGPU',
+  },
+  'support.upload': {
+    en: 'Element upload',
+    zh: '元素上传',
+  },
+  'support.available': {
+    en: 'Available',
+    zh: '可用',
+  },
+  'support.missing': {
+    en: 'Missing',
+    zh: '缺失',
+  },
+  'support.requirementTitle': {
+    en: 'What you need',
+    zh: '你需要',
+  },
+  'support.requirement': {
+    en: 'Desktop Chrome 157 or newer with WebGPU enabled. The storefront has no HTML fallback.',
+    zh: '桌面版 Chrome 157 或更新版本，并启用 WebGPU。商店没有 HTML 回退版本。',
+  },
+  'support.browser': {
+    en: 'Current browser',
+    zh: '当前浏览器',
+  },
+  'support.details': {
+    en: 'Details',
+    zh: '详情',
+  },
+  'support.reload': {
+    en: 'Reload',
+    zh: '重新加载',
+  },
+  'support.download': {
+    en: 'Get Chrome',
+    zh: '获取 Chrome',
+  },
+  'support.docs': {
+    en: 'Read the API docs',
+    zh: '阅读 API 文档',
+  },
+  'support.note': {
+    en: 'STILL stage 02, live HTML in one WebGPU canvas.',
+    zh: 'STILL 阶段 02，实时 HTML 合成在一张 WebGPU 画布中。',
   },
 } as const satisfies Record<string, LocalizedText>
 

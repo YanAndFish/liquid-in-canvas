@@ -14,21 +14,24 @@ const cartOpen = ref(false)
 </script>
 
 <template>
-  <div class="min-h-screen">
-    <a
-      href="#main"
-      class="sr-only z-50 rounded-full bg-bone px-4 py-2 text-ink focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
-    >
-      {{ t('nav.skip') }}
-    </a>
+  <div id="stage-scroll" class="h-full overflow-y-auto overscroll-none">
+    <div class="min-h-full flex flex-col">
+      <a
+        href="#main"
+        class="sr-only z-50 rounded-full bg-bone px-4 py-2 text-ink focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+      >
+        {{ t('nav.skip') }}
+      </a>
 
-    <SiteHeader :count="totals.itemCount" @open-cart="cartOpen = true" />
+      <SiteHeader :count="totals.itemCount" @open-cart="cartOpen = true" />
 
-    <main id="main" tabindex="-1" class="mx-auto max-w-[1240px] px-5 sm:px-8">
-      <RouterView />
-    </main>
+      <main id="main" tabindex="-1" class="mx-auto max-w-[1240px] w-full flex-1 px-5 sm:px-8">
+        <RouterView />
+      </main>
 
-    <SiteFooter />
-    <CartDrawer v-model:open="cartOpen" />
+      <SiteFooter />
+    </div>
   </div>
+
+  <CartDrawer v-model:open="cartOpen" />
 </template>

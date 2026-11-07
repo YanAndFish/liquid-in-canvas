@@ -1,10 +1,16 @@
 # STILL
 
-A storefront built as a test bench for Apple's Liquid Glass effect over live HTML rendered into canvas. This is stage 01: the storefront foundation. The canvas host and the refraction shader are not built yet.
+A storefront built as a test bench for Apple's Liquid Glass effect over live HTML rendered into canvas. This is stage 02: the whole page is live HTML composited through a three.js WebGPU canvas.
 
 The store sells twelve home and daily objects. It ships in English and Simplified Chinese, with dark and light themes. It has category filters, product detail pages, a cart that survives reload, and a demo checkout. Product photography was generated for this storefront and stored as WebP under `public/products/`.
 
 ![STILL storefront in the light theme](docs/preview.webp)
+
+## Requirements
+
+Desktop Chrome 157 or newer with WebGPU. Unsupported browsers see a support notice that explains what is missing. There is no fallback storefront.
+
+![STILL support notice](docs/support-notice.webp)
 
 ## Run it
 
@@ -35,11 +41,13 @@ Open http://localhost:5173.
 
 ## Structure
 
-`src/pages/` holds the route views: `HomeView`, `ProductView`, and `NotFoundView`.
+`src/pages/` holds the route views: `HomeView`, `ProductView`, and `NotFoundView`. `UnsupportedView` is the standalone support page, mounted outside the router when the browser lacks the canvas APIs.
 
 `src/components/` is grouped by feature. `layout/` holds the header and footer. `home/` holds the hero, collection, filter, and approach. `product/` holds the card and grid. `cart/` holds the drawer and line row. `ui/` holds shared icons.
 
 `src/router/` exports the route table and the browser router. `routes.ts` is separate so tests can build a memory router from the same table.
+
+`src/stage/` owns the canvas host. `support.ts` detects HTML-in-Canvas, WebGPU, and `drawElementImageToTexture`. `CanvasStage.ts` creates the three.js WebGPU renderer, uploads the drawable root on every `paint` event, and renders a full-screen quad. `scroll.ts` resolves the inner scroller. `src/types/html-in-canvas.d.ts` declares the browser APIs that TypeScript does not ship yet.
 
 `src/stores/cart.ts` is the cart store. It exposes readonly state, derived lines and totals, and the actions `add`, `increment`, `decrement`, `remove`, and `clear`. `createCartStore` is provided through `CART_KEY`, so components call `useCart()` and no state library is needed.
 
@@ -49,7 +57,7 @@ Open http://localhost:5173.
 
 `src/styles/main.css` defines the palette as CSS variables on `html`. `useTheme()` writes `data-theme` on the same element, persists the choice under `still.theme`, and updates the browser theme color. The first paint reads the stored theme from a small inline script in `index.html`, so the page does not flash the wrong palette.
 
-`tests/` holds every test, split into `domain/`, `stores/`, `i18n/`, and `app/`. Colocated test files are gone.
+`tests/` holds every test, split into `domain/`, `stores/`, `i18n/`, `stage/`, and `app/`. Colocated test files are gone.
 
 ## Cart model
 
@@ -59,8 +67,12 @@ The cart persists under `still.cart.v1`. Reads validate every line: unknown ids,
 
 ## Stack
 
-Vite 8, Vue 3.5, Vue Router 5, TypeScript 6, UnoCSS, Vitest with jsdom, ESLint with `@antfu/eslint-config`, and pnpm. CI runs lint, typecheck, test, and build on every push and pull request.
+Vite 8, Vue 3.5, Vue Router 5, TypeScript 6, UnoCSS, three.js r187 with the WebGPU renderer, Vitest with jsdom, ESLint with `@antfu/eslint-config`, and pnpm. CI runs lint, typecheck, test, and build on every push and pull request.
 
-## Not built yet
+## Stage 02
 
-The next stage wraps the collection stage in `<canvas layoutsubtree>`, captures it with `drawElementImage()`, and draws a WebGL glass layer over the live texture. That path needs Chrome 157 or later, where HTML-in-Canvas is on by default.
+The drawable root is `#app`, with explicit `100dvw` and `100dvh` sizes because canvas descendants are laid out without document flow. Inside it, `#stage-scroll` is the only scroller, so routing and the cart lock move the inner element instead of the window.
+
+Every canvas `paint` event uploads the root with `drawElementImageToTexture()` into an `rgba8unorm-srgb` texture, then renders a full-screen mesh with `MeshBasicMaterial`. The stage wraps a `GPUTexture` in three's `ExternalTexture` instead of using `HTMLTexture`, because three's WebGPU path for `HTMLTexture` still calls the removed `copyElementImageToTexture` API.
+
+The liquid-glass refraction shader is the next stage.

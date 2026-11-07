@@ -81,6 +81,41 @@ body {
   transition: background-color 240ms ease, color 240ms ease;
 }
 
+#stage {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100dvw;
+  height: 100dvh;
+  background: var(--bg);
+}
+
+#app[drawable] {
+  width: 100dvw;
+  height: 100dvh;
+  overflow: hidden;
+  background:
+    radial-gradient(80rem 42rem at 78% -12%, var(--wash-a), transparent 62%),
+    radial-gradient(58rem 34rem at 6% 4%, var(--wash-b), transparent 58%),
+    var(--bg);
+}
+
+#app:not([drawable]) {
+  height: 100dvh;
+  overflow-y: auto;
+}
+
+#stage-scroll {
+  height: 100%;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+#stage-scroll.is-locked {
+  overflow: hidden;
+}
+
 h1,
 h2,
 h3,
@@ -115,10 +150,6 @@ svg {
   outline-offset: 3px;
 }
 
-body.is-locked {
-  overflow: hidden;
-}
-
 .font-display {
   font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Songti SC', 'Noto Serif SC', Georgia, serif;
   font-weight: 400;
@@ -135,6 +166,10 @@ body.is-locked {
 
 @media (prefers-reduced-motion: reduce) {
   html {
+    scroll-behavior: auto;
+  }
+
+  #stage-scroll {
     scroll-behavior: auto;
   }
 
