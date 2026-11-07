@@ -108,6 +108,8 @@ body {
 #stage-scroll {
   height: 100%;
   overflow-y: auto;
+  /* Reserve the scrollbar so the cart lock does not shift the page. */
+  scrollbar-gutter: stable;
   scroll-behavior: smooth;
   overscroll-behavior: contain;
 }
