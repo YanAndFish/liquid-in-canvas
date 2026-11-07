@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>玻璃内容可见性检查</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; font-family: system-ui, sans-serif; }
+    canvas, #app { width: 100vw; height: 100vh; }
+    #app { position: relative; overflow: clip; background: repeating-linear-gradient(35deg, #1b6880 0 32px, #d2a467 32px 64px); }
+    .anchor { position: absolute; left: 40px; top: -40px; width: 300px; height: 120px; }
+    .glass { width: 100%; height: 100%; padding: 24px; color: white; font-size: 24px; }
+    .tall { left: 400px; top: 100px; width: 300px; height: calc(100vh + 100px); }
+    .tall p { margin: 0 0 100px; }
+    #controls { position: fixed; bottom: 20px; left: 20px; display: flex; gap: 12px; padding: 16px; background: white; border-radius: 12px; }
+    button { padding: 8px 12px; }
+  </style>
+</head>
+<body>
+<canvas id="stage" content="drawable"><div id="app" drawable>
+  <div class="anchor" id="moving"><div class="glass" data-liquid-glass data-glass-radius="24">部分可见的内容<br>下半行应该可见</div></div>
+  <div class="anchor tall"><div class="glass" data-liquid-glass data-glass-radius="24"><p>超过视口的面板</p><p>中间内容应该可见</p><p>滚动与裁剪检查</p></div></div>
+</div></canvas>
+<div id="controls"><button id="toggle">移出视口</button><button id="full">完全显示</button><button id="content">更新文字</button><span id="status">等待绘制</span></div>
+<script type="module">
+  import { CanvasStage } from '/src/stage/CanvasStage.ts'
+  const canvas = document.querySelector('#stage')
+  const root = document.querySelector('#app')
+  const moving = document.querySelector('#moving')
+  const status = document.querySelector('#status')
+  const stage = new CanvasStage({ canvas, onFault: error => { status.textContent = String(error) } })
+  await stage.init()
+  stage.start(root)
+  status.textContent = '检查两块玻璃上的文字'
+  let hidden = false
+  document.querySelector('#toggle').onclick = event => {
+    hidden = !hidden
+    moving.style.top = hidden ? '-200px' : '-40px'
+    event.target.textContent = hidden ? '部分显示' : '移出视口'
+  }
+  document.querySelector('#full').onclick = () => {
+    hidden = false
+    moving.style.top = '140px'
+    document.querySelector('#toggle').textContent = '移出视口'
+  }
+  document.querySelector('#content').onclick = () => {
+    moving.firstElementChild.textContent = '更新后的文字应该可见'
+  }
+  window.addEventListener('pagehide', () => stage.dispose(), { once: true })
+</script>
+</body>
+</html>

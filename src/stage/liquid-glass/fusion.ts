@@ -16,8 +16,10 @@ export interface VolumeSurface {
   options: GlassOptions
   /** 祖先裁剪范围，依次为左、上、右、下。 */
   clip: readonly [number, number, number, number]
-  /** 页面切换或遮罩产生的透明度。 */
+  /** 页面切换产生的透明度。 */
   opacity: number
+  /** 遮罩下的亮度比例。背景快照已压暗，此值只作用于染色和高光。 */
+  brightness: number
   /** 同层内的 HTML 绘制顺序，归一化到 0–1。 */
   paintOrder: number
   /** 按压弹簧的当前强度。 */

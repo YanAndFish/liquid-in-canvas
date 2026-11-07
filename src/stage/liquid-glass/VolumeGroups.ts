@@ -1,7 +1,7 @@
 import type { Node, Scene, Texture } from 'three/webgpu'
 import type { VolumeSurface } from './fusion'
 import { clamp, dot, exp, float, Fn, If, max, mix, pow, reflect, screenUV, smoothstep, texture, uniform, vec2, vec3, vec4 } from 'three/tsl'
-import { Color, Mesh, MeshBasicNodeMaterial, PlaneGeometry, Vector2, Vector4 } from 'three/webgpu'
+import { Color, Mesh, MeshBasicNodeMaterial, PlaneGeometry, SRGBColorSpace, Vector2, Vector4 } from 'three/webgpu'
 import { glassRenderOrder, groupGlassSurfaces } from './fusion'
 import { BLUR_SIGMAS } from './gaussian'
 import { createVolumeFunctions } from './volume-shader'
@@ -75,6 +75,7 @@ export class VolumeGroups {
     const viewport = uniform(new Vector2(1, 1))
     const ceiling = uniform(200)
     const shadow = uniform(new Vector2(0.2, 28))
+    const brightness = uniform(1)
     const fields = members.map(() => ({
       box: uniform(new Vector4()),
       radius: uniform(new Vector4()),
@@ -181,7 +182,7 @@ export class VolumeGroups {
         const highlight = light.mul(0.035).mul(edge).add(edge.mul(0.035)).mul(optics.w)
         const outline = float(functions.projection({ xy, ...args }) as Node<'float'>)
         const coverage = float(1).sub(smoothstep(-0.7, 0.3, outline))
-        result.assign(vec4(reflected.add(vec3(highlight)), colored.a.mul(coverage)))
+        result.assign(vec4(reflected.add(vec3(highlight.mul(brightness))), colored.a.mul(coverage)))
       })
       let clipCoverage: Node<'float'> = float(0)
       for (const field of fields) {
@@ -204,6 +205,8 @@ export class VolumeGroups {
         let highest = 0
         let shadowAlpha = 0
         let shadowSize = 0
+        // 背景已经含有遮罩。仅压暗新增的染色与高光，玻璃覆盖率保持不变。
+        brightness.value = new Color().setRGB(current[0]!.brightness, current[0]!.brightness, current[0]!.brightness, SRGBColorSpace).r
         current.forEach((member, i) => {
           const field = fields[i]!
           const options = member.options
@@ -213,7 +216,7 @@ export class VolumeGroups {
           field.depth.value.set(halfDepth, options.elevation, options.fusion, 0)
           field.clip.value.set(...member.clip)
           field.appearance.value.set(options.blur * options.blur, options.dispersion, options.tintAlpha, options.specular)
-          field.tint.value.set(options.tint)
+          field.tint.value.set(options.tint).multiplyScalar(brightness.value)
           field.opacity.value = member.opacity
           shadowAlpha = Math.max(shadowAlpha, options.shadow * member.opacity)
           shadowSize = Math.max(shadowSize, options.shadowSize)

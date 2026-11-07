@@ -6,7 +6,10 @@ export default mergeConfig(config, {
   build: {
     sourcemap: true,
     rollupOptions: {
-      input: fileURLToPath(new URL('./index.html', import.meta.url)),
+      input: [
+        fileURLToPath(new URL('./index.html', import.meta.url)),
+        fileURLToPath(new URL('./scroll.html', import.meta.url)),
+      ],
     },
   },
 })

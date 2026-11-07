@@ -33,6 +33,12 @@ interface GlassSurface {
   lastGeometry: Rect | null
   dirty: boolean
   settleFrames: number
+  /** 等待浏览器为这块玻璃生成新的绘制记录。 */
+  paintPending: boolean
+  /** 当前纹理是否曾在整块玻璃可见时上传。 */
+  contentComplete: boolean
+  /** 上一帧是否与视口相交。 */
+  visible: boolean
   /** 上一帧是否完整位于视口与媒体裁剪区域内。 */
   fullyVisible: boolean
   addedDrawable: boolean
@@ -181,6 +187,16 @@ export class LiquidGlassLayer {
         continue
       }
 
+      const contentChanged = changed.some(element => surface.element.contains(element))
+      if (contentChanged) {
+        surface.paintPending = false
+        surface.dirty = true
+        if (surface.retryTimer !== null) {
+          window.clearTimeout(surface.retryTimer)
+          surface.retryTimer = null
+        }
+      }
+
       const rect = this.measure(surface)
 
       const anchorRect = surface.anchor?.isConnected
@@ -197,15 +213,22 @@ export class LiquidGlassLayer {
         && rect.left + rect.width <= Math.min(this.viewport.x, clip?.right ?? this.viewport.x) + 0.5
         && rect.top + rect.height <= Math.min(this.viewport.y, clip?.bottom ?? this.viewport.y) + 0.5
       const size = this.textureSize(surface)
-      if (fullyVisible && (size.width !== surface.textureWidth || size.height !== surface.textureHeight))
+      if (visible && (size.width !== surface.textureWidth || size.height !== surface.textureHeight))
         this.resizeSurface(surface, size.width, size.height)
       if (visible)
         visibleSurfaces++
-      if (fullyVisible && !surface.fullyVisible) {
-        this.kickPaint(surface.element)
+      if (visible && (!surface.visible || (fullyVisible && !surface.fullyVisible))) {
+        this.kickPaint(surface)
         surface.dirty = true
         surface.settleFrames = 4
       }
+      if (visible && !surface.contentComplete && surface.lastGeometry
+        && (rect.left !== surface.lastGeometry.left || rect.top !== surface.lastGeometry.top)) {
+        surface.dirty = true
+        if (!contentChanged && !surface.paintPending)
+          this.kickPaint(surface)
+      }
+      surface.visible = visible
       surface.fullyVisible = fullyVisible
       surface.mesh.visible = visible
       this.placeSurface(surface, rect)
@@ -214,8 +237,9 @@ export class LiquidGlassLayer {
       const feedback = this.feedback.get(surface.element)
       this.updateGeometry(surface, rect)
       const insideModal = document.getElementById('cart-shell')?.contains(surface.element) ?? false
-      const opacity = this.pageOpacity(surface.element) * (insideModal ? 1 : modal)
-      surface.material.setOpacity(opacity)
+      const opacity = this.pageOpacity(surface.element)
+      const brightness = insideModal ? 1 : modal
+      surface.material.setOpacity(opacity * brightness)
       surface.mesh.renderOrder = glassRenderOrder(surface.options.layer) + (surface.element.closest('.site-header')
         ? 2
         : 1)
@@ -232,22 +256,24 @@ export class LiquidGlassLayer {
             clip?.bottom ?? 100000,
           ],
           opacity,
+          brightness,
           paintOrder: 0,
           press: feedback?.press.value ?? 0,
         })
       }
 
-      if (changed.some(element => surface.element.contains(element)))
-        surface.dirty = true
-
-      // 部分离屏时浏览器可能只记录可见内容，保留上一张完整纹理供滚动合成。
-      if (fullyVisible && (surface.dirty || surface.settleFrames > 0)) {
-        if (this.upload(surface))
+      // 有完整快照时保留离屏部分；首次只有部分可见时也要上传，否则文字会一直为空。
+      const canUpload = visible && (fullyVisible || !surface.contentComplete || contentChanged)
+      if (canUpload && !surface.paintPending && (surface.dirty || surface.settleFrames > 0)) {
+        if (this.upload(surface)) {
+          surface.contentComplete = fullyVisible
           surface.settleFrames = Math.max(0, surface.settleFrames - 1)
-        else
+        }
+        else {
           surface.settleFrames = 0
+        }
       }
-      if (fullyVisible && surface.settleFrames > 0)
+      if (canUpload && !surface.paintPending && surface.settleFrames > 0)
         this.onInvalidate()
     }
 
@@ -405,6 +431,9 @@ export class LiquidGlassLayer {
       lastGeometry: null,
       dirty: true,
       settleFrames: 4,
+      paintPending: false,
+      contentComplete: false,
+      visible: false,
       fullyVisible: false,
       addedDrawable,
       resizeObserver: null,
@@ -464,7 +493,7 @@ export class LiquidGlassLayer {
   private readonly handleWindowResize = (): void => {
     this.scan()
     for (const surface of this.surfaces.values()) {
-      this.kickPaint(surface.element)
+      this.kickPaint(surface)
       surface.dirty = true
       surface.settleFrames = 4
     }
@@ -677,7 +706,9 @@ export class LiquidGlassLayer {
   }
 
   /** 强制浏览器更新嵌套 drawable 快照，供首次可见和尺寸变化后使用。 */
-  private kickPaint(element: HTMLElement): void {
+  private kickPaint(surface: GlassSurface): void {
+    const element = surface.element
+    surface.paintPending = true
     const alternate = !this.paintToggle.has(element)
     if (alternate)
       this.paintToggle.add(element)
@@ -685,6 +716,8 @@ export class LiquidGlassLayer {
       this.paintToggle.delete(element)
     // 两个完全透明的阴影交替，重复进入视口也会触发新的绘制记录。
     element.style.boxShadow = `${alternate ? 0.001 : 0}px 0 0 1px rgba(0, 0, 0, 0)`
+    this.scheduleRetry(surface)
+    this.onInvalidate()
   }
 
   private modalFactor(): number {
@@ -761,8 +794,9 @@ export class LiquidGlassLayer {
     surface.textureWidth = width
     surface.textureHeight = height
     surface.dirty = true
+    surface.contentComplete = false
     surface.settleFrames = 4
-    this.kickPaint(surface.element)
+    this.kickPaint(surface)
   }
 
   private upload(surface: GlassSurface): boolean {
@@ -795,7 +829,8 @@ export class LiquidGlassLayer {
       if (!this.surfaces.has(surface.element))
         return
       surface.dirty = true
-      this.onInvalidate()
+      if (surface.visible)
+        this.kickPaint(surface)
     }, 180)
   }
 

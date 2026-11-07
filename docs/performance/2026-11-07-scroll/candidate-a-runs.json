@@ -1,0 +1,452 @@
+[
+  {
+    "version": "baseline",
+    "round": 1,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": false,
+    "elapsed": 8016.5,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2200,
+    "draw": {
+      "count": 186,
+      "mean": 2.664516124674069,
+      "p50": 2.5,
+      "p95": 4.1000001430511475,
+      "max": 6
+    },
+    "paintInterval": {
+      "count": 185,
+      "mean": 43.07513513436189,
+      "p50": 41.89999985694885,
+      "p95": 61.60000014305115,
+      "max": 68.09999990463257
+    },
+    "animationInterval": {
+      "count": 185,
+      "mean": 43.06216216216216,
+      "p50": 49,
+      "p95": 66.69999999999709,
+      "max": 67.5
+    },
+    "longAnimationFrames": 45,
+    "gpu": {
+      "count": 0,
+      "mean": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "errors": []
+  },
+  {
+    "version": "candidate",
+    "round": 1,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": false,
+    "elapsed": 8049.9000000000015,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2191,
+    "draw": {
+      "count": 196,
+      "mean": 2.630612245627812,
+      "p50": 2.4000000953674316,
+      "p95": 4.299999952316284,
+      "max": 5.799999952316284
+    },
+    "paintInterval": {
+      "count": 195,
+      "mean": 41.04461538485992,
+      "p50": 38.700000047683716,
+      "p95": 59.5,
+      "max": 68
+    },
+    "animationInterval": {
+      "count": 195,
+      "mean": 41.02512820512821,
+      "p50": 33.400000000001455,
+      "p95": 66.60000000000036,
+      "max": 67.5
+    },
+    "longAnimationFrames": 28,
+    "gpu": {
+      "count": 0,
+      "mean": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "errors": []
+  },
+  {
+    "version": "baseline",
+    "round": 2,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": false,
+    "elapsed": 8016.5999999999985,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2191,
+    "draw": {
+      "count": 222,
+      "mean": 2.4927927867786304,
+      "p50": 2.299999952316284,
+      "p95": 3.8000001907348633,
+      "max": 5
+    },
+    "paintInterval": {
+      "count": 221,
+      "mean": 36.0316742081448,
+      "p50": 34.299999952316284,
+      "p95": 51,
+      "max": 60.700000047683716
+    },
+    "animationInterval": {
+      "count": 221,
+      "mean": 36.047963800904974,
+      "p50": 33.39999999999782,
+      "p95": 50.100000000000364,
+      "max": 66.60000000000036
+    },
+    "longAnimationFrames": 14,
+    "gpu": {
+      "count": 0,
+      "mean": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "errors": []
+  },
+  {
+    "version": "candidate",
+    "round": 2,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": false,
+    "elapsed": 8000.799999999999,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2200,
+    "draw": {
+      "count": 256,
+      "mean": 2.176562499254942,
+      "p50": 2,
+      "p95": 3.3999998569488525,
+      "max": 4.5
+    },
+    "paintInterval": {
+      "count": 255,
+      "mean": 31.26000000074798,
+      "p50": 31.5,
+      "p95": 43.10000014305115,
+      "max": 61
+    },
+    "animationInterval": {
+      "count": 255,
+      "mean": 31.241176470588236,
+      "p50": 33.29999999999927,
+      "p95": 50,
+      "max": 65.89999999999964
+    },
+    "longAnimationFrames": 5,
+    "gpu": {
+      "count": 0,
+      "mean": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "errors": []
+  },
+  {
+    "version": "baseline",
+    "round": 3,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": false,
+    "elapsed": 8017.500000000002,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2191,
+    "draw": {
+      "count": 271,
+      "mean": 2.1926199342931767,
+      "p50": 2,
+      "p95": 3.5999999046325684,
+      "max": 5
+    },
+    "paintInterval": {
+      "count": 270,
+      "mean": 29.586666666136846,
+      "p50": 28.799999952316284,
+      "p95": 42.700000047683716,
+      "max": 53.59999990463257
+    },
+    "animationInterval": {
+      "count": 270,
+      "mean": 29.571111111111108,
+      "p50": 33.29999999999927,
+      "p95": 49.899999999999636,
+      "max": 66.70000000000073
+    },
+    "longAnimationFrames": 6,
+    "gpu": {
+      "count": 0,
+      "mean": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "errors": []
+  },
+  {
+    "version": "candidate",
+    "round": 3,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": false,
+    "elapsed": 8016.5,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2191,
+    "draw": {
+      "count": 254,
+      "mean": 2.2059055059913577,
+      "p50": 2.0999999046325684,
+      "p95": 3.5,
+      "max": 4.799999952316284
+    },
+    "paintInterval": {
+      "count": 253,
+      "mean": 31.552569170714367,
+      "p50": 31.100000143051147,
+      "p95": 45.10000014305115,
+      "max": 81
+    },
+    "animationInterval": {
+      "count": 253,
+      "mean": 31.553754940711457,
+      "p50": 33.30000000000109,
+      "p95": 50,
+      "max": 66.59999999999854
+    },
+    "longAnimationFrames": 9,
+    "gpu": {
+      "count": 0,
+      "mean": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "errors": []
+  },
+  {
+    "version": "baseline",
+    "round": 4,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": false,
+    "elapsed": 8033.299999999999,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2191.5,
+    "draw": {
+      "count": 254,
+      "mean": 2.1185039375710675,
+      "p50": 2,
+      "p95": 3.3000001907348633,
+      "max": 4.199999809265137
+    },
+    "paintInterval": {
+      "count": 253,
+      "mean": 31.59881422924901,
+      "p50": 31.5,
+      "p95": 44,
+      "max": 59.299999952316284
+    },
+    "animationInterval": {
+      "count": 253,
+      "mean": 31.61620553359683,
+      "p50": 33.29999999999927,
+      "p95": 50,
+      "max": 66.79999999999927
+    },
+    "longAnimationFrames": 10,
+    "gpu": {
+      "count": 0,
+      "mean": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "errors": []
+  },
+  {
+    "version": "candidate",
+    "round": 4,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": false,
+    "elapsed": 8016.5,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2200,
+    "draw": {
+      "count": 254,
+      "mean": 2.2240157427750233,
+      "p50": 2.0999999046325684,
+      "p95": 3.3999998569488525,
+      "max": 5.200000047683716
+    },
+    "paintInterval": {
+      "count": 253,
+      "mean": 31.55849802352694,
+      "p50": 30.600000143051147,
+      "p95": 45.299999952316284,
+      "max": 81.39999985694885
+    },
+    "animationInterval": {
+      "count": 253,
+      "mean": 31.55454545454545,
+      "p50": 33.29999999999927,
+      "p95": 50.100000000000364,
+      "max": 84.19999999999891
+    },
+    "longAnimationFrames": 14,
+    "gpu": {
+      "count": 0,
+      "mean": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "errors": []
+  },
+  {
+    "version": "baseline",
+    "round": 5,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": false,
+    "elapsed": 8032.299999999999,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2191,
+    "draw": {
+      "count": 246,
+      "mean": 2.308943091369257,
+      "p50": 2.200000047683716,
+      "p95": 3.4000000953674316,
+      "max": 4.5
+    },
+    "paintInterval": {
+      "count": 245,
+      "mean": 32.65061224528721,
+      "p50": 32.299999952316284,
+      "p95": 43.5,
+      "max": 53.40000009536743
+    },
+    "animationInterval": {
+      "count": 245,
+      "mean": 32.6526530612245,
+      "p50": 33.30000000000109,
+      "p95": 50,
+      "max": 50.399999999999636
+    },
+    "longAnimationFrames": 7,
+    "gpu": {
+      "count": 0,
+      "mean": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "errors": []
+  },
+  {
+    "version": "candidate",
+    "round": 5,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": false,
+    "elapsed": 8016.6,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2200,
+    "draw": {
+      "count": 242,
+      "mean": 2.117768589130118,
+      "p50": 2,
+      "p95": 3.3999998569488525,
+      "max": 5.700000047683716
+    },
+    "paintInterval": {
+      "count": 241,
+      "mean": 33.07012448073423,
+      "p50": 32.39999985694885,
+      "p95": 45.5,
+      "max": 60.200000047683716
+    },
+    "animationInterval": {
+      "count": 241,
+      "mean": 33.05228215767635,
+      "p50": 33.30000000000109,
+      "p95": 50,
+      "max": 66.70000000000073
+    },
+    "longAnimationFrames": 10,
+    "gpu": {
+      "count": 0,
+      "mean": null,
+      "p50": null,
+      "p95": null,
+      "max": null
+    },
+    "errors": []
+  }
+]

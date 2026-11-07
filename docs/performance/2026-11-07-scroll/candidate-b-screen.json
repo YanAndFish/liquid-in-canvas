@@ -1,0 +1,92 @@
+[
+  {
+    "version": "candidate-b",
+    "round": 1,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": true,
+    "elapsed": 8000,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2191,
+    "draw": {
+      "count": 191,
+      "mean": 2.479581151333155,
+      "p50": 2.299999952316284,
+      "p95": 4,
+      "max": 5.200000047683716
+    },
+    "paintInterval": {
+      "count": 190,
+      "mean": 41.93368421102825,
+      "p50": 40.09999990463257,
+      "p95": 58.10000014305115,
+      "max": 67.90000009536743
+    },
+    "animationInterval": {
+      "count": 190,
+      "mean": 41.93000000000002,
+      "p50": 34.30000000000291,
+      "p95": 66.59999999999854,
+      "max": 67.70000000000437
+    },
+    "longAnimationFrames": 36,
+    "gpu": {
+      "count": 24,
+      "mean": 21.39204266666667,
+      "p50": 20.447232,
+      "p95": 33.947648,
+      "max": 34.078720000000004
+    },
+    "errors": []
+  },
+  {
+    "version": "baseline",
+    "round": 1,
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": true,
+    "elapsed": 8066.6,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2191,
+    "draw": {
+      "count": 185,
+      "mean": 2.45783784840558,
+      "p50": 2.299999952316284,
+      "p95": 3.799999952316284,
+      "max": 4.900000095367432
+    },
+    "paintInterval": {
+      "count": 184,
+      "mean": 43.44836956521739,
+      "p50": 43.59999990463257,
+      "p95": 58,
+      "max": 63.700000047683716
+    },
+    "animationInterval": {
+      "count": 184,
+      "mean": 43.473369565217396,
+      "p50": 49,
+      "p95": 66.60000000000218,
+      "max": 67.10000000000036
+    },
+    "longAnimationFrames": 41,
+    "gpu": {
+      "count": 24,
+      "mean": 21.782528,
+      "p50": 20.512768,
+      "p95": 32.571392,
+      "max": 39.256064
+    },
+    "errors": []
+  }
+]

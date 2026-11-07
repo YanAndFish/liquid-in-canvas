@@ -13,6 +13,7 @@ function surface(id: number, left: number, layer = 0, fusion = 32): VolumeSurfac
     height: 100,
     clip: [0, 0, 1000, 1000],
     opacity: 1,
+    brightness: 1,
     paintOrder: 0,
     press: 0,
     options: {
