@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useLocale } from '@/composables/useLocale'
+import { useTheme } from '@/composables/useTheme'
 import { formatCents, FREE_SHIPPING_CENTS } from '@/domain/money'
 import { setStageScrollLocked } from '@/stage/scroll'
 import { useCart } from '@/stores/cart'
@@ -18,6 +19,7 @@ const emit = defineEmits<{
 
 const { lines, totals, increment, decrement, remove, clear } = useCart()
 const { t } = useLocale()
+const { theme } = useTheme()
 
 const phase = ref<'bag' | 'placing' | 'confirmed'>('bag')
 const panel = ref<HTMLElement | null>(null)
@@ -113,15 +115,26 @@ onBeforeUnmount(() => {
 
 <template>
   <Transition name="cart">
-    <div v-if="props.open" class="fixed inset-0 z-50">
-      <div class="absolute inset-0 bg-[var(--scrim)] backdrop-blur-sm" @click="close" />
+    <div v-if="props.open" id="cart-shell" class="fixed inset-0 z-50">
+      <div data-glass-scrim class="absolute inset-0 bg-[var(--cart-scrim)]" @click="close" />
 
       <aside
         ref="panel"
         role="dialog"
         aria-modal="true"
         aria-labelledby="cart-title"
-        class="absolute inset-y-0 right-0 max-w-[26rem] w-full flex flex-col border-l border-line bg-coal shadow-[-24px_0_80px_var(--drawer-shadow)]"
+        data-liquid-glass
+        data-glass-anchor="#cart-shell"
+        data-glass-radius="28 0 0 28"
+        :data-glass-blur="theme === 'dark' ? '18' : '28'"
+        data-glass-refraction="26"
+        data-glass-dispersion="0.36"
+        :data-glass-tint="theme === 'dark' ? '#0b0d12' : undefined"
+        :data-glass-tint-alpha="theme === 'dark' ? '0.1' : '0.45'"
+        :data-glass-specular="theme === 'dark' ? '0.62' : undefined"
+        data-glass-shadow="0.55"
+        data-glass-shadow-size="38"
+        class="absolute bottom-0 right-0 top-16 max-w-[26rem] w-full flex flex-col overflow-hidden"
       >
         <header class="flex items-center justify-between gap-4 border-b border-line px-5 py-5 sm:px-6">
           <div>
@@ -250,7 +263,7 @@ onBeforeUnmount(() => {
 
 .cart-enter-active aside,
 .cart-leave-active aside {
-  transition: transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition: right 360ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 .cart-enter-from,
@@ -260,7 +273,7 @@ onBeforeUnmount(() => {
 
 .cart-enter-from aside,
 .cart-leave-to aside {
-  transform: translateX(100%);
+  right: -100%;
 }
 
 .cart-line {

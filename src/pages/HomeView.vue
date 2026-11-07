@@ -3,6 +3,7 @@ import type { Category, Product } from '@/domain/types'
 import { computed, ref } from 'vue'
 import ApproachSection from '@/components/home/ApproachSection.vue'
 import CollectionSection from '@/components/home/CollectionSection.vue'
+import GlassShowcase from '@/components/home/GlassShowcase.vue'
 import HeroSection from '@/components/home/HeroSection.vue'
 import { getProduct, PRODUCTS } from '@/domain/catalog'
 import { useCart } from '@/stores/cart'
@@ -25,6 +26,7 @@ function addToBag(productId: Product['id']) {
 
 <template>
   <HeroSection :product="heroProduct" />
+  <GlassShowcase />
   <CollectionSection
     v-model="activeCategory"
     :products="visibleProducts"

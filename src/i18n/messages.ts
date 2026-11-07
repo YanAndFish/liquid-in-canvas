@@ -109,6 +109,46 @@ export const messages = {
     en: 'Hand-finished · small batch',
     zh: '手工完成 · 小批量',
   },
+  'glass.eyebrow': {
+    en: 'Stage 03 · Liquid glass',
+    zh: '阶段 03 · 液态玻璃',
+  },
+  'glass.title': {
+    en: 'Light, bent.',
+    zh: '让光，弯一下。',
+  },
+  'glass.body': {
+    en: 'A WebGPU material for live HTML. Each panel refracts the video behind it, keeps its own text crisp, and carries a specular rim.',
+    zh: '为实时 HTML 做的 WebGPU 材质。每块玻璃折射背后的视频，文字保持清晰，边缘带有高光。',
+  },
+  'glass.lens.label': {
+    en: 'Refraction',
+    zh: '折射',
+  },
+  'glass.lens.title': {
+    en: 'Lensing',
+    zh: '透镜',
+  },
+  'glass.lens.body': {
+    en: 'The backdrop bends toward the edge while the centre stays frosted.',
+    zh: '背景向边缘弯折，中心保持雾化。',
+  },
+  'glass.specular.label': {
+    en: 'Specular',
+    zh: '高光',
+  },
+  'glass.specular.title': {
+    en: 'Rim light',
+    zh: '边缘光',
+  },
+  'glass.specular.body': {
+    en: 'A directional highlight rides the edge as the video moves.',
+    zh: '视频流动时，边缘的高光随之移动。',
+  },
+  'glass.live': {
+    en: 'Live HTML',
+    zh: '实时 HTML',
+  },
   'collection.eyebrow': {
     en: 'Collection 01 · {count} objects',
     zh: '系列 01 · {count} 件',
@@ -334,12 +374,12 @@ export const messages = {
     zh: '日常器物。',
   },
   'footer.note': {
-    en: '© 2026 STILL. A demo storefront. No orders are fulfilled. Built as a stage for liquid glass over live HTML in canvas. Stage 02, live HTML in one WebGPU canvas.',
-    zh: '© 2026 STILL。演示商店，不处理真实订单。本项目用于测试 HTML-in-Canvas 上的液态玻璃效果。阶段 02，实时 HTML 合成在一张 WebGPU 画布中。',
+    en: '© 2026 STILL. A demo storefront. No orders are fulfilled. Built as a stage for liquid glass over live HTML in canvas. Stage 03, live HTML and liquid glass in one WebGPU canvas.',
+    zh: '© 2026 STILL。演示商店，不处理真实订单。本项目用于测试 HTML-in-Canvas 上的液态玻璃效果。阶段 03，实时 HTML 与液态玻璃合成在一张 WebGPU 画布中。',
   },
   'support.eyebrow': {
-    en: 'Stage 02 · Support',
-    zh: '阶段 02 · 支持',
+    en: 'Stage 03 · Support',
+    zh: '阶段 03 · 支持',
   },
   'support.title': {
     en: 'This browser cannot run the STILL stage.',
@@ -418,8 +458,8 @@ export const messages = {
     zh: '阅读 API 文档',
   },
   'support.note': {
-    en: 'STILL stage 02, live HTML in one WebGPU canvas.',
-    zh: 'STILL 阶段 02，实时 HTML 合成在一张 WebGPU 画布中。',
+    en: 'STILL stage 03, live HTML and liquid glass in one WebGPU canvas.',
+    zh: 'STILL 阶段 03，实时 HTML 与液态玻璃合成在一张 WebGPU 画布中。',
   },
 } as const satisfies Record<string, LocalizedText>
 
