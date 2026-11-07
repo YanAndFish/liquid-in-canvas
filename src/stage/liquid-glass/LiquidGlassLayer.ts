@@ -5,7 +5,7 @@ import type { GlassOptions } from './options'
 import { ExternalTexture, Mesh, PlaneGeometry, SRGBColorSpace, Vector2 } from 'three/webgpu'
 import { BackdropBlur } from './blur'
 import { createGlassContent } from './content-material'
-import { compareHtmlPaintOrder, contentOccluders } from './content-order'
+import { contentOccluders, createHtmlPaintOrderComparator } from './content-order'
 import { ContentBackdrop } from './ContentBackdrop'
 import { glassRenderOrder } from './fusion'
 import { glassOptionsSignature, parseGlassOptions } from './options'
@@ -253,8 +253,9 @@ export class LiquidGlassLayer {
 
     const backdrop = this.getBackdrop()
     if (backdrop) {
+      const comparePaintOrder = createHtmlPaintOrderComparator()
       volumeSurfaces.sort((a, b) => a.options.layer - b.options.layer
-        || compareHtmlPaintOrder(surfaceById.get(a.id)!.element, surfaceById.get(b.id)!.element))
+        || comparePaintOrder(surfaceById.get(a.id)!.element, surfaceById.get(b.id)!.element))
       const overlays: Parameters<ContentBackdrop['render']>[1] = []
       volumeSurfaces.forEach((volume, index) => {
         volume.paintOrder = index / (volumeSurfaces.length + 1)

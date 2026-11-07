@@ -1,0 +1,402 @@
+[
+  {
+    "variant": "original",
+    "run": 1,
+    "elapsed": 8002.299999952316,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "draw": {
+      "count": 177,
+      "mean": 3.873446333879805,
+      "p50": 3.799999952316284,
+      "p95": 5.6000001430511475,
+      "max": 6.099999904632568
+    },
+    "paintInterval": {
+      "count": 176,
+      "mean": 45.158522727814585,
+      "p50": 45.09999990463257,
+      "p95": 55.59999990463257,
+      "max": 79.5
+    },
+    "animationInterval": {
+      "count": 176,
+      "mean": 45.17045454545455,
+      "p50": 49.899999999999636,
+      "p95": 50.900000000001455,
+      "max": 83.40000000000146
+    },
+    "longAnimationFrames": 42,
+    "errors": [],
+    "stagePresent": true,
+    "videoPlaying": true,
+    "videoTime": [
+      5.5894,
+      0.7234
+    ]
+  },
+  {
+    "variant": "branch-context",
+    "run": 1,
+    "comparable": true,
+    "invalidReasons": [],
+    "elapsed": 8003,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "draw": {
+      "count": 176,
+      "mean": 3.4602272754365746,
+      "p50": 3.5,
+      "p95": 4.599999904632568,
+      "max": 5.1000001430511475
+    },
+    "paintInterval": {
+      "count": 175,
+      "mean": 45.51542857170105,
+      "p50": 46,
+      "p95": 55.299999952316284,
+      "max": 69.09999990463257
+    },
+    "animationInterval": {
+      "count": 175,
+      "mean": 45.51828571428571,
+      "p50": 49.900000000001455,
+      "p95": 51,
+      "max": 67.30000000000018
+    },
+    "longAnimationFrames": 49,
+    "errors": [],
+    "stagePresent": true,
+    "videoPlaying": true,
+    "videoTime": [
+      4.9725,
+      0.1352
+    ]
+  },
+  {
+    "variant": "original",
+    "run": 2,
+    "elapsed": 8001.900000095367,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "draw": {
+      "count": 176,
+      "mean": 4.094318179921671,
+      "p50": 4.199999809265137,
+      "p95": 5.5,
+      "max": 6.300000190734863
+    },
+    "paintInterval": {
+      "count": 175,
+      "mean": 45.41314285687038,
+      "p50": 45.90000009536743,
+      "p95": 53.89999985694885,
+      "max": 82.69999980926514
+    },
+    "animationInterval": {
+      "count": 175,
+      "mean": 45.42857142857143,
+      "p50": 50,
+      "p95": 50.899999999999636,
+      "max": 83.39999999999964
+    },
+    "longAnimationFrames": 44,
+    "errors": [],
+    "stagePresent": true,
+    "videoPlaying": true,
+    "videoTime": [
+      4.8807,
+      0.0695
+    ]
+  },
+  {
+    "variant": "branch-context",
+    "run": 2,
+    "comparable": true,
+    "invalidReasons": [],
+    "elapsed": 8000.599999904633,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "draw": {
+      "count": 183,
+      "mean": 3.3448087257114265,
+      "p50": 3.3999998569488525,
+      "p95": 4.5,
+      "max": 5.5
+    },
+    "paintInterval": {
+      "count": 182,
+      "mean": 43.62032966954367,
+      "p50": 43,
+      "p95": 55.09999990463257,
+      "max": 67.5
+    },
+    "animationInterval": {
+      "count": 182,
+      "mean": 43.59230769230769,
+      "p50": 49.79999999999927,
+      "p95": 50.80000000000018,
+      "max": 67.60000000000036
+    },
+    "longAnimationFrames": 28,
+    "errors": [],
+    "stagePresent": true,
+    "videoPlaying": true,
+    "videoTime": [
+      4.9036,
+      0
+    ]
+  },
+  {
+    "variant": "original",
+    "run": 3,
+    "elapsed": 8000.599999904633,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "draw": {
+      "count": 209,
+      "mean": 3.2612440152601763,
+      "p50": 3.200000047683716,
+      "p95": 4.700000047683716,
+      "max": 5.400000095367432
+    },
+    "paintInterval": {
+      "count": 208,
+      "mean": 38.2951923081508,
+      "p50": 37.39999985694885,
+      "p95": 45.5,
+      "max": 63.40000009536743
+    },
+    "animationInterval": {
+      "count": 208,
+      "mean": 38.30096153846154,
+      "p50": 33.399999999999636,
+      "p95": 50.20000000000073,
+      "max": 66.60000000000036
+    },
+    "longAnimationFrames": 18,
+    "errors": [],
+    "stagePresent": true,
+    "videoPlaying": true,
+    "videoTime": [
+      5.1909,
+      0.4039
+    ]
+  },
+  {
+    "variant": "branch-context",
+    "run": 3,
+    "comparable": true,
+    "invalidReasons": [],
+    "elapsed": 8000.699999809265,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "draw": {
+      "count": 190,
+      "mean": 3.134736842858164,
+      "p50": 3.299999952316284,
+      "p95": 4.3999998569488525,
+      "max": 5.599999904632568
+    },
+    "paintInterval": {
+      "count": 189,
+      "mean": 42.03174603174603,
+      "p50": 40.90000009536743,
+      "p95": 53.59999990463257,
+      "max": 66
+    },
+    "animationInterval": {
+      "count": 189,
+      "mean": 42.06349206349206,
+      "p50": 49.100000000000364,
+      "p95": 50.5,
+      "max": 66.70000000000073
+    },
+    "longAnimationFrames": 33,
+    "errors": [],
+    "stagePresent": true,
+    "videoPlaying": true,
+    "videoTime": [
+      4.8722,
+      0.0273
+    ]
+  },
+  {
+    "variant": "original",
+    "run": 4,
+    "elapsed": 8001,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "draw": {
+      "count": 191,
+      "mean": 3.873821988779837,
+      "p50": 3.799999952316284,
+      "p95": 5.299999952316284,
+      "max": 7.599999904632568
+    },
+    "paintInterval": {
+      "count": 190,
+      "mean": 41.713157894736845,
+      "p50": 41,
+      "p95": 50.10000014305115,
+      "max": 84.40000009536743
+    },
+    "animationInterval": {
+      "count": 190,
+      "mean": 41.75473684210527,
+      "p50": 34.20000000000073,
+      "p95": 50.29999999999927,
+      "max": 83.40000000000055
+    },
+    "longAnimationFrames": 21,
+    "errors": [],
+    "stagePresent": true,
+    "videoPlaying": true,
+    "videoTime": [
+      4.8737,
+      0.0293
+    ]
+  },
+  {
+    "variant": "branch-context",
+    "run": 4,
+    "comparable": true,
+    "invalidReasons": [],
+    "elapsed": 8001.400000095367,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "draw": {
+      "count": 206,
+      "mean": 2.898058245482954,
+      "p50": 2.8999998569488525,
+      "p95": 4,
+      "max": 5
+    },
+    "paintInterval": {
+      "count": 205,
+      "mean": 38.69219512125341,
+      "p50": 38,
+      "p95": 45.90000009536743,
+      "max": 74.5
+    },
+    "animationInterval": {
+      "count": 205,
+      "mean": 38.69951219512195,
+      "p50": 33.399999999999636,
+      "p95": 50.100000000000364,
+      "max": 82.70000000000073
+    },
+    "longAnimationFrames": 22,
+    "errors": [],
+    "stagePresent": true,
+    "videoPlaying": true,
+    "videoTime": [
+      5.1845,
+      0.3654
+    ]
+  },
+  {
+    "variant": "original",
+    "run": 5,
+    "elapsed": 8000.5,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "draw": {
+      "count": 203,
+      "mean": 3.522167478288923,
+      "p50": 3.4000000953674316,
+      "p95": 5,
+      "max": 5.400000095367432
+    },
+    "paintInterval": {
+      "count": 202,
+      "mean": 39.27970297029703,
+      "p50": 38.39999985694885,
+      "p95": 45.5,
+      "max": 74
+    },
+    "animationInterval": {
+      "count": 202,
+      "mean": 39.27178217821782,
+      "p50": 33.5,
+      "p95": 50.20000000000073,
+      "max": 66.69999999999982
+    },
+    "longAnimationFrames": 23,
+    "errors": [],
+    "stagePresent": true,
+    "videoPlaying": true,
+    "videoTime": [
+      5.19,
+      0.3192
+    ]
+  },
+  {
+    "variant": "branch-context",
+    "run": 5,
+    "comparable": true,
+    "invalidReasons": [],
+    "elapsed": 8001.799999952316,
+    "viewport": [
+      1563,
+      996,
+      2
+    ],
+    "draw": {
+      "count": 205,
+      "mean": 2.9531707438026986,
+      "p50": 2.9000000953674316,
+      "p95": 4.299999952316284,
+      "max": 5.6000001430511475
+    },
+    "paintInterval": {
+      "count": 204,
+      "mean": 38.96764705929102,
+      "p50": 38.299999952316284,
+      "p95": 46.39999985694885,
+      "max": 101.5
+    },
+    "animationInterval": {
+      "count": 204,
+      "mean": 38.96568627450981,
+      "p50": 33.399999999999636,
+      "p95": 50.100000000000364,
+      "max": 99.80000000000018
+    },
+    "longAnimationFrames": 18,
+    "errors": [],
+    "stagePresent": true,
+    "videoPlaying": true,
+    "videoTime": [
+      5.1519,
+      0.2924
+    ]
+  }
+]
