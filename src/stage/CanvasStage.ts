@@ -10,6 +10,7 @@ import {
   SRGBColorSpace,
   WebGPURenderer,
 } from 'three/webgpu'
+import { LiquidGlassLayer } from './liquid-glass/LiquidGlassLayer'
 
 interface CanvasStageOptions {
   canvas: HTMLCanvasElement
@@ -48,8 +49,11 @@ export class CanvasStage {
   private external: ExternalTexture | null = null
   private observer: ResizeObserver | null = null
   private root: HTMLElement | null = null
+  private glass: LiquidGlassLayer | null = null
   private metrics: StageMetrics | null = null
   private pendingSize: StageMetrics | null = null
+  private playingVideos = new Set<HTMLVideoElement>()
+  private videoFrame: number | null = null
   private initialized = false
   private failed = false
   private disposed = false
@@ -137,6 +141,25 @@ export class CanvasStage {
     this.canvas.updateElementGeometry(root, {
       canvasTransform: new DOMMatrix(),
     })
+
+    const scene = this.scene
+    const device = this.device
+    if (scene && device) {
+      this.glass = new LiquidGlassLayer({
+        canvas: this.canvas,
+        root,
+        scene,
+        device,
+        getBackdrop: () => this.external,
+        onInvalidate: () => this.invalidate(),
+        onFault: (cause) => {
+          this.failed = true
+          this.onFault(cause)
+        },
+      })
+      this.glass.start()
+    }
+    this.attachVideoClock(root)
     this.invalidate()
   }
 
@@ -157,8 +180,11 @@ export class CanvasStage {
       root.removeEventListener('scroll', this.handleInvalidate, { capture: true })
       root.removeEventListener('load', this.handleInvalidate, { capture: true })
       this.canvas.clearElementGeometry(root)
+      this.detachVideoClock(root)
     }
 
+    this.glass?.dispose()
+    this.glass = null
     this.observer?.disconnect()
     this.observer = null
     this.root = null
@@ -182,15 +208,15 @@ export class CanvasStage {
       void renderer.dispose()
   }
 
-  private readonly handlePaint = (): void => {
-    this.draw()
+  private readonly handlePaint = (event: Event): void => {
+    this.draw(event)
   }
 
   private readonly handleInvalidate = (): void => {
     this.invalidate()
   }
 
-  private draw(): void {
+  private draw(event?: Event): void {
     if (this.failed || this.disposed)
       return
 
@@ -217,6 +243,7 @@ export class CanvasStage {
           colorSpace: 'srgb',
         },
       )
+      this.glass?.sync(event)
       renderer.render(scene, camera)
     }
     catch (cause) {
@@ -277,6 +304,7 @@ export class CanvasStage {
     this.external = external
     material.map = external
     material.needsUpdate = true
+    this.glass?.setBackdrop(external)
 
     oldExternal?.dispose()
     oldTexture?.destroy()
@@ -305,5 +333,65 @@ export class CanvasStage {
       pixelHeight: 0,
       dpr: this.pixelRatio(),
     }
+  }
+
+  private attachVideoClock(root: HTMLElement): void {
+    root.addEventListener('play', this.handleVideoPlay, true)
+    root.addEventListener('pause', this.handleVideoPause, true)
+    root.addEventListener('ended', this.handleVideoPause, true)
+    root.addEventListener('seeked', this.handleInvalidate, true)
+    for (const video of root.querySelectorAll('video')) {
+      if (!video.paused)
+        this.playingVideos.add(video)
+    }
+    if (this.playingVideos.size)
+      this.scheduleVideoFrame()
+  }
+
+  private detachVideoClock(root: HTMLElement): void {
+    root.removeEventListener('play', this.handleVideoPlay, true)
+    root.removeEventListener('pause', this.handleVideoPause, true)
+    root.removeEventListener('ended', this.handleVideoPause, true)
+    root.removeEventListener('seeked', this.handleInvalidate, true)
+    this.playingVideos.clear()
+    if (this.videoFrame !== null) {
+      cancelAnimationFrame(this.videoFrame)
+      this.videoFrame = null
+    }
+  }
+
+  private readonly handleVideoPlay = (event: Event): void => {
+    if (!(event.target instanceof HTMLVideoElement))
+      return
+    this.playingVideos.add(event.target)
+    this.scheduleVideoFrame()
+  }
+
+  private readonly handleVideoPause = (event: Event): void => {
+    if (!(event.target instanceof HTMLVideoElement))
+      return
+    this.playingVideos.delete(event.target)
+    if (!this.playingVideos.size && this.videoFrame !== null) {
+      cancelAnimationFrame(this.videoFrame)
+      this.videoFrame = null
+    }
+  }
+
+  private scheduleVideoFrame(): void {
+    if (this.videoFrame !== null || this.disposed)
+      return
+    this.videoFrame = requestAnimationFrame(this.tickVideo)
+  }
+
+  private readonly tickVideo = (): void => {
+    this.videoFrame = null
+    for (const video of this.playingVideos) {
+      if (!video.isConnected || video.paused)
+        this.playingVideos.delete(video)
+    }
+    if (this.disposed || !this.playingVideos.size)
+      return
+    this.invalidate()
+    this.videoFrame = requestAnimationFrame(this.tickVideo)
   }
 }
