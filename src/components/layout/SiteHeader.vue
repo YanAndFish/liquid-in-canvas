@@ -40,8 +40,8 @@ const themeLabel = computed(() => theme.value === 'dark'
       </RouterLink>
 
       <nav class="hidden items-center gap-8 text-[13px] text-mist md:flex" :aria-label="t('nav.primary')">
-        <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone">{{ t('nav.collection') }}</RouterLink>
-        <RouterLink :to="{ path: '/', hash: '#approach' }" class="transition-colors hover:text-bone">{{ t('nav.approach') }}</RouterLink>
+        <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone link-underline">{{ t('nav.collection') }}</RouterLink>
+        <RouterLink :to="{ path: '/', hash: '#approach' }" class="transition-colors hover:text-bone link-underline">{{ t('nav.approach') }}</RouterLink>
       </nav>
 
       <div class="flex items-center gap-1.5 sm:gap-2">

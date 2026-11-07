@@ -26,7 +26,15 @@ const cartOpen = ref(false)
       <SiteHeader :count="totals.itemCount" @open-cart="cartOpen = true" />
 
       <main id="main" tabindex="-1" class="mx-auto max-w-[1240px] w-full flex-1 px-5 sm:px-8">
-        <RouterView />
+        <div class="page-stage">
+          <RouterView v-slot="{ Component, route }">
+            <Transition name="page">
+              <div :key="route.path" class="page-view">
+                <component :is="Component" />
+              </div>
+            </Transition>
+          </RouterView>
+        </div>
       </main>
 
       <SiteFooter />

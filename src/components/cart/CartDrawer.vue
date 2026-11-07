@@ -177,9 +177,11 @@ onBeforeUnmount(() => {
           <div class="flex-1 overflow-y-auto px-5 sm:px-6">
             <ul class="divide-y divide-line">
               <CartLineRow
-                v-for="line in lines"
+                v-for="(line, index) in lines"
                 :key="line.product.id"
                 :line="line"
+                class="cart-line"
+                :style="{ animationDelay: `${index * 40}ms` }"
                 @increment="increment(line.product.id)"
                 @decrement="decrement(line.product.id)"
                 @remove="remove(line.product.id)"
@@ -259,5 +261,21 @@ onBeforeUnmount(() => {
 .cart-enter-from aside,
 .cart-leave-to aside {
   transform: translateX(100%);
+}
+
+.cart-line {
+  animation: cart-line-in 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes cart-line-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 </style>
