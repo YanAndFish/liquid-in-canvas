@@ -25,7 +25,7 @@ export default defineConfig({
     },
   },
   shortcuts: {
-    'btn': 'inline-flex items-center justify-center gap-2 rounded-full font-sans text-sm font-medium tracking-tight transition-colors duration-200 select-none disabled:cursor-not-allowed disabled:opacity-40',
+    'btn': 'inline-flex items-center justify-center gap-2 rounded-full font-sans text-sm font-medium tracking-tight transition-all duration-200 select-none active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40',
     'btn-solid': 'btn bg-bone text-ink px-5 py-3 hover:bg-[var(--solid-hover)] active:bg-[var(--solid-active)]',
     'btn-ghost': 'btn border border-line px-5 py-3 text-bone hover:border-[var(--line-strong)] hover:bg-[var(--hover)]',
     'eyebrow': 'font-mono text-[10px] uppercase tracking-[0.24em] text-mist',

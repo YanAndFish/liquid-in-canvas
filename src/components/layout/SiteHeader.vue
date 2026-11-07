@@ -40,8 +40,8 @@ const themeLabel = computed(() => theme.value === 'dark'
       </RouterLink>
 
       <nav class="hidden items-center gap-8 text-[13px] text-mist md:flex" :aria-label="t('nav.primary')">
-        <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone">{{ t('nav.collection') }}</RouterLink>
-        <RouterLink :to="{ path: '/', hash: '#approach' }" class="transition-colors hover:text-bone">{{ t('nav.approach') }}</RouterLink>
+        <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone link-underline">{{ t('nav.collection') }}</RouterLink>
+        <RouterLink :to="{ path: '/', hash: '#approach' }" class="transition-colors hover:text-bone link-underline">{{ t('nav.approach') }}</RouterLink>
       </nav>
 
       <div class="flex items-center gap-1.5 sm:gap-2">
@@ -76,7 +76,9 @@ const themeLabel = computed(() => theme.value === 'dark'
           :aria-label="bagLabel"
           @click="emit('openCart')"
         >
-          <AppIcon name="bag" :size="16" />
+          <span data-bag-target class="inline-flex items-center justify-center">
+            <AppIcon name="bag" :size="16" />
+          </span>
           <span class="hidden sm:inline">{{ t('nav.bag') }}</span>
           <span
             v-if="count > 0"

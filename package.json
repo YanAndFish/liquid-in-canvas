@@ -18,12 +18,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "three": "0.187.0",
     "vue": "^3.5.45",
     "vue-router": "^5.4.0"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^10.0.0",
     "@types/node": "^24.19.2",
+    "@types/three": "0.187.0",
     "@unocss/eslint-plugin": "^66.12.0",
     "@unocss/reset": "^66.12.0",
     "@vitejs/plugin-vue": "^6.0.10",

@@ -76,12 +76,12 @@ const position = computed(() => {
       </dl>
     </div>
 
-    <div class="relative">
+    <div class="group relative">
       <div class="relative aspect-[5/6] overflow-hidden border border-line rounded-[2rem] bg-[var(--media-panel)] sm:aspect-[4/5]">
         <img
           :src="product.image"
           :alt="text(product.name)"
-          class="absolute inset-0 h-full w-full object-cover"
+          class="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]"
           width="1024"
           height="1280"
           fetchpriority="high"

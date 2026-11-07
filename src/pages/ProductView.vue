@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { Product, ProductSpecs } from '@/domain/types'
 import type { MessageKey } from '@/i18n/messages'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import ProductCard from '@/components/product/ProductCard.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { bagTargetRect, getSharedLayer } from '@/composables/sharedTransition'
 import { useLocale } from '@/composables/useLocale'
 import { CATEGORY_BY_ID, getProductBySlug, PRODUCTS } from '@/domain/catalog'
 import { formatCents } from '@/domain/money'
@@ -44,17 +45,29 @@ const related = computed<Product[]>(() => {
 })
 
 const justAdded = ref(false)
+const media = ref<HTMLElement | null>(null)
 let resetTimer: ReturnType<typeof setTimeout> | undefined
 
 function addToBag() {
-  if (!product.value)
+  const current = product.value
+  if (!current)
     return
-  add(product.value.id)
+  const panel = media.value
+  const from = panel?.getBoundingClientRect()
+  add(current.id)
   justAdded.value = true
   clearTimeout(resetTimer)
   resetTimer = setTimeout(() => {
     justAdded.value = false
   }, 1400)
+  if (from) {
+    void nextTick().then(() => {
+      getSharedLayer()?.flyToBag({
+        image: current.image,
+        from,
+      }, bagTargetRect())
+    })
+  }
 }
 
 watch(() => props.slug, () => {
@@ -85,7 +98,7 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
     </div>
 
     <div class="grid mt-8 gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
-      <div class="relative aspect-[4/5] overflow-hidden border border-line rounded-[2rem] bg-[var(--media-panel)]">
+      <div ref="media" data-product-image class="relative aspect-[4/5] overflow-hidden border border-line rounded-[2rem] bg-[var(--media-panel)]">
         <img
           :src="product.image"
           :alt="text(product.name)"

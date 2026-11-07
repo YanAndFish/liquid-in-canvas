@@ -18,8 +18,8 @@ const { t } = useLocale()
       </div>
 
       <nav class="flex gap-6 text-xs text-mist" :aria-label="t('nav.footer')">
-        <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone">{{ t('nav.collection') }}</RouterLink>
-        <RouterLink :to="{ path: '/', hash: '#approach' }" class="transition-colors hover:text-bone">{{ t('nav.approach') }}</RouterLink>
+        <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone link-underline">{{ t('nav.collection') }}</RouterLink>
+        <RouterLink :to="{ path: '/', hash: '#approach' }" class="transition-colors hover:text-bone link-underline">{{ t('nav.approach') }}</RouterLink>
       </nav>
     </div>
 

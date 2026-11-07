@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { Product } from '@/domain/types'
-import { onBeforeUnmount, ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { bagTargetRect, getSharedLayer } from '@/composables/sharedTransition'
 import { useLocale } from '@/composables/useLocale'
 import { formatCents } from '@/domain/money'
 import AppIcon from '../ui/AppIcon.vue'
@@ -16,27 +17,50 @@ const emit = defineEmits<{
 
 const { t, text } = useLocale()
 
+const media = ref<HTMLElement | null>(null)
 const justAdded = ref(false)
 let resetTimer: ReturnType<typeof setTimeout> | undefined
 
-function add() {
+function openProduct(): void {
+  const panel = media.value
+  if (!panel)
+    return
+  getSharedLayer()?.startProductFlight({
+    image: props.product.image,
+    from: panel.getBoundingClientRect(),
+    radius: 25.6,
+  })
+}
+
+function add(): void {
+  const panel = media.value
+  const from = panel?.getBoundingClientRect()
   emit('add', props.product.id)
   justAdded.value = true
   clearTimeout(resetTimer)
   resetTimer = setTimeout(() => {
     justAdded.value = false
   }, 1400)
+  if (from) {
+    void nextTick().then(() => {
+      getSharedLayer()?.flyToBag({
+        image: props.product.image,
+        from,
+      }, bagTargetRect())
+    })
+  }
 }
 
 onBeforeUnmount(() => clearTimeout(resetTimer))
 </script>
 
 <template>
-  <article class="group">
-    <div class="relative aspect-[4/5] overflow-hidden border border-line rounded-[1.6rem] bg-[var(--media-panel)]">
+  <article class="group transition-transform duration-500 ease-out hover:-translate-y-1">
+    <div ref="media" data-product-image class="relative aspect-[4/5] overflow-hidden border border-line rounded-[1.6rem] bg-[var(--media-panel)] transition-colors duration-300 group-hover:border-[var(--line-strong)]">
       <RouterLink
         :to="{ name: 'product', params: { slug: product.slug } }"
         class="absolute inset-0 block"
+        @click="openProduct"
       >
         <div class="h-full w-full transition-transform duration-700 ease-out group-hover:scale-[1.04]">
           <img
@@ -60,11 +84,16 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
 
       <button
         type="button"
-        class="absolute bottom-4 right-4 inline-flex items-center gap-2 border border-line rounded-full bg-[var(--button-glass)] px-3.5 py-2 text-xs text-bone font-medium backdrop-blur-md transition-colors duration-200 active:translate-y-px hover:border-bone hover:bg-bone hover:text-ink"
+        class="absolute bottom-4 right-4 inline-flex items-center gap-2 border border-line rounded-full bg-[var(--button-glass)] px-3.5 py-2 text-xs text-bone font-medium backdrop-blur-md transition-all duration-200 active:scale-95 hover:border-bone hover:bg-bone hover:text-ink"
         :aria-label="t('product.addToBag', { name: text(product.name) })"
         @click="add"
       >
-        <AppIcon :name="justAdded ? 'check' : 'plus'" :size="14" />
+        <AppIcon
+          :name="justAdded ? 'check' : 'plus'"
+          :size="14"
+          class="transition-transform duration-200"
+          :class="justAdded ? 'scale-110' : ''"
+        />
         <span>{{ justAdded ? t('product.added') : t('product.add') }}</span>
       </button>
     </div>

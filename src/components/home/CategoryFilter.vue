@@ -40,7 +40,7 @@ function pad(value: number) {
       v-for="option in options"
       :key="option.id"
       type="button"
-      class="inline-flex items-center gap-2 border rounded-full px-3.5 py-2 text-[13px] transition-colors duration-200"
+      class="inline-flex items-center gap-2 border rounded-full px-3.5 py-2 text-[13px] transition-all duration-200 active:scale-95"
       :class="props.modelValue === option.id
         ? 'border-bone bg-bone text-ink'
         : 'border-line text-mist hover:border-[var(--line-strong)] hover:text-bone'"
