@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { Locale } from '@/domain/types'
 import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useLocale } from '@/composables/useLocale'
 import { useTheme } from '@/composables/useTheme'
-import AppIcon from './AppIcon.vue'
+import AppIcon from '../ui/AppIcon.vue'
 
 const props = defineProps<{
   count: number
@@ -33,14 +34,14 @@ const themeLabel = computed(() => theme.value === 'dark'
 <template>
   <header class="sticky top-0 z-40 border-b border-line bg-[var(--header-bg)] backdrop-blur-xl">
     <div class="mx-auto h-16 max-w-[1240px] flex items-center justify-between gap-4 px-5 sm:px-8">
-      <a href="#" class="flex items-baseline gap-2.5">
+      <RouterLink to="/" class="flex items-baseline gap-2.5">
         <span class="text-xl tracking-[0.14em] font-display">STILL</span>
         <span class="hidden text-[9px] text-mist tracking-[0.26em] font-mono uppercase sm:inline">{{ t('brand.tagline') }}</span>
-      </a>
+      </RouterLink>
 
       <nav class="hidden items-center gap-8 text-[13px] text-mist md:flex" :aria-label="t('nav.primary')">
-        <a href="#collection" class="transition-colors hover:text-bone">{{ t('nav.collection') }}</a>
-        <a href="#approach" class="transition-colors hover:text-bone">{{ t('nav.approach') }}</a>
+        <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone">{{ t('nav.collection') }}</RouterLink>
+        <RouterLink :to="{ path: '/', hash: '#approach' }" class="transition-colors hover:text-bone">{{ t('nav.approach') }}</RouterLink>
       </nav>
 
       <div class="flex items-center gap-1.5 sm:gap-2">

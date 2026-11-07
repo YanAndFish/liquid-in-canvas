@@ -2,9 +2,9 @@
 import type { Product } from '@/domain/types'
 import { computed } from 'vue'
 import { useLocale } from '@/composables/useLocale'
-import { PRODUCTS } from '@/domain/catalog'
+import { CATEGORIES, PRODUCTS } from '@/domain/catalog'
 import { formatCents } from '@/domain/money'
-import AppIcon from './AppIcon.vue'
+import AppIcon from '../ui/AppIcon.vue'
 
 const props = defineProps<{
   product: Product
@@ -59,10 +59,10 @@ const position = computed(() => {
         </div>
         <div>
           <dt class="field-label">
-            {{ t('hero.statMaterials') }}
+            {{ t('hero.statCategories') }}
           </dt>
           <dd class="mt-2 text-3xl font-display">
-            06
+            {{ String(CATEGORIES.length).padStart(2, '0') }}
           </dd>
         </div>
         <div>

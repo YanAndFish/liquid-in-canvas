@@ -2,8 +2,8 @@
 import type { Category, Product } from '@/domain/types'
 import { useLocale } from '@/composables/useLocale'
 import { PRODUCTS } from '@/domain/catalog'
+import ProductGrid from '../product/ProductGrid.vue'
 import CategoryFilter from './CategoryFilter.vue'
-import ProductGrid from './ProductGrid.vue'
 
 type FilterValue = Category | 'all'
 

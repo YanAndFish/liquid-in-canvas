@@ -9,14 +9,49 @@ export interface CategoryMeta {
   label: LocalizedText
 }
 
-export type ProductId = 'throw-01' | 'carafe-02' | 'board-03' | 'candle-04' | 'towel-05' | 'lantern-06'
+export type ProductId
+  = | 'throw-01'
+    | 'carafe-02'
+    | 'board-03'
+    | 'candle-04'
+    | 'towel-05'
+    | 'lantern-06'
+    | 'cushion-07'
+    | 'vase-08'
+    | 'mug-09'
+    | 'servers-10'
+    | 'soap-11'
+    | 'brush-12'
+
+export type ProductSlug
+  = | 'linen-throw'
+    | 'stoneware-carafe'
+    | 'cedar-candle'
+    | 'wool-cushion'
+    | 'oak-board'
+    | 'cotton-towel'
+    | 'ceramic-vase'
+    | 'enamel-mug'
+    | 'cedar-soap'
+    | 'paper-lantern'
+    | 'walnut-servers'
+    | 'bath-brush'
+
+export interface ProductSpecs {
+  material: LocalizedText
+  dimensions: LocalizedText
+  care: LocalizedText
+}
 
 export interface Product {
   id: ProductId
+  slug: ProductSlug
   name: LocalizedText
   category: Category
   priceCents: number
   blurb: LocalizedText
+  details: LocalizedText
+  specs: ProductSpecs
   badge?: LocalizedText
   image: string
 }
@@ -44,11 +79,3 @@ export interface CartTotals {
   remainingForFreeShippingCents: number
   freeShipping: boolean
 }
-
-export type CartAction
-  = | { type: 'add', productId: ProductId }
-    | { type: 'increment', productId: ProductId }
-    | { type: 'decrement', productId: ProductId }
-    | { type: 'remove', productId: ProductId }
-    | { type: 'clear' }
-    | { type: 'hydrate', lines: readonly CartLine[] }

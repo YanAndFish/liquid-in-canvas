@@ -1,42 +1,62 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import App from '@/App.vue'
-import { CART_KEY, createCartStore } from '@/composables/useCart'
 import { useLocale } from '@/composables/useLocale'
+import { routes } from '@/router/routes'
+import { CART_KEY, createCartStore } from '@/stores/cart'
 
 const { setLocale } = useLocale()
 
 beforeEach(() => setLocale('en'))
 
-function mountApp() {
+async function mountApp(path = '/') {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes,
+  })
+  await router.push(path)
+  await router.isReady()
+
   const store = createCartStore({ storage: null })
   const wrapper = mount(App, {
     global: {
+      plugins: [router],
       provide: {
         [CART_KEY]: store,
       },
     },
   })
-  return { store, wrapper }
+  await flushPromises()
+  return { store, wrapper, router }
 }
 
 describe('storefront', () => {
-  it('shows all six objects and filters the grid by category', async () => {
-    const { wrapper } = mountApp()
+  it('shows all twelve objects and filters the grid by category', async () => {
+    const { wrapper } = await mountApp()
 
-    expect(wrapper.findAll('article')).toHaveLength(6)
+    expect(wrapper.findAll('article')).toHaveLength(12)
 
     const kitchen = wrapper.findAll('button').find(button => button.text().startsWith('Kitchen'))
     expect(kitchen).toBeDefined()
     await kitchen!.trigger('click')
 
-    expect(wrapper.findAll('article')).toHaveLength(2)
+    expect(wrapper.findAll('article')).toHaveLength(4)
     expect(wrapper.text()).toContain('Stoneware Carafe')
     expect(wrapper.text()).toContain('Oak Board')
+    expect(wrapper.text()).toContain('Enamel Mug')
+    expect(wrapper.text()).toContain('Walnut Servers')
+  })
+
+  it('links product cards to detail routes', async () => {
+    const { wrapper } = await mountApp()
+
+    expect(wrapper.find('a[href="/product/linen-throw"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/product/bath-brush"]').exists()).toBe(true)
   })
 
   it('adds an object to the bag and feeds the header count', async () => {
-    const { store, wrapper } = mountApp()
+    const { store, wrapper } = await mountApp()
 
     await wrapper.find('[aria-label="Add Linen Throw to bag"]').trigger('click')
 
@@ -45,7 +65,7 @@ describe('storefront', () => {
   })
 
   it('adds distinct objects on separate lines', async () => {
-    const { store, wrapper } = mountApp()
+    const { store, wrapper } = await mountApp()
 
     await wrapper.find('[aria-label="Add Linen Throw to bag"]').trigger('click')
     await wrapper.find('[aria-label="Add Stoneware Carafe to bag"]').trigger('click')
@@ -57,7 +77,7 @@ describe('storefront', () => {
   })
 
   it('switches the interface to Simplified Chinese', async () => {
-    const { wrapper } = mountApp()
+    const { wrapper } = await mountApp()
 
     const chinese = wrapper.findAll('button').find(button => button.text() === '简')
     expect(chinese).toBeDefined()
@@ -69,7 +89,7 @@ describe('storefront', () => {
   })
 
   it('toggles the light theme from the header', async () => {
-    const { wrapper } = mountApp()
+    const { wrapper } = await mountApp()
 
     const toLight = wrapper.find('[aria-label="Switch to light theme"]')
     expect(toLight.exists()).toBe(true)

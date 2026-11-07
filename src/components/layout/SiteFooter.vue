@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
 import { useLocale } from '@/composables/useLocale'
 
 const { t } = useLocale()
@@ -8,17 +9,17 @@ const { t } = useLocale()
   <footer class="border-t border-line">
     <div class="mx-auto max-w-[1240px] flex flex-col gap-8 px-5 py-10 md:flex-row md:items-center md:justify-between sm:px-8">
       <div>
-        <p class="text-lg tracking-[0.14em] font-display">
+        <RouterLink to="/" class="text-lg tracking-[0.14em] font-display">
           STILL
-        </p>
+        </RouterLink>
         <p class="mt-2 text-xs text-mist">
           {{ t('footer.tagline') }}
         </p>
       </div>
 
       <nav class="flex gap-6 text-xs text-mist" :aria-label="t('nav.footer')">
-        <a href="#collection" class="transition-colors hover:text-bone">{{ t('nav.collection') }}</a>
-        <a href="#approach" class="transition-colors hover:text-bone">{{ t('nav.approach') }}</a>
+        <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone">{{ t('nav.collection') }}</RouterLink>
+        <RouterLink :to="{ path: '/', hash: '#approach' }" class="transition-colors hover:text-bone">{{ t('nav.approach') }}</RouterLink>
       </nav>
     </div>
 

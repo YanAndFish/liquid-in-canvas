@@ -1,6 +1,6 @@
-import type { StorageLike } from './persistence'
+import type { StorageLike } from '@/domain/persistence'
 import { describe, expect, it } from 'vitest'
-import { CART_STORAGE_KEY, readCart, sanitizeLines, writeCart } from './persistence'
+import { CART_STORAGE_KEY, readCart, sanitizeLines, writeCart } from '@/domain/persistence'
 
 function createMemoryStorage(): StorageLike {
   const values = new Map<string, string>()

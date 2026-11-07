@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { useCart } from '@/composables/useCart'
+import { RouterLink } from 'vue-router'
 import { useLocale } from '@/composables/useLocale'
 import { formatCents, FREE_SHIPPING_CENTS } from '@/domain/money'
-import AppIcon from './AppIcon.vue'
+import { useCart } from '@/stores/cart'
+import AppIcon from '../ui/AppIcon.vue'
 import CartLineRow from './CartLineRow.vue'
 
 const props = defineProps<{
@@ -14,7 +15,7 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
 }>()
 
-const { lines, totals, dispatch } = useCart()
+const { lines, totals, increment, decrement, remove, clear } = useCart()
 const { t } = useLocale()
 
 const phase = ref<'bag' | 'placing' | 'confirmed'>('bag')
@@ -77,7 +78,7 @@ function checkout() {
 
   phase.value = 'placing'
   checkoutTimer = setTimeout(() => {
-    dispatch({ type: 'clear' })
+    clear()
     phase.value = 'confirmed'
   }, 800)
 }
@@ -167,9 +168,9 @@ onBeforeUnmount(() => {
             <p class="mt-3 max-w-[21rem] text-sm text-mist leading-relaxed">
               {{ t('cart.emptyBody') }}
             </p>
-            <a href="#collection" class="mt-8 btn-solid" @click="close">
+            <RouterLink :to="{ path: '/', hash: '#collection' }" class="mt-8 btn-solid" @click="close">
               {{ t('cart.browse') }}
-            </a>
+            </RouterLink>
           </div>
 
           <template v-else>
@@ -179,9 +180,9 @@ onBeforeUnmount(() => {
                   v-for="line in lines"
                   :key="line.product.id"
                   :line="line"
-                  @increment="dispatch({ type: 'increment', productId: line.product.id })"
-                  @decrement="dispatch({ type: 'decrement', productId: line.product.id })"
-                  @remove="dispatch({ type: 'remove', productId: line.product.id })"
+                  @increment="increment(line.product.id)"
+                  @decrement="decrement(line.product.id)"
+                  @remove="remove(line.product.id)"
                 />
               </ul>
             </div>

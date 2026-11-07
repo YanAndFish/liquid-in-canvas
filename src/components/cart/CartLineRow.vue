@@ -2,7 +2,7 @@
 import type { CartLineItem } from '@/domain/types'
 import { useLocale } from '@/composables/useLocale'
 import { formatCents } from '@/domain/money'
-import AppIcon from './AppIcon.vue'
+import AppIcon from '../ui/AppIcon.vue'
 
 defineProps<{
   line: CartLineItem

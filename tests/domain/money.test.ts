@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FLAT_SHIPPING_CENTS, formatCents, FREE_SHIPPING_CENTS } from './money'
+import { FLAT_SHIPPING_CENTS, formatCents, FREE_SHIPPING_CENTS } from '@/domain/money'
 
 describe('formatCents', () => {
   it('omits cents for whole dollar amounts', () => {

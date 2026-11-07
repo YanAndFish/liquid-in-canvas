@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { messages } from './messages'
-import { translate } from './translate'
+import { messages } from '@/i18n/messages'
+import { translate } from '@/i18n/translate'
 
 describe('translate', () => {
   it('returns the requested language', () => {

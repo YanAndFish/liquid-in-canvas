@@ -13,6 +13,10 @@ export const messages = {
     en: 'Everyday objects',
     zh: '日常器物',
   },
+  'nav.home': {
+    en: 'Home',
+    zh: '首页',
+  },
   'nav.collection': {
     en: 'Collection',
     zh: '系列',
@@ -26,12 +30,16 @@ export const messages = {
     zh: '购物袋',
   },
   'nav.skip': {
-    en: 'Skip to collection',
-    zh: '跳到系列',
+    en: 'Skip to content',
+    zh: '跳到内容',
   },
   'nav.primary': {
     en: 'Primary',
     zh: '主导航',
+  },
+  'nav.breadcrumb': {
+    en: 'Breadcrumb',
+    zh: '面包屑导航',
   },
   'nav.footer': {
     en: 'Footer',
@@ -70,8 +78,8 @@ export const messages = {
     zh: '安静一点。',
   },
   'hero.subtitle': {
-    en: 'Six objects for the rooms you use every day. Chosen for how they feel in the hand and how they age.',
-    zh: '六件日常器物，为每天生活的房间而选。看重手感，也看重时间留下的样子。',
+    en: 'Twelve objects for the rooms you use every day. Chosen for how they feel in the hand and how they age.',
+    zh: '十二件日常器物，为每天生活的房间而选。看重手感，也看重时间留下的样子。',
   },
   'hero.cta': {
     en: 'Shop the collection',
@@ -85,9 +93,9 @@ export const messages = {
     en: 'Objects',
     zh: '器物',
   },
-  'hero.statMaterials': {
-    en: 'Materials',
-    zh: '材质',
+  'hero.statCategories': {
+    en: 'Categories',
+    zh: '分类',
   },
   'hero.statBatch': {
     en: 'Batch',
@@ -232,6 +240,62 @@ export const messages = {
   'cart.close': {
     en: 'Close bag',
     zh: '关闭购物袋',
+  },
+  'detail.back': {
+    en: 'Back to collection',
+    zh: '返回系列',
+  },
+  'detail.add': {
+    en: 'Add to bag',
+    zh: '加入购物袋',
+  },
+  'detail.added': {
+    en: 'Added to bag',
+    zh: '已加入购物袋',
+  },
+  'detail.shipping': {
+    en: 'Free shipping over $150.',
+    zh: '满 $150 免运费。',
+  },
+  'detail.demo': {
+    en: 'Demo store. No payment is taken.',
+    zh: '演示商店，不会收款。',
+  },
+  'detail.related': {
+    en: 'More from the collection',
+    zh: '系列中的其他物件',
+  },
+  'detail.notFound': {
+    en: 'This object is no longer here.',
+    zh: '这件器物已不在这里。',
+  },
+  'detail.notFoundBody': {
+    en: 'Return to the collection and start again.',
+    zh: '回到系列，重新看看。',
+  },
+  'spec.material': {
+    en: 'Material',
+    zh: '材质',
+  },
+  'spec.dimensions': {
+    en: 'Dimensions',
+    zh: '尺寸',
+  },
+  'spec.care': {
+    en: 'Care',
+    zh: '护理',
+  },
+  'notFound.title': {
+    en: 'This page slipped away.',
+    zh: '这个页面不在这里。',
+  },
+  'notFound.body': {
+    en: 'Return home and start again.',
+    zh: '回到首页，重新开始。',
+  },
+  'notFound.action': {
+    en: 'Back home',
+    zh: '回到首页',
   },
   'approach.eyebrow': {
     en: 'Approach',
