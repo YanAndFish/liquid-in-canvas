@@ -54,11 +54,11 @@ The drawer and the showreel cards are ordinary DOM elements with attributes:
   data-liquid-glass
   data-glass-anchor="#cart-shell"
   data-glass-radius="28 0 0 28"
-  data-glass-blur="20"
+  data-glass-blur="18"
   data-glass-refraction="26"
   data-glass-dispersion="0.36"
   data-glass-tint="#0b0d12"
-  data-glass-tint-alpha="0.34"
+  data-glass-tint-alpha="0.1"
   data-glass-specular="0.62"
   data-glass-shadow="0.55"
   data-glass-shadow-size="38"
@@ -72,19 +72,19 @@ The drawer and the showreel cards are ordinary DOM elements with attributes:
 | `data-liquid-glass` | absent | attribute | Marks the surface. The stage adds `drawable`. |
 | `data-glass-anchor` | offset parent | CSS selector | Non-drawable ancestor used for measurement. |
 | `data-glass-radius` | `28` | 0 to 2000 | One to four corner radii, CSS order. |
-| `data-glass-blur` | 18 regular, 8 clear | 0 to 80 | Backdrop blur radius in CSS pixels. |
-| `data-glass-refraction` | 22 regular, 18 clear | 0 to 80 | Edge lens offset in CSS pixels. |
-| `data-glass-dispersion` | 0.25 regular, 0.34 clear | 0 to 1 | Per-channel offset difference. |
+| `data-glass-blur` | 18 regular, 8 clear | 0 to 80 | Blur strength and soft/heavy layer mix. |
+| `data-glass-refraction` | 24 regular, 20 clear | 0 to 80 | Edge lens offset in CSS pixels. |
+| `data-glass-dispersion` | 0.3 regular, 0.4 clear | 0 to 1 | Per-channel offset difference. |
 | `data-glass-tint` | `#ffffff` dark, `#f7f2e8` light | `#rgb` or `#rrggbb` | Colour mixed into the glass. |
-| `data-glass-tint-alpha` | 0.08 dark, 0.34 light | 0 to 1 | Tint strength. |
+| `data-glass-tint-alpha` | 0.04 dark, 0.12 light | 0 to 1 | Tint strength. |
 | `data-glass-specular` | 0.7 regular, 0.9 clear | 0 to 2 | Rim and glare strength. |
-| `data-glass-shadow` | 0.4 regular, 0.3 clear | 0 to 1 | Shadow opacity. |
+| `data-glass-shadow` | 0.32 regular, 0.26 clear | 0 to 1 | Shadow opacity. |
 | `data-glass-shadow-size` | 32 regular, 28 clear | 0 to 100 | Shadow falloff and mesh padding. |
 | `data-glass-variant` | `regular` | `regular` or `clear` | Preset before explicit attributes override it. |
 
-Each surface is a nested `drawable` element. The root snapshot leaves a hole where it sits, and the surface is captured separately with a transparent background. A TSL mesh samples the page snapshot behind the panel, applies refraction, dispersion, blur, tint, specular and shadow, then composites the panel's own crisp content texture. The drawer slides with a `right` transition because a CSS transform makes the drawable snapshot empty in Chrome 157.
+Each surface is a nested `drawable` element. The root snapshot leaves a hole where it sits, and the surface is captured separately with a transparent background. A TSL mesh samples the page snapshot behind the panel, applies refraction, dispersion, a two-level separable Gaussian blur, tint, specular and shadow, then composites the panel's own crisp content texture. The drawer slides with a `right` transition because a CSS transform makes the drawable snapshot empty in Chrome 157.
 
-The showreel video is a trimmed, compressed copy of the fish sample used by [liquid-glass-studio](https://github.com/iyinchao/liquid-glass-studio). Its original credit is Tom Fisk on Pexels.
+The showreel video is a trimmed, compressed copy of the flower sample used by [liquid-glass-studio](https://github.com/iyinchao/liquid-glass-studio). Its original source is credited there to Pixabay.
 
 ## Structure
 
@@ -122,6 +122,6 @@ The drawable root is `#app`, with explicit `100dvw` and `100dvh` sizes because c
 
 Every canvas `paint` event uploads the root with `drawElementImageToTexture()` into an `rgba8unorm-srgb` texture, then renders a full-screen mesh with `MeshBasicMaterial`. The stage wraps a `GPUTexture` in three's `ExternalTexture` instead of using `HTMLTexture`, because three's WebGPU path for `HTMLTexture` still calls the removed `copyElementImageToTexture` API.
 
-Liquid-glass surfaces are excluded from the root snapshot by their own `drawable` attribute. Each surface is uploaded into a second texture, placed over the page mesh with a padded plane, and rendered with a TSL `MeshBasicNodeMaterial` that performs the SDF, refraction, 17-tap blur, tint, specular and shadow work. The drawer starts below the 64px header, uses a theme-specific tint, and slides with a `right` transition. The showreel is a sticky video frame with three glass surfaces and a small video clock that repaints the canvas while the clip plays.
+Liquid-glass surfaces are excluded from the root snapshot by their own `drawable` attribute. Each surface is uploaded into a second texture, placed over the page mesh with a padded plane, and rendered with a TSL `MeshBasicNodeMaterial` that performs the SDF, finite-difference refraction, two-level separable Gaussian blur, tint, specular and shadow work. The drawer starts below the 64px header, uses a theme-specific tint, and slides with a `right` transition. The showreel is a sticky video frame with three glass surfaces and a small video clock that repaints the canvas while the clip plays.
 
 See [LIQUID_GLASS_NOTES.md](LIQUID_GLASS_NOTES.md) for the shader math, the Chrome snapshot pitfalls and the measurements.

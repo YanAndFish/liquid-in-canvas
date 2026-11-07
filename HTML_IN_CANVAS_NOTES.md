@@ -512,9 +512,10 @@ OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面�
 | `src/components/cart/CartDrawer.vue` | 液态玻璃抽屉、滚动锁、行项目错开动画、`right` 滑入 |
 | `src/components/home/GlassShowcase.vue` | 视频 showreel 和三块玻璃表面 |
 | `src/stage/liquid-glass/options.ts` | `data-glass-*` 参数解析 |
-| `src/stage/liquid-glass/material.ts` | TSL 液态玻璃材质 |
-| `src/stage/liquid-glass/LiquidGlassLayer.ts` | 表面发现、内容纹理、网格、锚点和脏标记 |
-| `public/media/liquid-glass.mp4` | 9 秒 720p showreel |
+| `src/stage/liquid-glass/blur.ts` | 两层可分离高斯模糊和 render target |
+| `src/stage/liquid-glass/material.ts` | TSL 液态玻璃材质、有限差分法线和折射 |
+| `src/stage/liquid-glass/LiquidGlassLayer.ts` | 表面发现、内容纹理、网格、锚点裁剪和脏标记 |
+| `public/media/liquid-glass-flower.mp4` | 6 秒 720p showreel |
 | `src/styles/main.css` | stage、drawable 根、滚动容器、路由切换、下划线动画 |
 | `src/components/product/ProductCard.vue` | 卡片 hover、图片缩放、共享元素起点、入袋动画、加购反馈 |
 | `src/components/home/HeroSection.vue` | Hero 图片 hover 缩放 |
@@ -535,5 +536,9 @@ OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面�
 - 玻璃面板本身必须保持透明背景。给面板加不透明背景会把背景一起写进内容纹理，shader 会在玻璃上再盖一层实心矩形。
 - 玻璃网格要按 `shadowSize` 向外扩，否则投影会被面板裁掉。
 - 玻璃叠玻璃不划算。当前每块玻璃只采样页面快照，不采样其他玻璃网格。抽屉覆盖 showreel 时，卡片会被抽屉遮住，而不是在抽屉玻璃里再折射一次。
+- 二维 17 点圆盘采样不是高斯。当前改为水平加垂直两次 17 taps 高斯，soft 用四分之一分辨率，heavy 用八分之一分辨率，共四遍离屏 pass。
+- 法线不能用 `max(q, 0)` 推导。圆角矩形内部 q 为负，法线会是零，面板内部没有折射。现在用 SDF 有限差分求梯度。
+- 平滑滚动到 collection 时，`getBoundingClientRect` 可能短暂落后于根快照。玻璃卡片会脱离 showreel 框。现在玻璃矩形必须与锚点矩形相交才显示。
+- 玻璃 mesh 的 `renderOrder` 要区分页面层和抽屉层。抽屉玻璃固定为 1000，页面玻璃保持在 10 以上。
 - 页头保持不透明。把页头做成玻璃会让共享商品图片和入袋 clone 在到达页头时被玻璃网格盖住，因为 clone 在根快照里。要解决需要把 shared layer 也提到玻璃层之上。
 - 这是 Chrome 157 的行为。升级 Chrome 或 three.js 前要重新验证嵌套 `drawable`、离屏快照和 TSL 编译。
