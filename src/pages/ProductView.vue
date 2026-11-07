@@ -66,13 +66,23 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
 
 <template>
   <div v-if="product" class="py-8 sm:py-12">
-    <nav class="flex flex-wrap items-center gap-2 text-[11px] text-mist" :aria-label="t('nav.breadcrumb')">
-      <RouterLink to="/" class="transition-colors hover:text-bone">{{ t('nav.home') }}</RouterLink>
-      <span aria-hidden="true">/</span>
-      <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone">{{ t('nav.collection') }}</RouterLink>
-      <span aria-hidden="true">/</span>
-      <span class="text-[var(--text-soft)]">{{ text(product.name) }}</span>
-    </nav>
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <RouterLink
+        :to="{ path: '/', hash: '#collection' }"
+        class="inline-flex items-center gap-2 text-[13px] text-mist transition-colors hover:text-bone"
+      >
+        <AppIcon name="arrow" :size="14" class="rotate-180" />
+        {{ t('detail.back') }}
+      </RouterLink>
+
+      <nav class="flex flex-wrap items-center gap-2 text-[11px] text-mist" :aria-label="t('nav.breadcrumb')">
+        <RouterLink to="/" class="transition-colors hover:text-bone">{{ t('nav.home') }}</RouterLink>
+        <span aria-hidden="true">/</span>
+        <RouterLink :to="{ path: '/', hash: '#collection' }" class="transition-colors hover:text-bone">{{ t('nav.collection') }}</RouterLink>
+        <span aria-hidden="true">/</span>
+        <span class="text-[var(--text-soft)]">{{ text(product.name) }}</span>
+      </nav>
+    </div>
 
     <div class="grid mt-8 gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
       <div class="relative aspect-[4/5] overflow-hidden border border-line rounded-[2rem] bg-[var(--media-panel)]">
@@ -127,11 +137,6 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
             <dd>{{ text(product.specs[spec.key]) }}</dd>
           </div>
         </dl>
-
-        <RouterLink :to="{ path: '/', hash: '#collection' }" class="mt-8 inline-flex items-center gap-2 text-[13px] text-mist transition-colors hover:text-bone">
-          <AppIcon name="arrow" :size="14" class="rotate-180" />
-          {{ t('detail.back') }}
-        </RouterLink>
       </div>
     </div>
 
