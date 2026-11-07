@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { Product } from '@/domain/types'
-import { onBeforeUnmount, ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { bagTargetRect, getSharedLayer } from '@/composables/sharedTransition'
 import { useLocale } from '@/composables/useLocale'
 import { formatCents } from '@/domain/money'
 import AppIcon from '../ui/AppIcon.vue'
@@ -16,16 +17,38 @@ const emit = defineEmits<{
 
 const { t, text } = useLocale()
 
+const media = ref<HTMLElement | null>(null)
 const justAdded = ref(false)
 let resetTimer: ReturnType<typeof setTimeout> | undefined
 
-function add() {
+function openProduct(): void {
+  const panel = media.value
+  if (!panel)
+    return
+  getSharedLayer()?.startProductFlight({
+    image: props.product.image,
+    from: panel.getBoundingClientRect(),
+    radius: 25.6,
+  })
+}
+
+function add(): void {
+  const panel = media.value
+  const from = panel?.getBoundingClientRect()
   emit('add', props.product.id)
   justAdded.value = true
   clearTimeout(resetTimer)
   resetTimer = setTimeout(() => {
     justAdded.value = false
   }, 1400)
+  if (from) {
+    void nextTick().then(() => {
+      getSharedLayer()?.flyToBag({
+        image: props.product.image,
+        from,
+      }, bagTargetRect())
+    })
+  }
 }
 
 onBeforeUnmount(() => clearTimeout(resetTimer))
@@ -33,10 +56,11 @@ onBeforeUnmount(() => clearTimeout(resetTimer))
 
 <template>
   <article class="group transition-transform duration-500 ease-out hover:-translate-y-1">
-    <div class="relative aspect-[4/5] overflow-hidden border border-line rounded-[1.6rem] bg-[var(--media-panel)] transition-colors duration-300 group-hover:border-[var(--line-strong)]">
+    <div ref="media" data-product-image class="relative aspect-[4/5] overflow-hidden border border-line rounded-[1.6rem] bg-[var(--media-panel)] transition-colors duration-300 group-hover:border-[var(--line-strong)]">
       <RouterLink
         :to="{ name: 'product', params: { slug: product.slug } }"
         class="absolute inset-0 block"
+        @click="openProduct"
       >
         <div class="h-full w-full transition-transform duration-700 ease-out group-hover:scale-[1.04]">
           <img

@@ -76,7 +76,9 @@ const themeLabel = computed(() => theme.value === 'dark'
           :aria-label="bagLabel"
           @click="emit('openCart')"
         >
-          <AppIcon name="bag" :size="16" />
+          <span data-bag-target class="inline-flex items-center justify-center">
+            <AppIcon name="bag" :size="16" />
+          </span>
           <span class="hidden sm:inline">{{ t('nav.bag') }}</span>
           <span
             v-if="count > 0"
