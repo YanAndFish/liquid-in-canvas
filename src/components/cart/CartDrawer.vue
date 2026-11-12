@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import { useLocale } from '@/composables/useLocale'
 import { useTheme } from '@/composables/useTheme'
 import { formatCents, FREE_SHIPPING_CENTS } from '@/domain/money'
-import { setStageScrollLocked } from '@/stage/scroll'
+import { setStageScrollLocked } from '@/stage/contract'
 import { useCart } from '@/stores/cart'
 import AppIcon from '../ui/AppIcon.vue'
 import CartLineRow from './CartLineRow.vue'
@@ -115,7 +115,7 @@ onBeforeUnmount(() => {
 
 <template>
   <Transition name="cart">
-    <div v-if="props.open" id="cart-shell" class="fixed inset-0 z-50">
+    <div v-if="props.open" id="cart-shell" data-glass-modal class="fixed inset-0 z-50">
       <div data-glass-scrim class="absolute inset-0 bg-[var(--cart-scrim)]" @click="close" />
 
       <aside

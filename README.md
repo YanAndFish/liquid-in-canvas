@@ -72,14 +72,20 @@ pnpm build
 
 在需要裁剪的普通祖先上添加 `data-glass-clip`。玻璃和阴影会限制在该祖先的矩形内，适合媒体视图。
 
+模态层的根节点使用 `data-glass-modal`，其中的遮罩使用 `data-glass-scrim`。打开时，模态层外的玻璃按遮罩透明度压暗。页面切换容器使用 `data-glass-fade`，其透明度会作用到内部玻璃。
+
 玻璃元素的背景应当透明。背景色会进入内容纹理并遮住透镜。`drawable` 元素自身的 CSS transform 在目标浏览器中可能产生空快照，因此菜单动画使用布局尺寸，按压形变由材质完成。
 
 ## 渲染结构
 
+分层、帧流水线、DOM 约定与绘制顺序见 [架构](docs/ARCHITECTURE.md)。
+
 - `src/stage/CanvasStage.ts`：页面上传、绘制、尺寸变化和视频时钟。
+- `src/stage/contract.ts`：页面与舞台之间的 DOM 约定。舞台不依赖组件类名或 ID。
+- `src/stage/render-order.ts`：页面、各层玻璃与前景的绘制顺序。
 - `src/stage/liquid-glass/`：三维距离场、同层融合、HTML 内容遮挡、多级高斯模糊与按压反馈。
 - `src/stage/CanvasOverlay.ts`：将商品共享动画画在导航玻璃上方。
-- `src/composables/useSpring.ts`：菜单与选择器的弹簧动画。
+- `src/shared/`：弹簧、偏好存储和减少动态效果查询。
 - `src/components/home/GlassShowcase.vue`：媒体场景、材质选择与播放控制。
 
 控件内容单独上传。发生重叠时，按玻璃层级、HTML 层叠上下文与 DOM 顺序判断前后关系。下层内容被覆盖的部分加入背景卷积，上层文字保持清晰。商品共享动画有独立透明前景层，购物袋在其上方。

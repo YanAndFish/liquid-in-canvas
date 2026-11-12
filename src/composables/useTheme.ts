@@ -1,22 +1,9 @@
 import { computed, ref, watch } from 'vue'
+import { readPreference, writePreference } from '@/shared/storage'
 
 export type Theme = 'dark' | 'light'
 
 export const THEME_STORAGE_KEY = 'still.theme'
-
-function storedTheme(): Theme | null {
-  if (typeof window === 'undefined')
-    return null
-  try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
-    return stored === 'light' || stored === 'dark'
-      ? stored
-      : null
-  }
-  catch {
-    return null
-  }
-}
 
 function initialTheme(): Theme {
   if (typeof document !== 'undefined') {
@@ -25,7 +12,7 @@ function initialTheme(): Theme {
       return fromDocument
   }
 
-  const stored = storedTheme()
+  const stored = readPreference<Theme>(THEME_STORAGE_KEY, ['light', 'dark'])
   if (stored)
     return stored
 
@@ -44,14 +31,7 @@ watch(theme, (value) => {
       ? '#f4f1ea'
       : '#08080a')
   }
-  if (typeof window !== 'undefined') {
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, value)
-    }
-    catch {
-
-    }
-  }
+  writePreference(THEME_STORAGE_KEY, value)
 }, { immediate: true })
 
 export function useTheme() {

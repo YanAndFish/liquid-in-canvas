@@ -1,6 +1,6 @@
 import type { VolumeSurface } from '@/stage/liquid-glass/fusion'
 import { describe, expect, it } from 'vitest'
-import { glassRenderOrder, groupGlassSurfaces } from '@/stage/liquid-glass/fusion'
+import { groupGlassSurfaces, pressedBox } from '@/stage/liquid-glass/fusion'
 import { parseGlassOptions } from '@/stage/liquid-glass/options'
 
 /** 创建沿水平方向排列的独立玻璃。 */
@@ -38,7 +38,6 @@ describe('玻璃层级与融合', () => {
       surface(1, 0),
       surface(2, 50, 1),
     ])).toHaveLength(2)
-    expect(glassRenderOrder(1)).toBeGreaterThan(glassRenderOrder(0))
   })
   it('关闭融合的表面与邻近表面分别绘制', () => {
     expect(groupGlassSurfaces([
@@ -54,6 +53,17 @@ describe('玻璃层级与融合', () => {
     ]).map(group => group.map(item => item.id))).toEqual([
       [1, 2, 3],
     ])
+  })
+  it('按压时横向拉伸、纵向压缩，中心不变', () => {
+    const pressed = {
+      ...surface(1, 0),
+      press: 1,
+    }
+    const [cx, cy, hx, hy] = pressedBox(pressed)
+    expect([cx, cy]).toEqual([50, 50])
+    expect(hx).toBeGreaterThan(50)
+    expect(hy).toBeLessThan(50)
+    expect(pressedBox(surface(1, 0))).toEqual([50, 50, 50, 50])
   })
   it('拉开距离后连接组拆分', () => {
     const a = surface(1, 0)

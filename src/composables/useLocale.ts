@@ -4,25 +4,12 @@ import type { MessageParams } from '@/i18n/translate'
 import { computed, ref, watch } from 'vue'
 import { messages } from '@/i18n/messages'
 import { translate } from '@/i18n/translate'
+import { readPreference, writePreference } from '@/shared/storage'
 
 export const LOCALE_STORAGE_KEY = 'still.locale'
 
-function readStoredLocale(): Locale | null {
-  if (typeof window === 'undefined')
-    return null
-  try {
-    const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY)
-    return stored === 'en' || stored === 'zh'
-      ? stored
-      : null
-  }
-  catch {
-    return null
-  }
-}
-
 function preferredLocale(): Locale {
-  const stored = readStoredLocale()
+  const stored = readPreference<Locale>(LOCALE_STORAGE_KEY, ['en', 'zh'])
   if (stored)
     return stored
   if (typeof navigator !== 'undefined' && navigator.language.toLowerCase().startsWith('zh'))
@@ -40,14 +27,7 @@ watch(locale, (value) => {
     document.title = messages['meta.title'][value]
     document.querySelector('meta[name="description"]')?.setAttribute('content', messages['meta.description'][value])
   }
-  if (typeof window !== 'undefined') {
-    try {
-      window.localStorage.setItem(LOCALE_STORAGE_KEY, value)
-    }
-    catch {
-
-    }
-  }
+  writePreference(LOCALE_STORAGE_KEY, value)
 }, { immediate: true })
 
 export function useLocale() {

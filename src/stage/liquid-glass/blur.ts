@@ -1,8 +1,6 @@
 import type { Texture, WebGPURenderer } from 'three/webgpu'
 import { Fn, texture, uniform, uv, vec3, vec4 } from 'three/tsl'
 import {
-  BufferGeometry,
-  Float32BufferAttribute,
   HalfFloatType,
   Mesh,
   MeshBasicNodeMaterial,
@@ -11,6 +9,7 @@ import {
   Scene,
   Vector2,
 } from 'three/webgpu'
+import { createFullscreenTriangle } from '../gpu'
 import { BLUR_SIGMAS, gaussianKernel, incrementalSigma } from './gaussian'
 
 /** 一层模糊的两遍绘制目标。 */
@@ -59,10 +58,7 @@ export class BackdropBlur {
     })()
     this.material = new MeshBasicNodeMaterial({ depthTest: false, depthWrite: false, toneMapped: false })
     this.material.colorNode = colorNode
-    const geometry = new BufferGeometry()
-    geometry.setAttribute('position', new Float32BufferAttribute([-1, 3, 0, -1, -1, 0, 3, -1, 0], 3))
-    geometry.setAttribute('uv', new Float32BufferAttribute([0, -1, 0, 1, 2, 1], 2))
-    this.mesh = new Mesh(geometry, this.material)
+    this.mesh = new Mesh(createFullscreenTriangle(), this.material)
     this.mesh.frustumCulled = false
     this.scene.add(this.mesh)
   }

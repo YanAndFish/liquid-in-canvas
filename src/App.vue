@@ -8,6 +8,7 @@ import FloatingSupport from '@/components/support/FloatingSupport.vue'
 import SharedTransitionLayer from '@/components/transition/SharedTransitionLayer.vue'
 import { getSharedLayer } from '@/composables/sharedTransition'
 import { useLocale } from '@/composables/useLocale'
+import { getStageScroller, STAGE_SCROLL_ID } from '@/stage/contract'
 import { useCart } from '@/stores/cart'
 
 const { totals } = useCart()
@@ -35,7 +36,7 @@ function onPageEnter(element: Element): void {
     () => {
       if (!target.isConnected)
         return null
-      const scroller = document.getElementById('stage-scroll')
+      const scroller = getStageScroller()
       if (scroller && scroller.scrollTop !== 0)
         return null
       return finalRect(element, target)
@@ -51,7 +52,7 @@ function onPageEnter(element: Element): void {
 </script>
 
 <template>
-  <div id="stage-scroll" class="h-full overflow-y-auto overscroll-none">
+  <div :id="STAGE_SCROLL_ID" class="h-full overflow-y-auto overscroll-none">
     <div class="min-h-full flex flex-col">
       <a
         href="#main"
@@ -66,7 +67,7 @@ function onPageEnter(element: Element): void {
         <div class="page-stage">
           <RouterView v-slot="{ Component, route }">
             <Transition name="page" @enter="onPageEnter">
-              <div :key="route.path" class="page-view">
+              <div :key="route.path" class="page-view" data-glass-fade>
                 <component :is="Component" />
               </div>
             </Transition>

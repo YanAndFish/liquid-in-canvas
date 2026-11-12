@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getStageScroller } from '@/stage/scroll'
+import { getStageScroller } from '@/stage/contract'
 import { routes } from './routes'
 
 const savedPositions = new Map<string, number>()

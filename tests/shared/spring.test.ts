@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advanceSpring } from '@/stage/liquid-glass/spring'
+import { advanceSpring } from '@/shared/spring'
 
 /** 推进一秒，模拟不同屏幕刷新率下的按压响应。 */
 function simulate(rate: number) {

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useLocale } from '@/composables/useLocale'
 import { useSpring } from '@/composables/useSpring'
+import { reducedMotionQuery } from '@/shared/motion'
 
 const { t } = useLocale()
 const frame = ref<HTMLElement | null>(null)
@@ -88,7 +89,7 @@ function onMotionChange(): void {
 }
 
 onMounted(() => {
-  motion = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+  motion = reducedMotionQuery() ?? undefined
   requestedPlayback.value = !motion?.matches
   motion?.addEventListener('change', onMotionChange)
   document.addEventListener('pointerdown', onOutside)

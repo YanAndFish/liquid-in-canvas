@@ -59,7 +59,15 @@ export function groupGlassSurfaces(surfaces: readonly VolumeSurface[]): VolumeSu
   return groups
 }
 
-/** 将玻璃层级映射到场景顺序，留出上层内容的位置。 */
-export function glassRenderOrder(layer: number): number {
-  return 900 + layer * 10
+/**
+ * 按压后的轮廓：横向略微拉伸、纵向压缩。
+ * 返回中心坐标与半宽高，体积距离场和内容遮挡必须使用同一形状。
+ */
+export function pressedBox(surface: VolumeSurface): [number, number, number, number] {
+  return [
+    surface.left + surface.width / 2,
+    surface.top + surface.height / 2,
+    surface.width / 2 * (1 + surface.press * 0.018),
+    surface.height / 2 * (1 - surface.press * 0.025),
+  ]
 }

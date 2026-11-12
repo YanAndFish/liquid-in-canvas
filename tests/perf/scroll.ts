@@ -1,5 +1,6 @@
 import type { WebGPURenderer } from 'three/webgpu'
 import { CanvasStage } from '../../src/stage/CanvasStage'
+import { getStageScroller } from '../../src/stage/contract'
 
 /** 供独立测试入口观察的绘制方法与 GPU 渲染器。 */
 interface ObservedStage {
@@ -143,7 +144,7 @@ document.body.append(panel)
 
 /** 暂停视频，在相同八秒路径中向下滚动 2200 像素，再回到顶部。 */
 button.onclick = () => {
-  const scroller = document.querySelector<HTMLElement>('#stage-scroll')
+  const scroller = getStageScroller()
   if (active || !scroller)
     return
   document.querySelectorAll('video').forEach(video => video.pause())

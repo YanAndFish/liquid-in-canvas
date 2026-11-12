@@ -2,6 +2,7 @@
 import type { BagFlight, ProductFlight, RectLike, SharedLayer } from '@/composables/sharedTransition'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { registerSharedLayer } from '@/composables/sharedTransition'
+import { prefersReducedMotion } from '@/shared/motion'
 
 const host = ref<HTMLDivElement | null>(null)
 
@@ -22,7 +23,7 @@ function createClone(image: string, rect: RectLike, radius: number): HTMLImageEl
     return null
   if (typeof Element === 'undefined' || typeof Element.prototype.animate !== 'function')
     return null
-  if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)
+  if (prefersReducedMotion())
     return null
 
   const local = relative(rect)
@@ -202,5 +203,5 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="host" class="shared-layer" aria-hidden="true" />
+  <div ref="host" class="shared-layer" data-stage-overlay aria-hidden="true" />
 </template>

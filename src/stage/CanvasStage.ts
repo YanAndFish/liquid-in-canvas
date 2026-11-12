@@ -1,17 +1,18 @@
+import type { BufferGeometry } from 'three/webgpu'
+import type { ElementTexture } from './gpu'
 import type { StageMetrics } from './types'
 import {
-  BufferGeometry,
-  ExternalTexture,
-  Float32BufferAttribute,
   Mesh,
   MeshBasicMaterial,
   OrthographicCamera,
   Scene,
-  SRGBColorSpace,
   WebGPURenderer,
 } from 'three/webgpu'
 import { CanvasOverlay } from './CanvasOverlay'
+import { attr, STAGE_OVERLAY_ATTR } from './contract'
+import { createElementTexture, createFullscreenTriangle, disposeElementTexture, uploadElement } from './gpu'
 import { LiquidGlassLayer } from './liquid-glass/LiquidGlassLayer'
+import { PAGE_RENDER_ORDER } from './render-order'
 
 interface CanvasStageOptions {
   canvas: HTMLCanvasElement
@@ -46,8 +47,8 @@ export class CanvasStage {
   private geometry: BufferGeometry | null = null
   private scene: Scene | null = null
   private camera: OrthographicCamera | null = null
-  private texture: GPUTexture | null = null
-  private external: ExternalTexture | null = null
+  /** 整页快照，同时作为玻璃折射与模糊的背景。 */
+  private page: ElementTexture | null = null
   private observer: ResizeObserver | null = null
   private root: HTMLElement | null = null
   private overlay: CanvasOverlay | null = null
@@ -94,11 +95,10 @@ export class CanvasStage {
     }
 
     const material = new MeshBasicMaterial({ depthTest: false, depthWrite: false, toneMapped: false })
-    const geometry = new BufferGeometry()
-    geometry.setAttribute('position', new Float32BufferAttribute([-1, 3, 0, -1, -1, 0, 3, -1, 0], 3))
-    geometry.setAttribute('uv', new Float32BufferAttribute([0, -1, 0, 1, 2, 1], 2))
+    const geometry = createFullscreenTriangle()
     const mesh = new Mesh(geometry, material)
     mesh.frustumCulled = false
+    mesh.renderOrder = PAGE_RENDER_ORDER
     const scene = new Scene()
     scene.add(mesh)
 
@@ -155,7 +155,7 @@ export class CanvasStage {
         scene,
         device,
         renderer,
-        getBackdrop: () => this.external,
+        getBackdrop: () => this.page?.external ?? null,
         onInvalidate: () => this.invalidate(),
         onFault: (cause) => {
           this.failed = true
@@ -163,7 +163,7 @@ export class CanvasStage {
         },
       })
       this.glass.start()
-      const foreground = root.querySelector<HTMLElement>('.shared-layer')
+      const foreground = root.querySelector<HTMLElement>(attr(STAGE_OVERLAY_ATTR))
       if (foreground && this.geometry)
         this.overlay = new CanvasOverlay(this.canvas, foreground, device, scene, this.geometry)
     }
@@ -200,10 +200,8 @@ export class CanvasStage {
     this.observer = null
     this.root = null
 
-    this.external?.dispose()
-    this.external = null
-    this.texture?.destroy()
-    this.texture = null
+    disposeElementTexture(this.page)
+    this.page = null
     this.material?.dispose()
     this.material = null
     this.geometry?.dispose()
@@ -237,23 +235,17 @@ export class CanvasStage {
       this.pendingSize = null
 
     const device = this.device
-    const texture = this.texture
+    const page = this.page
     const root = this.root
     const renderer = this.renderer
     const scene = this.scene
     const camera = this.camera
-    if (!device || !texture || !root || !renderer || !scene || !camera)
+    if (!device || !page || !root || !renderer || !scene || !camera)
       return
 
     try {
-      device.queue.drawElementImageToTexture(
-        { source: root },
-        {
-          texture,
-          size: { width: texture.width, height: texture.height },
-          colorSpace: 'srgb',
-        },
-      )
+      // 帧流水线：页面快照 → 玻璃（内容遮挡、模糊、体积）→ 前景 → 合成。
+      uploadElement(device, root, page.texture)
       this.glass?.sync(event)
       this.overlay?.sync()
       renderer.render(scene, camera)
@@ -302,23 +294,12 @@ export class CanvasStage {
 
     renderer.setSize(size.pixelWidth, size.pixelHeight, false)
 
-    const oldExternal = this.external
-    const oldTexture = this.texture
-    const texture = device.createTexture({
-      size: { width: size.pixelWidth, height: size.pixelHeight },
-      format: 'rgba8unorm-srgb',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-    })
-    const external = new ExternalTexture(texture)
-    external.colorSpace = SRGBColorSpace
-
-    this.texture = texture
-    this.external = external
-    material.map = external
+    const previous = this.page
+    const page = createElementTexture(device, size.pixelWidth, size.pixelHeight)
+    this.page = page
+    material.map = page.external
     material.needsUpdate = true
-
-    oldExternal?.dispose()
-    oldTexture?.destroy()
+    disposeElementTexture(previous)
 
     this.metrics = size
 

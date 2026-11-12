@@ -1,6 +1,6 @@
 # 液态玻璃渲染说明
 
-视觉资料与实际 UI 截图见 [Apple 视觉依据](docs/APPLE_LIQUID_GLASS_REFERENCE.md)。本文件记录渲染结构和目标浏览器的 API 约束。
+视觉资料与实际 UI 截图见 [Apple 视觉依据](APPLE_LIQUID_GLASS_REFERENCE.md)。本文件记录渲染结构和目标浏览器的 API 约束。
 
 ## 绘制顺序
 

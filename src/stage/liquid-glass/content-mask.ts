@@ -2,6 +2,7 @@ import type { Node } from 'three/webgpu'
 import type { VolumeSurface } from './fusion'
 import { float, length, max, min, select, smoothstep, uniform, vec2 } from 'three/tsl'
 import { Vector4 } from 'three/webgpu'
+import { pressedBox } from './fusion'
 
 /** 创建一块上层玻璃的轮廓参数，供清晰内容与背景内容共用。 */
 export function createContentMask() {
@@ -15,7 +16,7 @@ export function createContentMask() {
       enabled.value = surface ? 1 : 0
       if (!surface)
         return
-      box.value.set(surface.left + surface.width / 2, surface.top + surface.height / 2, surface.width / 2 * (1 + surface.press * 0.018), surface.height / 2 * (1 - surface.press * 0.025))
+      box.value.set(...pressedBox(surface))
       radius.value.set(...surface.options.radius)
       clip.value.set(...surface.clip)
     },

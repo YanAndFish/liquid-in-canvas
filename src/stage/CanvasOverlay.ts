@@ -1,5 +1,8 @@
 import type { BufferGeometry, Scene } from 'three/webgpu'
-import { ExternalTexture, Mesh, MeshBasicMaterial, SRGBColorSpace } from 'three/webgpu'
+import type { ElementTexture } from './gpu'
+import { Mesh, MeshBasicMaterial } from 'three/webgpu'
+import { createElementTexture, disposeElementTexture, uploadElement } from './gpu'
+import { OVERLAY_RENDER_ORDER } from './render-order'
 
 /** 把共享商品动画绘制在导航玻璃之上、购物袋之下。 */
 export class CanvasOverlay {
@@ -7,8 +10,7 @@ export class CanvasOverlay {
   private readonly element: HTMLElement
   private readonly device: GPUDevice
   private readonly scene: Scene
-  private texture: GPUTexture | null = null
-  private external: ExternalTexture | null = null
+  private target: ElementTexture | null = null
   private readonly material = new MeshBasicMaterial({
     transparent: true,
     depthTest: false,
@@ -31,7 +33,7 @@ export class CanvasOverlay {
     this.scene = scene
     this.mesh = new Mesh(geometry, this.material)
     this.mesh.frustumCulled = false
-    this.mesh.renderOrder = 950
+    this.mesh.renderOrder = OVERLAY_RENDER_ORDER
     this.mesh.visible = false
     scene.add(this.mesh)
     element.setAttribute('drawable', '')
@@ -45,27 +47,14 @@ export class CanvasOverlay {
     this.mesh.visible = this.element.childElementCount > 0
     if (!this.mesh.visible)
       return
-    if (!this.texture || this.texture.width !== this.canvas.width || this.texture.height !== this.canvas.height) {
-      this.external?.dispose()
-      this.texture?.destroy()
-      this.texture = this.device.createTexture({
-        size: { width: this.canvas.width, height: this.canvas.height },
-        format: 'rgba8unorm-srgb',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-      })
-      this.external = new ExternalTexture(this.texture)
-      this.external.colorSpace = SRGBColorSpace
-      this.material.map = this.external
+    const { width, height } = this.canvas
+    if (!this.target || this.target.texture.width !== width || this.target.texture.height !== height) {
+      disposeElementTexture(this.target)
+      this.target = createElementTexture(this.device, width, height)
+      this.material.map = this.target.external
       this.material.needsUpdate = true
     }
-    this.device.queue.drawElementImageToTexture(
-      { source: this.element },
-      {
-        texture: this.texture,
-        size: { width: this.canvas.width, height: this.canvas.height },
-        colorSpace: 'srgb',
-      },
-    )
+    uploadElement(this.device, this.element, this.target.texture)
   }
 
   /** 释放前景纹理，几何体由舞台统一释放。 */
@@ -74,7 +63,7 @@ export class CanvasOverlay {
     this.element.removeAttribute('drawable')
     this.scene.remove(this.mesh)
     this.material.dispose()
-    this.external?.dispose()
-    this.texture?.destroy()
+    disposeElementTexture(this.target)
+    this.target = null
   }
 }

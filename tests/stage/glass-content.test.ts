@@ -214,7 +214,7 @@ describe('玻璃内容纹理', () => {
     const { layer, root } = setup()
     try {
       const shell = document.createElement('div')
-      shell.id = 'cart-shell'
+      shell.dataset.glassModal = ''
       const scrim = document.createElement('div')
       scrim.dataset.glassScrim = ''
       scrim.style.backgroundColor = 'rgba(4, 4, 6, 0.52)'

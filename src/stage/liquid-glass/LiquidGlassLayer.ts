@@ -1,15 +1,19 @@
-import type { Scene, WebGPURenderer } from 'three/webgpu'
+import type { ExternalTexture, Scene, WebGPURenderer } from 'three/webgpu'
+import type { ElementTexture } from '../gpu'
 import type { GlassContentHandle } from './content-material'
 import type { VolumeSurface } from './fusion'
 import type { GlassOptions } from './options'
-import { ExternalTexture, Mesh, PlaneGeometry, SRGBColorSpace, Vector2 } from 'three/webgpu'
+import { Mesh, PlaneGeometry, Vector2 } from 'three/webgpu'
+import { reducedMotionQuery } from '../../shared/motion'
+import { advanceSpring } from '../../shared/spring'
+import { attr, GLASS_ATTR, GLASS_CLIP_ATTR, GLASS_FADE_ATTR, GLASS_MODAL_ATTR, GLASS_SCRIM_ATTR } from '../contract'
+import { createElementTexture, disposeElementTexture, uploadElement } from '../gpu'
+import { glassContentRenderOrder } from '../render-order'
 import { BackdropBlur } from './blur'
 import { createGlassContent } from './content-material'
 import { contentOccluders, createHtmlPaintOrderComparator } from './content-order'
 import { ContentBackdrop } from './ContentBackdrop'
-import { glassRenderOrder } from './fusion'
 import { glassOptionsSignature, parseGlassOptions } from './options'
-import { advanceSpring } from './spring'
 import { VolumeGroups } from './VolumeGroups'
 
 interface Rect {
@@ -26,8 +30,8 @@ interface GlassSurface {
   signature: string
   material: GlassContentHandle
   mesh: Mesh
-  texture: GPUTexture | null
-  external: ExternalTexture | null
+  /** 玻璃上 HTML 内容的快照。 */
+  content: ElementTexture | null
   textureWidth: number
   textureHeight: number
   lastGeometry: Rect | null
@@ -70,6 +74,17 @@ function intersects(rect: Rect, width: number, height: number): boolean {
     && rect.top + rect.height > 0
     && rect.left < width
     && rect.top < height
+}
+
+/** 用 offset 系列属性相对定位基准测量元素，不受元素自身 transform 影响。 */
+function offsetRect(element: HTMLElement, base: HTMLElement): Rect {
+  const rect = base.getBoundingClientRect()
+  return {
+    left: rect.left + element.offsetLeft - base.scrollLeft,
+    top: rect.top + element.offsetTop - base.scrollTop,
+    width: element.offsetWidth,
+    height: element.offsetHeight,
+  }
 }
 
 function intersectsRect(rect: Rect, other: DOMRect): boolean {
@@ -163,7 +178,7 @@ export class LiquidGlassLayer {
     window.addEventListener('pointerup', this.handlePointerUp)
     window.addEventListener('pointercancel', this.handlePointerUp)
     window.addEventListener('blur', this.handlePointerLeave)
-    this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    this.reducedMotion = reducedMotionQuery()
     this.scan()
   }
 
@@ -175,7 +190,8 @@ export class LiquidGlassLayer {
       return
 
     const changed = (event as PaintEventLike | undefined)?.changedElements ?? []
-    const modal = this.modalFactor()
+    const modal = this.root.querySelector<HTMLElement>(attr(GLASS_MODAL_ATTR))
+    const dimming = this.modalFactor(modal)
     let visibleSurfaces = 0
     const volumeSurfaces: VolumeSurface[] = []
     const surfaceById = new Map<number, GlassSurface>()
@@ -207,7 +223,7 @@ export class LiquidGlassLayer {
         && surface.element.getClientRects().length > 0
         && intersects(rect, this.viewport.x, this.viewport.y)
         && (!anchorRect || intersectsRect(rect, anchorRect))
-      const clip = surface.element.closest<HTMLElement>('[data-glass-clip]')?.getBoundingClientRect()
+      const clip = surface.element.closest<HTMLElement>(attr(GLASS_CLIP_ATTR))?.getBoundingClientRect()
       const fullyVisible = visible && rect.left >= Math.max(0, clip?.left ?? 0)
         && rect.top >= Math.max(0, clip?.top ?? 0)
         && rect.left + rect.width <= Math.min(this.viewport.x, clip?.right ?? this.viewport.x) + 0.5
@@ -236,13 +252,11 @@ export class LiquidGlassLayer {
       surface.material.setClip(clip?.left ?? 0, clip?.top ?? 0, clip?.right ?? this.viewport.x, clip?.bottom ?? this.viewport.y)
       const feedback = this.feedback.get(surface.element)
       this.updateGeometry(surface, rect)
-      const insideModal = document.getElementById('cart-shell')?.contains(surface.element) ?? false
       const opacity = this.pageOpacity(surface.element)
-      const brightness = insideModal ? 1 : modal
+      const brightness = modal?.contains(surface.element)
+        ? 1
+        : dimming
       surface.material.setOpacity(opacity * brightness)
-      surface.mesh.renderOrder = glassRenderOrder(surface.options.layer) + (surface.element.closest('.site-header')
-        ? 2
-        : 1)
       if (visible) {
         surfaceById.set(surface.mesh.id, surface)
         volumeSurfaces.push({
@@ -288,7 +302,7 @@ export class LiquidGlassLayer {
         const surface = surfaceById.get(volume.id)!
         const occluders = contentOccluders(volume, volumeSurfaces.slice(index + 1))
         surface.material.setOccluders(occluders)
-        surface.mesh.renderOrder = glassRenderOrder(volume.options.layer) + 1 + index / (volumeSurfaces.length + 1)
+        surface.mesh.renderOrder = glassContentRenderOrder(volume.options.layer, volume.paintOrder)
         if (occluders.length)
           overlays.push({ mesh: surface.mesh, material: surface.material.occludedMaterial })
       })
@@ -332,7 +346,7 @@ export class LiquidGlassLayer {
   /** 从实际命中的 HTML 控件取得交互目标，键盘焦点由浏览器绘制。 */
   private readonly handlePointer = (event: PointerEvent): void => {
     this.pressed = event.target instanceof Element
-      ? event.target.closest<HTMLElement>('[data-liquid-glass]')
+      ? event.target.closest<HTMLElement>(attr(GLASS_ATTR))
       : null
     this.startFeedback()
     this.onInvalidate()
@@ -372,14 +386,14 @@ export class LiquidGlassLayer {
   }
 
   private scan(): void {
-    for (const element of this.root.querySelectorAll<HTMLElement>('[data-liquid-glass]'))
+    for (const element of this.root.querySelectorAll<HTMLElement>(attr(GLASS_ATTR)))
       this.register(element)
   }
 
   private register(element: HTMLElement): void {
     if (this.surfaces.has(element) || !element.isConnected || !this.root.contains(element))
       return
-    if (element.parentElement?.closest('[data-liquid-glass]'))
+    if (element.parentElement?.closest(attr(GLASS_ATTR)))
       return
 
     const options = parseGlassOptions(element, this.theme())
@@ -409,11 +423,7 @@ export class LiquidGlassLayer {
     const material = createGlassContent(content.external)
     const mesh = new Mesh(this.geometry, material.material)
     mesh.frustumCulled = false
-    mesh.renderOrder = element.closest('#cart-shell')
-      ? 1000
-      : element.closest('.site-header')
-        ? 900
-        : 10 + this.surfaces.size
+    // 绘制顺序在每帧 sync() 中按层级与 HTML 绘制顺序设置。
     mesh.visible = false
     this.scene.add(mesh)
 
@@ -424,8 +434,7 @@ export class LiquidGlassLayer {
       signature: glassOptionsSignature(options),
       material,
       mesh,
-      texture: content.texture,
-      external: content.external,
+      content,
       textureWidth: size.width,
       textureHeight: size.height,
       lastGeometry: null,
@@ -483,10 +492,8 @@ export class LiquidGlassLayer {
       surface.element.removeAttribute('drawable')
     this.scene.remove(surface.mesh)
     surface.material.dispose()
-    surface.external?.dispose()
-    surface.texture?.destroy()
-    surface.texture = null
-    surface.external = null
+    disposeElementTexture(surface.content)
+    surface.content = null
     this.onInvalidate()
   }
 
@@ -506,8 +513,8 @@ export class LiquidGlassLayer {
       if (record.type === 'attributes') {
         const target = record.target as HTMLElement
         const name = record.attributeName ?? ''
-        if (name === 'data-liquid-glass') {
-          if (target.hasAttribute('data-liquid-glass')) {
+        if (name === GLASS_ATTR) {
+          if (target.hasAttribute(GLASS_ATTR)) {
             this.register(target)
           }
           else {
@@ -531,7 +538,7 @@ export class LiquidGlassLayer {
           invalidated = true
         }
         else {
-          const glass = target.closest<HTMLElement>('[data-liquid-glass]')
+          const glass = target.closest<HTMLElement>(attr(GLASS_ATTR))
           if (glass && !this.surfaces.has(glass))
             this.register(glass)
         }
@@ -567,9 +574,9 @@ export class LiquidGlassLayer {
   }
 
   private registerWithin(node: HTMLElement): void {
-    if (node.matches('[data-liquid-glass]'))
+    if (node.matches(attr(GLASS_ATTR)))
       this.register(node)
-    for (const element of node.querySelectorAll<HTMLElement>('[data-liquid-glass]'))
+    for (const element of node.querySelectorAll<HTMLElement>(attr(GLASS_ATTR)))
       this.register(element)
   }
 
@@ -617,15 +624,8 @@ export class LiquidGlassLayer {
   }
 
   private domMeasure(element: HTMLElement, anchor: HTMLElement | null): Rect {
-    if (anchor) {
-      const base = anchor.getBoundingClientRect()
-      return {
-        left: base.left + element.offsetLeft - anchor.scrollLeft,
-        top: base.top + element.offsetTop - anchor.scrollTop,
-        width: element.offsetWidth,
-        height: element.offsetHeight,
-      }
-    }
+    if (anchor)
+      return offsetRect(element, anchor)
     const rect = element.getBoundingClientRect()
     return {
       left: rect.left,
@@ -638,25 +638,11 @@ export class LiquidGlassLayer {
   private measure(surface: GlassSurface): Rect {
     const element = surface.element
     const anchor = surface.anchor
-    if (anchor?.isConnected) {
-      const base = anchor.getBoundingClientRect()
-      return {
-        left: base.left + element.offsetLeft - anchor.scrollLeft,
-        top: base.top + element.offsetTop - anchor.scrollTop,
-        width: element.offsetWidth,
-        height: element.offsetHeight,
-      }
-    }
+    if (anchor?.isConnected)
+      return offsetRect(element, anchor)
     const parent = element.offsetParent
-    if (parent instanceof HTMLElement) {
-      const base = parent.getBoundingClientRect()
-      return {
-        left: base.left + element.offsetLeft - parent.scrollLeft,
-        top: base.top + element.offsetTop - parent.scrollTop,
-        width: element.offsetWidth,
-        height: element.offsetHeight,
-      }
-    }
+    if (parent instanceof HTMLElement)
+      return offsetRect(element, parent)
     return {
       left: element.offsetLeft,
       top: element.offsetTop,
@@ -720,12 +706,12 @@ export class LiquidGlassLayer {
     this.onInvalidate()
   }
 
-  private modalFactor(): number {
-    const shell = document.getElementById('cart-shell')
-    const scrim = shell?.querySelector<HTMLElement>('[data-glass-scrim]')
-    if (!shell || !scrim)
+  /** 模态层外玻璃的亮度比例；没有模态层时为 1。 */
+  private modalFactor(modal: HTMLElement | null): number {
+    const scrim = modal?.querySelector<HTMLElement>(attr(GLASS_SCRIM_ATTR))
+    if (!modal || !scrim)
       return 1
-    const shellOpacity = Number.parseFloat(getComputedStyle(shell).opacity)
+    const shellOpacity = Number.parseFloat(getComputedStyle(modal).opacity)
     const opacity = Number.isFinite(shellOpacity)
       ? shellOpacity
       : 1
@@ -733,7 +719,7 @@ export class LiquidGlassLayer {
   }
 
   private pageOpacity(element: HTMLElement): number {
-    const page = element.closest('.page-view')
+    const page = element.closest(attr(GLASS_FADE_ATTR))
     if (!(page instanceof HTMLElement))
       return 1
     const opacity = Number.parseFloat(getComputedStyle(page).opacity)
@@ -765,16 +751,9 @@ export class LiquidGlassLayer {
     }
   }
 
-  private createContentTexture(width: number, height: number): { texture: GPUTexture, external: ExternalTexture } | null {
+  private createContentTexture(width: number, height: number): ElementTexture | null {
     try {
-      const texture = this.device.createTexture({
-        size: { width, height },
-        format: 'rgba8unorm-srgb',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-      })
-      const external = new ExternalTexture(texture)
-      external.colorSpace = SRGBColorSpace
-      return { texture, external }
+      return createElementTexture(this.device, width, height)
     }
     catch (cause) {
       this.onFault(cause)
@@ -787,10 +766,8 @@ export class LiquidGlassLayer {
     if (!content)
       return
     surface.material.setContent(content.external)
-    surface.external?.dispose()
-    surface.texture?.destroy()
-    surface.external = content.external
-    surface.texture = content.texture
+    disposeElementTexture(surface.content)
+    surface.content = content
     surface.textureWidth = width
     surface.textureHeight = height
     surface.dirty = true
@@ -800,17 +777,10 @@ export class LiquidGlassLayer {
   }
 
   private upload(surface: GlassSurface): boolean {
-    if (!surface.texture)
+    if (!surface.content)
       return false
     try {
-      this.device.queue.drawElementImageToTexture(
-        { source: surface.element },
-        {
-          texture: surface.texture,
-          size: { width: surface.texture.width, height: surface.texture.height },
-          colorSpace: 'srgb',
-        },
-      )
+      uploadElement(this.device, surface.element, surface.content.texture)
       surface.dirty = false
       return true
     }

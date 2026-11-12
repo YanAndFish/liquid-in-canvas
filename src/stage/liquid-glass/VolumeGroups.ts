@@ -2,7 +2,8 @@ import type { Node, Scene, Texture } from 'three/webgpu'
 import type { VolumeSurface } from './fusion'
 import { clamp, dot, exp, float, Fn, If, max, mix, pow, reflect, screenUV, smoothstep, texture, uniform, vec2, vec3, vec4 } from 'three/tsl'
 import { Color, Mesh, MeshBasicNodeMaterial, PlaneGeometry, SRGBColorSpace, Vector2, Vector4 } from 'three/webgpu'
-import { glassRenderOrder, groupGlassSurfaces } from './fusion'
+import { glassVolumeRenderOrder } from '../render-order'
+import { groupGlassSurfaces, pressedBox } from './fusion'
 import { BLUR_SIGMAS } from './gaussian'
 import { createVolumeFunctions } from './volume-shader'
 
@@ -211,7 +212,7 @@ export class VolumeGroups {
           const field = fields[i]!
           const options = member.options
           const halfDepth = Math.max(2, Math.min(options.refraction, member.width * 0.3, member.height * 0.3))
-          field.box.value.set(member.left + member.width / 2, member.top + member.height / 2, member.width / 2 * (1 + member.press * 0.018), member.height / 2 * (1 - member.press * 0.025))
+          field.box.value.set(...pressedBox(member))
           field.radius.value.set(...options.radius)
           field.depth.value.set(halfDepth, options.elevation, options.fusion, 0)
           field.clip.value.set(...member.clip)
@@ -235,7 +236,7 @@ export class VolumeGroups {
         bottom = Math.min(size.y, bottom)
         mesh.position.set((left + right) / size.x - 1, 1 - (top + bottom) / size.y, 0)
         mesh.scale.set((right - left) / size.x * 2, (bottom - top) / size.y * 2, 1)
-        mesh.renderOrder = glassRenderOrder(current[0]!.options.layer) + Math.max(...current.map(member => member.paintOrder)) * 0.5
+        mesh.renderOrder = glassVolumeRenderOrder(current[0]!.options.layer, Math.max(...current.map(member => member.paintOrder)))
       },
       dispose() { material.dispose() },
     }

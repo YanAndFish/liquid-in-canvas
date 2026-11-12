@@ -1,5 +1,6 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { advanceSpring } from '@/stage/liquid-glass/spring'
+import { reducedMotionQuery } from '@/shared/motion'
+import { advanceSpring } from '@/shared/spring'
 
 /** 用弹簧跟随目标值；系统要求减少动态效果时直接到达目标。 */
 export function useSpring(target: () => number) {
@@ -32,7 +33,7 @@ export function useSpring(target: () => number) {
     }
   }
   onMounted(() => {
-    reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+    reduced = reducedMotionQuery() ?? undefined
     reduced?.addEventListener('change', update)
   })
   watch(target, update)

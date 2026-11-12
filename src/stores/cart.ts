@@ -4,6 +4,7 @@ import type { CartLine, CartLineItem, CartState, CartTotals, ProductId } from '@
 import { computed, inject, readonly, ref } from 'vue'
 import { MAX_LINE_QUANTITY, selectLineItems, selectTotals } from '@/domain/cart'
 import { readCart, writeCart } from '@/domain/persistence'
+import { browserStorage } from '@/shared/storage'
 
 export interface CartStore {
   state: Readonly<Ref<CartState>>
@@ -16,23 +17,12 @@ export interface CartStore {
   clear: () => void
 }
 
-function defaultStorage(): StorageLike | null {
-  try {
-    return typeof window !== 'undefined'
-      ? window.localStorage
-      : null
-  }
-  catch {
-    return null
-  }
-}
-
 function resolveStorage(storage?: StorageLike | null): StorageLike | null {
   if (storage === null)
     return null
   if (storage)
     return storage
-  return defaultStorage()
+  return browserStorage()
 }
 
 export function createCartStore(options: { storage?: StorageLike | null } = {}): CartStore {
