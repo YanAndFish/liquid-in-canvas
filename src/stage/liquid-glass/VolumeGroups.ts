@@ -7,7 +7,7 @@ import { groupGlassSurfaces, pressedBox } from './fusion'
 import { BLUR_SIGMAS } from './gaussian'
 import { createVolumeFunctions } from './volume-shader'
 
-/** 一组相连玻璃的绘制资源，成员数量固定，位置逐帧更新。 */
+/** 一组相连玻璃的绘制资源。着色器只取决于成员数量，成员与位置逐帧写入。 */
 interface VolumeGroup {
   /** 用于呈现体积的包围矩形。 */
   mesh: Mesh<PlaneGeometry, MeshBasicNodeMaterial>
@@ -22,62 +22,67 @@ export class VolumeGroups {
   private readonly scene: Scene
   private readonly blurredTextures: Texture[]
   private readonly geometry = new PlaneGeometry(1, 1)
-  private readonly groups = new Map<string, VolumeGroup>()
+  /** 按成员数量分池。同一帧内相同数量的组依次取用，滚动时成员变化不会重建着色器。 */
+  private readonly pools = new Map<number, VolumeGroup[]>()
 
   constructor(scene: Scene, blurredTextures: Texture[]) {
     this.scene = scene
     this.blurredTextures = blurredTextures
   }
 
-  /** 更新邻近关系；离屏组合暂存，超出缓存数量时释放。 */
+  /**
+   * 更新邻近关系并分配绘制资源。
+   *
+   * 实例只增不减，数量不超过同时可见的玻璃数。按成员编号缓存会在滚动中不断遇到新组合，
+   * 每次都要重新构建着色器节点，造成数十毫秒的单帧卡顿。
+   */
   sync(surfaces: VolumeSurface[], viewport: Vector2, backdrop: Texture): void {
-    const used = new Set<string>()
+    const taken = new Map<number, number>()
     for (const members of groupGlassSurfaces(surfaces)) {
-      const key = members.map(member => member.id).join(':')
-      used.add(key)
-      let group = this.groups.get(key)
+      const size = members.length
+      const index = taken.get(size) ?? 0
+      taken.set(size, index + 1)
+      let pool = this.pools.get(size)
+      if (!pool) {
+        pool = []
+        this.pools.set(size, pool)
+      }
+      let group = pool[index]
       if (!group) {
-        group = this.createGroup(members, backdrop)
-        this.groups.set(key, group)
+        group = this.createGroup(size, backdrop)
+        pool.push(group)
         this.scene.add(group.mesh)
       }
       group.mesh.visible = true
       group.update(members, viewport, backdrop)
-      // 把使用中的组移到末尾，缓存最近的组合以减少滚动时重新编译。
-      this.groups.delete(key)
-      this.groups.set(key, group)
     }
-    for (const [key, group] of this.groups) {
-      if (used.has(key))
-        continue
-      group.mesh.visible = false
-      if (this.groups.size > 24) {
-        this.scene.remove(group.mesh)
-        group.dispose()
-        this.groups.delete(key)
-      }
+    for (const [size, pool] of this.pools) {
+      for (const group of pool.slice(taken.get(size) ?? 0))
+        group.mesh.visible = false
     }
   }
 
   /** 释放所有三维玻璃资源。 */
   dispose(): void {
-    for (const group of this.groups.values()) {
-      this.scene.remove(group.mesh)
-      group.dispose()
+    for (const pool of this.pools.values()) {
+      for (const group of pool) {
+        this.scene.remove(group.mesh)
+        group.dispose()
+      }
     }
-    this.groups.clear()
+    this.pools.clear()
     this.geometry.dispose()
   }
 
-  /** 创建共用距离场、法线与 RGB 光路的材质。 */
-  private createGroup(members: VolumeSurface[], backdrop: Texture): VolumeGroup {
+  /** 创建指定成员数量的距离场、法线与 RGB 光路材质。 */
+  private createGroup(size: number, backdrop: Texture): VolumeGroup {
     const source = texture(backdrop)
     const blurs = this.blurredTextures.map(value => texture(value))
     const viewport = uniform(new Vector2(1, 1))
     const ceiling = uniform(200)
     const shadow = uniform(new Vector2(0.2, 28))
     const brightness = uniform(1)
-    const fields = members.map(() => ({
+    const fields = Array.from({ length: size }, () => ({
       box: uniform(new Vector4()),
       radius: uniform(new Vector4()),
       depth: uniform(new Vector4()),
@@ -93,7 +98,7 @@ export class VolumeGroups {
       args[`d${i}`] = field.depth
       args[`c${i}`] = field.clip
     })
-    const functions = createVolumeFunctions(members.length)
+    const functions = createVolumeFunctions(size)
     const material = new MeshBasicNodeMaterial({
       transparent: true,
       depthTest: false,

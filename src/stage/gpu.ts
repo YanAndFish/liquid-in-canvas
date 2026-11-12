@@ -1,4 +1,58 @@
-import { BufferGeometry, ExternalTexture, Float32BufferAttribute, SRGBColorSpace } from 'three/webgpu'
+import type { WebGPURenderer } from 'three/webgpu'
+import { BufferGeometry, ExternalTexture, Float32BufferAttribute, LinearSRGBColorSpace, SRGBColorSpace } from 'three/webgpu'
+
+/** 画布直接以 sRGB 视图写入时需要接管的 three.js 内部工具。 */
+interface CanvasFormatUtils {
+  getPreferredCanvasFormat: () => string
+}
+
+/**
+ * 让画布以 sRGB 视图接收绘制，由硬件在写入时编码 sRGB，混合仍在线性空间进行。
+ *
+ * three.js 的输出色彩空间与线性工作空间不同时，会先把整个场景画进一张全尺寸半精度纹理，
+ * 再用一遍全屏绘制转换到画布。在 DPR 2 下这一遍约占每帧 GPU 时间的四成。
+ * WebGPU 不允许把画布配置成 sRGB 格式，但允许 8 位画布使用 sRGB 视图，
+ * 因此这里改写画布配置、每帧的纹理视图和管线颜色格式，省掉中间纹理与转换。
+ *
+ * 首选画布格式不是 8 位格式时返回 null，渲染器保持 three.js 默认路径。
+ */
+export function createSrgbCanvasOutput(canvas: HTMLCanvasElement): {
+  context: GPUCanvasContext
+  /** 渲染器初始化后调用，使管线以 sRGB 视图格式输出。 */
+  attach: (renderer: WebGPURenderer) => void
+} | null {
+  const base = navigator.gpu.getPreferredCanvasFormat()
+  if (base !== 'bgra8unorm' && base !== 'rgba8unorm')
+    return null
+  const context = canvas.getContext('webgpu') as GPUCanvasContext | null
+  if (!context)
+    return null
+  const view: GPUTextureFormat = `${base}-srgb`
+
+  const configure = context.configure.bind(context)
+  context.configure = configuration => configure({
+    ...configuration,
+    format: base,
+    viewFormats: [view],
+  })
+  const getCurrentTexture = context.getCurrentTexture.bind(context)
+  context.getCurrentTexture = () => {
+    const texture = getCurrentTexture()
+    const createView = texture.createView.bind(texture)
+    texture.createView = (descriptor?: GPUTextureViewDescriptor) => createView({ format: view, ...descriptor })
+    return texture
+  }
+
+  return {
+    context,
+    attach(renderer) {
+      const utils = (renderer.backend as unknown as { utils: CanvasFormatUtils }).utils
+      utils.getPreferredCanvasFormat = () => view
+      // 输出空间等于工作空间时不再创建中间纹理；编码由 sRGB 视图完成。
+      renderer.outputColorSpace = LinearSRGBColorSpace
+    },
+  }
+}
 
 /** 一张接收 HTML 快照的 GPU 纹理及其 three.js 包装。 */
 export interface ElementTexture {

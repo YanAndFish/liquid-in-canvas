@@ -1,0 +1,493 @@
+[
+  {
+    "paints": 375,
+    "paintInterval": {
+      "n": 374,
+      "mean": 16.93,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 50.6
+    },
+    "over33": 2,
+    "over50": 2,
+    "draw": {
+      "n": 375,
+      "mean": 8.67,
+      "p50": 11.4,
+      "p95": 12.4,
+      "max": 32.3
+    },
+    "longDraws": [
+      21.8,
+      32.3,
+      16.4,
+      21.4
+    ],
+    "longPaints": [
+      50.1,
+      50.6
+    ],
+    "raf": {
+      "n": 379,
+      "mean": 16.71,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 31.4
+    },
+    "rafOver33": 0,
+    "maxScroll": 640,
+    "video": [
+      true
+    ],
+    "wallMs": 6344,
+    "version": "baseline",
+    "round": 1
+  },
+  {
+    "paints": 373,
+    "paintInterval": {
+      "n": 372,
+      "mean": 16.94,
+      "p50": 16.7,
+      "p95": 18.8,
+      "max": 52.1
+    },
+    "over33": 1,
+    "over50": 1,
+    "draw": {
+      "n": 373,
+      "mean": 7.58,
+      "p50": 11.2,
+      "p95": 12.3,
+      "max": 20.2
+    },
+    "longDraws": [
+      20.2
+    ],
+    "longPaints": [
+      52.1
+    ],
+    "raf": {
+      "n": 377,
+      "mean": 16.71,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 33.3
+    },
+    "rafOver33": 0,
+    "maxScroll": 0,
+    "video": [
+      true
+    ],
+    "wallMs": 6317,
+    "version": "baseline",
+    "round": 1
+  },
+  {
+    "paints": 379,
+    "paintInterval": {
+      "n": 378,
+      "mean": 16.71,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 31.2
+    },
+    "over33": 0,
+    "over50": 0,
+    "draw": {
+      "n": 379,
+      "mean": 8.1,
+      "p50": 11.5,
+      "p95": 12.4,
+      "max": 21
+    },
+    "longDraws": [
+      16.8,
+      21
+    ],
+    "longPaints": [],
+    "raf": {
+      "n": 378,
+      "mean": 16.71,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 35.2
+    },
+    "rafOver33": 1,
+    "maxScroll": 0,
+    "video": [
+      true
+    ],
+    "wallMs": 6327,
+    "version": "baseline",
+    "round": 3
+  },
+  {
+    "paints": 378,
+    "paintInterval": {
+      "n": 377,
+      "mean": 16.76,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 33.4
+    },
+    "over33": 0,
+    "over50": 0,
+    "draw": {
+      "n": 378,
+      "mean": 8.28,
+      "p50": 11.5,
+      "p95": 12.4,
+      "max": 27
+    },
+    "longDraws": [
+      20.1,
+      27
+    ],
+    "longPaints": [],
+    "raf": {
+      "n": 378,
+      "mean": 16.71,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 33.1
+    },
+    "rafOver33": 0,
+    "maxScroll": 0,
+    "video": [
+      true
+    ],
+    "wallMs": 6333,
+    "version": "baseline",
+    "round": 3
+  },
+  {
+    "paints": 376,
+    "paintInterval": {
+      "n": 375,
+      "mean": 16.89,
+      "p50": 16.7,
+      "p95": 18.3,
+      "max": 49.4
+    },
+    "over33": 2,
+    "over50": 0,
+    "draw": {
+      "n": 376,
+      "mean": 8.33,
+      "p50": 11.5,
+      "p95": 12.4,
+      "max": 26.3
+    },
+    "longDraws": [
+      16.4,
+      20.9,
+      26.3
+    ],
+    "longPaints": [],
+    "raf": {
+      "n": 379,
+      "mean": 16.71,
+      "p50": 16.7,
+      "p95": 18.2,
+      "max": 33.8
+    },
+    "rafOver33": 1,
+    "maxScroll": 0,
+    "video": [
+      true
+    ],
+    "wallMs": 6345,
+    "version": "baseline",
+    "round": 5
+  },
+  {
+    "paints": 370,
+    "paintInterval": {
+      "n": 369,
+      "mean": 17.21,
+      "p50": 16.8,
+      "p95": 18.2,
+      "max": 50.5
+    },
+    "over33": 4,
+    "over50": 1,
+    "draw": {
+      "n": 370,
+      "mean": 8.46,
+      "p50": 11.5,
+      "p95": 12.6,
+      "max": 20.5
+    },
+    "longDraws": [
+      20.5,
+      16.7
+    ],
+    "longPaints": [
+      50.5
+    ],
+    "raf": {
+      "n": 381,
+      "mean": 16.67,
+      "p50": 16.7,
+      "p95": 18.1,
+      "max": 18.6
+    },
+    "rafOver33": 0,
+    "maxScroll": 80,
+    "video": [
+      true
+    ],
+    "wallMs": 6365,
+    "version": "baseline",
+    "round": 5
+  },
+  {
+    "paints": 372,
+    "paintInterval": {
+      "n": 371,
+      "mean": 17.07,
+      "p50": 16.8,
+      "p95": 18.8,
+      "max": 83.2
+    },
+    "over33": 2,
+    "over50": 2,
+    "draw": {
+      "n": 372,
+      "mean": 7.76,
+      "p50": 11.4,
+      "p95": 12.3,
+      "max": 23.6
+    },
+    "longDraws": [
+      17,
+      21.9,
+      23.6,
+      22.9
+    ],
+    "longPaints": [
+      83.2,
+      60.2
+    ],
+    "raf": {
+      "n": 371,
+      "mean": 17.07,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 83.3
+    },
+    "rafOver33": 2,
+    "maxScroll": 80,
+    "video": [
+      true
+    ],
+    "wallMs": 6346,
+    "version": "candidate",
+    "round": 2
+  },
+  {
+    "paints": 370,
+    "paintInterval": {
+      "n": 369,
+      "mean": 17.07,
+      "p50": 16.7,
+      "p95": 18.7,
+      "max": 49.2
+    },
+    "over33": 3,
+    "over50": 0,
+    "draw": {
+      "n": 370,
+      "mean": 8.42,
+      "p50": 11.5,
+      "p95": 12.3,
+      "max": 26.4
+    },
+    "longDraws": [
+      21.4,
+      26.4,
+      17.3
+    ],
+    "longPaints": [],
+    "raf": {
+      "n": 376,
+      "mean": 16.75,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 35.3
+    },
+    "rafOver33": 1,
+    "maxScroll": 40,
+    "video": [
+      true
+    ],
+    "wallMs": 6315,
+    "version": "candidate",
+    "round": 2
+  },
+  {
+    "paints": 377,
+    "paintInterval": {
+      "n": 376,
+      "mean": 16.85,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 48.4
+    },
+    "over33": 2,
+    "over50": 0,
+    "draw": {
+      "n": 377,
+      "mean": 8.42,
+      "p50": 11.4,
+      "p95": 12.2,
+      "max": 25.9
+    },
+    "longDraws": [
+      16.2,
+      21.5,
+      25.9
+    ],
+    "longPaints": [],
+    "raf": {
+      "n": 379,
+      "mean": 16.71,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 33.3
+    },
+    "rafOver33": 0,
+    "maxScroll": 0,
+    "video": [
+      true
+    ],
+    "wallMs": 6349,
+    "version": "candidate",
+    "round": 4
+  },
+  {
+    "paints": 368,
+    "paintInterval": {
+      "n": 367,
+      "mean": 17.26,
+      "p50": 16.8,
+      "p95": 18.9,
+      "max": 51
+    },
+    "over33": 5,
+    "over50": 2,
+    "draw": {
+      "n": 368,
+      "mean": 8.43,
+      "p50": 11.5,
+      "p95": 12.5,
+      "max": 20.3
+    },
+    "longDraws": [
+      20.3,
+      16.6
+    ],
+    "longPaints": [
+      51,
+      50.1
+    ],
+    "raf": {
+      "n": 379,
+      "mean": 16.71,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 31.4
+    },
+    "rafOver33": 0,
+    "maxScroll": 120,
+    "video": [
+      true
+    ],
+    "wallMs": 6351,
+    "version": "candidate",
+    "round": 4
+  },
+  {
+    "paints": 375,
+    "paintInterval": {
+      "n": 374,
+      "mean": 16.85,
+      "p50": 16.7,
+      "p95": 18.3,
+      "max": 50
+    },
+    "over33": 2,
+    "over50": 0,
+    "draw": {
+      "n": 375,
+      "mean": 8.55,
+      "p50": 11.5,
+      "p95": 12.2,
+      "max": 21.3
+    },
+    "longDraws": [
+      16.3,
+      21.3
+    ],
+    "longPaints": [],
+    "raf": {
+      "n": 378,
+      "mean": 16.67,
+      "p50": 16.7,
+      "p95": 18.3,
+      "max": 18.7
+    },
+    "rafOver33": 0,
+    "maxScroll": 200,
+    "video": [
+      true
+    ],
+    "wallMs": 6314,
+    "version": "candidate",
+    "round": 6
+  },
+  {
+    "paints": 365,
+    "paintInterval": {
+      "n": 364,
+      "mean": 17.35,
+      "p50": 16.7,
+      "p95": 18.5,
+      "max": 50.5
+    },
+    "over33": 6,
+    "over50": 2,
+    "draw": {
+      "n": 365,
+      "mean": 8.57,
+      "p50": 11.5,
+      "p95": 12.4,
+      "max": 25.8
+    },
+    "longDraws": [
+      19.7,
+      25.8,
+      16.2
+    ],
+    "longPaints": [
+      50.1,
+      50.5
+    ],
+    "raf": {
+      "n": 378,
+      "mean": 16.71,
+      "p50": 16.7,
+      "p95": 18.3,
+      "max": 31.4
+    },
+    "rafOver33": 0,
+    "maxScroll": 200,
+    "video": [
+      true
+    ],
+    "wallMs": 6332,
+    "version": "candidate",
+    "round": 6
+  }
+]

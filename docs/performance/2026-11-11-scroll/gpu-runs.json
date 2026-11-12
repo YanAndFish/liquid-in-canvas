@@ -1,0 +1,314 @@
+[
+  {
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": true,
+    "adapterInfo": {
+      "vendor": "apple",
+      "architecture": "metal-3",
+      "device": "",
+      "description": "",
+      "isFallbackAdapter": false
+    },
+    "elapsed": 8001.1,
+    "viewport": [
+      1563,
+      1013,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2200,
+    "draw": {
+      "count": 480,
+      "mean": 6.173958331843218,
+      "p50": 2.9000000953674316,
+      "p95": 12.399999856948853,
+      "max": 13.799999952316284
+    },
+    "paintInterval": {
+      "count": 479,
+      "mean": 16.663883089770355,
+      "p50": 16.700000047683716,
+      "p95": 18.5,
+      "max": 19.100000143051147
+    },
+    "animationInterval": {
+      "count": 479,
+      "mean": 16.665762004175363,
+      "p50": 16.700000000000728,
+      "p95": 18.599999999998545,
+      "max": 18.700000000000728
+    },
+    "longAnimationFrames": 0,
+    "gpu": {
+      "count": 255,
+      "mean": 13.805993662745099,
+      "p50": 11.862016,
+      "p95": 24.90368,
+      "max": 66.19136
+    },
+    "errors": [],
+    "version": "baseline",
+    "round": 1
+  },
+  {
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": true,
+    "adapterInfo": {
+      "vendor": "apple",
+      "architecture": "metal-3",
+      "device": "",
+      "description": "",
+      "isFallbackAdapter": false
+    },
+    "elapsed": 8015.800000000001,
+    "viewport": [
+      1563,
+      1013,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2199,
+    "draw": {
+      "count": 481,
+      "mean": 6.1577962510551085,
+      "p50": 2.9000000953674316,
+      "p95": 12.100000143051147,
+      "max": 13.299999952316284
+    },
+    "paintInterval": {
+      "count": 480,
+      "mean": 16.667083333432675,
+      "p50": 16.700000047683716,
+      "p95": 18.59999990463257,
+      "max": 41.299999952316284
+    },
+    "animationInterval": {
+      "count": 480,
+      "mean": 16.66625,
+      "p50": 16.700000000000728,
+      "p95": 18.600000000002183,
+      "max": 18.799999999999272
+    },
+    "longAnimationFrames": 0,
+    "gpu": {
+      "count": 257,
+      "mean": 14.010423782101169,
+      "p50": 11.665408000000001,
+      "p95": 29.949952,
+      "max": 67.56761600000002
+    },
+    "errors": [],
+    "version": "baseline",
+    "round": 3
+  },
+  {
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": true,
+    "adapterInfo": {
+      "vendor": "apple",
+      "architecture": "metal-3",
+      "device": "",
+      "description": "",
+      "isFallbackAdapter": false
+    },
+    "elapsed": 8015.5999999999985,
+    "viewport": [
+      1563,
+      1013,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2199.5,
+    "draw": {
+      "count": 481,
+      "mean": 6.200415806562142,
+      "p50": 3,
+      "p95": 12.100000143051147,
+      "max": 13.599999904632568
+    },
+    "paintInterval": {
+      "count": 480,
+      "mean": 16.663333333532016,
+      "p50": 16.700000047683716,
+      "p95": 18.5,
+      "max": 41.40000009536743
+    },
+    "animationInterval": {
+      "count": 480,
+      "mean": 16.664375000000003,
+      "p50": 16.700000000000728,
+      "p95": 18.599999999998545,
+      "max": 18.700000000000728
+    },
+    "longAnimationFrames": 0,
+    "gpu": {
+      "count": 256,
+      "mean": 13.490176000000009,
+      "p50": 11.79648,
+      "p95": 23.265279999999997,
+      "max": 64.74956800000001
+    },
+    "errors": [],
+    "version": "baseline",
+    "round": 5
+  },
+  {
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": true,
+    "adapterInfo": {
+      "vendor": "apple",
+      "architecture": "metal-3",
+      "device": "",
+      "description": "",
+      "isFallbackAdapter": false
+    },
+    "elapsed": 8000.6,
+    "viewport": [
+      1563,
+      1013,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2199.5,
+    "draw": {
+      "count": 480,
+      "mean": 6.08500000089407,
+      "p50": 2.799999952316284,
+      "p95": 12,
+      "max": 12.899999856948853
+    },
+    "paintInterval": {
+      "count": 479,
+      "mean": 16.66680584571058,
+      "p50": 16.699999809265137,
+      "p95": 18.59999990463257,
+      "max": 19.199999809265137
+    },
+    "animationInterval": {
+      "count": 479,
+      "mean": 16.668058455114817,
+      "p50": 16.69999999999891,
+      "p95": 18.600000000002183,
+      "max": 18.799999999999272
+    },
+    "longAnimationFrames": 0,
+    "gpu": {
+      "count": 289,
+      "mean": 7.495368193771626,
+      "p50": 6.22592,
+      "p95": 11.599871999999998,
+      "max": 51.380224000000005
+    },
+    "errors": [],
+    "version": "candidate",
+    "round": 2
+  },
+  {
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": true,
+    "adapterInfo": {
+      "vendor": "apple",
+      "architecture": "metal-3",
+      "device": "",
+      "description": "",
+      "isFallbackAdapter": false
+    },
+    "elapsed": 8014.6,
+    "viewport": [
+      1563,
+      1013,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2200,
+    "draw": {
+      "count": 481,
+      "mean": 6.054054048601654,
+      "p50": 2.799999952316284,
+      "p95": 12,
+      "max": 13
+    },
+    "paintInterval": {
+      "count": 480,
+      "mean": 16.661666666467983,
+      "p50": 16.700000047683716,
+      "p95": 18.59999990463257,
+      "max": 24.299999952316284
+    },
+    "animationInterval": {
+      "count": 480,
+      "mean": 16.66395833333333,
+      "p50": 16.700000000000728,
+      "p95": 18.599999999998545,
+      "max": 18.700000000000728
+    },
+    "longAnimationFrames": 0,
+    "gpu": {
+      "count": 289,
+      "mean": 7.451148401384088,
+      "p50": 6.356992,
+      "p95": 11.730944,
+      "max": 46.333952000000004
+    },
+    "errors": [],
+    "version": "candidate",
+    "round": 4
+  },
+  {
+    "comparable": true,
+    "invalidReasons": [],
+    "gpuDiagnostic": true,
+    "adapterInfo": {
+      "vendor": "apple",
+      "architecture": "metal-3",
+      "device": "",
+      "description": "",
+      "isFallbackAdapter": false
+    },
+    "elapsed": 8016.4000000000015,
+    "viewport": [
+      1563,
+      1013,
+      2
+    ],
+    "distance": 2200,
+    "maxScroll": 2200,
+    "draw": {
+      "count": 481,
+      "mean": 5.9792099802013245,
+      "p50": 2.700000047683716,
+      "p95": 11.799999952316284,
+      "max": 13.299999952316284
+    },
+    "paintInterval": {
+      "count": 480,
+      "mean": 16.654583332935967,
+      "p50": 16.700000047683716,
+      "p95": 18.5,
+      "max": 19
+    },
+    "animationInterval": {
+      "count": 480,
+      "mean": 16.666249999999998,
+      "p50": 16.69999999999891,
+      "p95": 18.599999999998545,
+      "max": 18.700000000000728
+    },
+    "longAnimationFrames": 0,
+    "gpu": {
+      "count": 286,
+      "mean": 7.574907524475525,
+      "p50": 6.291456,
+      "p95": 13.369344000000002,
+      "max": 49.020928000000005
+    },
+    "errors": [],
+    "version": "candidate",
+    "round": 6
+  }
+]

@@ -10,7 +10,7 @@ import {
 } from 'three/webgpu'
 import { CanvasOverlay } from './CanvasOverlay'
 import { attr, STAGE_OVERLAY_ATTR } from './contract'
-import { createElementTexture, createFullscreenTriangle, disposeElementTexture, uploadElement } from './gpu'
+import { createElementTexture, createFullscreenTriangle, createSrgbCanvasOutput, disposeElementTexture, uploadElement } from './gpu'
 import { LiquidGlassLayer } from './liquid-glass/LiquidGlassLayer'
 import { PAGE_RENDER_ORDER } from './render-order'
 
@@ -73,12 +73,19 @@ export class CanvasStage {
     if (this.canvas.content !== 'drawable')
       this.canvas.setAttribute('content', 'drawable')
 
-    const renderer = new WebGPURenderer({ canvas: this.canvas, antialias: false, alpha: false })
+    const output = createSrgbCanvasOutput(this.canvas)
+    const renderer = new WebGPURenderer({
+      canvas: this.canvas,
+      context: output?.context,
+      antialias: false,
+      alpha: false,
+    })
     try {
       await renderer.init()
       if (!isWebGPUBackend(renderer.backend))
         throw new Error('WebGPU backend unavailable')
 
+      output?.attach(renderer)
       renderer.setPixelRatio(1)
       renderer.getContext()
 

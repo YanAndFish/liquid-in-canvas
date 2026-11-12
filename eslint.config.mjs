@@ -11,6 +11,7 @@ export default antfu(
       'node_modules',
       '.vscode',
       'docs/HTML_IN_CANVAS_NOTES.md',
+      'docs/performance/**/tools',
     ],
   },
   {

@@ -1,0 +1,255 @@
+[
+  {
+    "paints": 285,
+    "paintInterval": {
+      "n": 284,
+      "mean": 22.18,
+      "p50": 17,
+      "p95": 35.3,
+      "max": 51.9
+    },
+    "over33": 41,
+    "over50": 2,
+    "draw": {
+      "n": 285,
+      "mean": 3.79,
+      "p50": 3.1,
+      "p95": 6.8,
+      "max": 31.8
+    },
+    "longDraws": [
+      18,
+      22.6,
+      31.8,
+      27.1
+    ],
+    "longPaints": [
+      51.9,
+      50.2
+    ],
+    "raf": {
+      "n": 378,
+      "mean": 16.67,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 18.8
+    },
+    "rafOver33": 0,
+    "maxScroll": 0,
+    "video": [
+      true
+    ],
+    "wallMs": 6317,
+    "version": "baseline",
+    "round": 1
+  },
+  {
+    "paints": 287,
+    "paintInterval": {
+      "n": 286,
+      "mean": 22.09,
+      "p50": 17,
+      "p95": 35.3,
+      "max": 52
+    },
+    "over33": 38,
+    "over50": 2,
+    "draw": {
+      "n": 287,
+      "mean": 3.8,
+      "p50": 3.1,
+      "p95": 6.7,
+      "max": 31.7
+    },
+    "longDraws": [
+      18.3,
+      22.6,
+      31.7,
+      21.5
+    ],
+    "longPaints": [
+      52,
+      50.3
+    ],
+    "raf": {
+      "n": 379,
+      "mean": 16.67,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 18.7
+    },
+    "rafOver33": 0,
+    "maxScroll": 0,
+    "video": [
+      true
+    ],
+    "wallMs": 6335,
+    "version": "baseline",
+    "round": 3
+  },
+  {
+    "paints": 286,
+    "paintInterval": {
+      "n": 285,
+      "mean": 22.17,
+      "p50": 17.1,
+      "p95": 35.2,
+      "max": 52
+    },
+    "over33": 41,
+    "over50": 3,
+    "draw": {
+      "n": 286,
+      "mean": 3.73,
+      "p50": 3,
+      "p95": 6.7,
+      "max": 31.6
+    },
+    "longDraws": [
+      22.8,
+      31.6,
+      22
+    ],
+    "longPaints": [
+      51.7,
+      50.1,
+      52
+    ],
+    "raf": {
+      "n": 379,
+      "mean": 16.67,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 18.7
+    },
+    "rafOver33": 0,
+    "maxScroll": 0,
+    "video": [
+      true
+    ],
+    "wallMs": 6330,
+    "version": "baseline",
+    "round": 5
+  },
+  {
+    "paints": 286,
+    "paintInterval": {
+      "n": 285,
+      "mean": 22.22,
+      "p50": 16.9,
+      "p95": 35.2,
+      "max": 50.1
+    },
+    "over33": 38,
+    "over50": 1,
+    "draw": {
+      "n": 286,
+      "mean": 3.56,
+      "p50": 3,
+      "p95": 5.2,
+      "max": 31.7
+    },
+    "longDraws": [
+      31.7,
+      18.5
+    ],
+    "longPaints": [
+      50.1
+    ],
+    "raf": {
+      "n": 380,
+      "mean": 16.67,
+      "p50": 16.7,
+      "p95": 18.6,
+      "max": 18.7
+    },
+    "rafOver33": 0,
+    "maxScroll": 0,
+    "video": [
+      true
+    ],
+    "wallMs": 6346,
+    "version": "candidate",
+    "round": 2
+  },
+  {
+    "paints": 288,
+    "paintInterval": {
+      "n": 287,
+      "mean": 22.07,
+      "p50": 16.9,
+      "p95": 35.2,
+      "max": 49.9
+    },
+    "over33": 40,
+    "over50": 0,
+    "draw": {
+      "n": 288,
+      "mean": 3.49,
+      "p50": 3,
+      "p95": 5.1,
+      "max": 30.3
+    },
+    "longDraws": [
+      30.3
+    ],
+    "longPaints": [],
+    "raf": {
+      "n": 380,
+      "mean": 16.67,
+      "p50": 16.7,
+      "p95": 18.7,
+      "max": 18.8
+    },
+    "rafOver33": 0,
+    "maxScroll": 0,
+    "video": [
+      true
+    ],
+    "wallMs": 6349,
+    "version": "candidate",
+    "round": 4
+  },
+  {
+    "paints": 288,
+    "paintInterval": {
+      "n": 287,
+      "mean": 22.07,
+      "p50": 16.9,
+      "p95": 35.3,
+      "max": 66.5
+    },
+    "over33": 40,
+    "over50": 3,
+    "draw": {
+      "n": 288,
+      "mean": 3.64,
+      "p50": 3,
+      "p95": 5.6,
+      "max": 32.8
+    },
+    "longDraws": [
+      32.8
+    ],
+    "longPaints": [
+      50.4,
+      50.1,
+      66.5
+    ],
+    "raf": {
+      "n": 379,
+      "mean": 16.72,
+      "p50": 16.7,
+      "p95": 18.7,
+      "max": 33.3
+    },
+    "rafOver33": 0,
+    "maxScroll": 0,
+    "video": [
+      true
+    ],
+    "wallMs": 6348,
+    "version": "candidate",
+    "round": 6
+  }
+]
