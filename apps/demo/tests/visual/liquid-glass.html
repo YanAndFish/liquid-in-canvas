@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>玻璃边缘检查</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; font-family: system-ui, sans-serif; }
+    canvas { display: block; }
+    canvas, #app { width: 100vw; height: 100vh; }
+    #app { position: relative; background: #c9cbce; color: #192029; overflow: clip; }
+    h1 { position: absolute; left: 48px; top: 20px; font-size: 25px; }
+    p { position: absolute; left: 48px; top: 75px; }
+    .green { position: absolute; left: 100px; top: 280px; width: 240px; height: 92px; border-radius: 80px; background: #1ce543; }
+    .blue { position: absolute; left: 580px; top: 284px; width: 430px; height: 18px; border-radius: 20px; background: #008dff; }
+    .colors { position: absolute; left: 80px; top: 470px; width: 900px; height: 170px; background: repeating-linear-gradient(70deg,#fb3179 0 32px,#f8ae31 32px 64px,#29c94f 64px 96px,#2584e2 96px 128px); }
+    .anchor { position: absolute; }
+    .glass { width: 100%; height: 100%; border-radius: inherit; display: grid; place-items: center; font-size: 22px; font-weight: 600; }
+    .a { left: 230px; top: 220px; width: 260px; height: 140px; border-radius: 70px; }
+    .b { left: 690px; top: 190px; width: 250px; height: 120px; border-radius: 60px; }
+    .c { left: 180px; top: 485px; width: 650px; height: 110px; border-radius: 55px; }
+    .fusion-backdrop { position: absolute; left: 80px; top: 710px; width: 900px; height: 340px; background: url(/media/liquid-glass-flower-poster.jpg) center / cover; border-radius: 28px; }
+    .square { left: 240px; top: 780px; width: 200px; height: 200px; border-radius: 32px; }
+    .circle { left: 452px; top: 780px; width: 200px; height: 200px; border-radius: 100px; }
+    .controls { position: absolute; left: 48px; bottom: 30px; display: flex; gap: 22px; flex-wrap: wrap; }
+    label { display: grid; gap: 8px; }
+  </style>
+</head>
+<body>
+<canvas id="stage" content="drawable"><div id="app" drawable>
+  <h1>玻璃边缘检查</h1><p>绿色：观察颜色沿边缘延伸。蓝色：观察线条位移。彩条：观察曲面压缩与色散。</p>
+  <div class="green"></div><div class="blue"></div><div class="colors"></div>
+  <div class="anchor a"><div class="glass" data-liquid-glass data-glass-radius="70">绿色边缘</div></div>
+  <div class="anchor b"><div class="glass" data-liquid-glass data-glass-radius="60">蓝色位移</div></div>
+  <div class="anchor c"><div class="glass" data-liquid-glass data-glass-radius="55">曲面与色散</div></div>
+  <div class="fusion-backdrop"></div>
+  <div class="anchor square"><div class="glass" data-liquid-glass data-glass-radius="32" data-glass-fusion="48">磨砂</div></div>
+  <div class="anchor circle"><div class="glass" data-liquid-glass data-glass-radius="100" data-glass-fusion="48">通透</div></div>
+  <div class="controls">
+    <label>模糊 <input id="blur" type="range" min="0" max="40" value="3"></label>
+    <label>透镜厚度 <input id="refraction" type="range" min="0" max="60" value="24"></label>
+    <label>圆形层级 <select id="layer"><option value="0">同层融合</option><option value="1">上层分离</option></select></label>
+    <label><input id="mixed" type="checkbox" checked>异材质过渡</label>
+    <label>间距 <input id="gap" type="range" min="-80" max="120" value="12"></label>
+    <label>色散 <input id="dispersion" type="range" min="0" max="1" step="0.05" value="0.4"></label>
+  </div>
+</div></canvas>
+<script type="module">
+  import { CanvasStage } from 'liquid-in-canvas/canvas'
+  const canvas = document.querySelector('#stage')
+  const root = document.querySelector('#app')
+  const surfaces = [...document.querySelectorAll('[data-liquid-glass]')]
+  /** 将可见滑块值应用到三块玻璃，便于固定背景对照。 */
+  function update() {
+    for (const surface of surfaces) {
+      surface.dataset.glassVariant = 'clear'
+      surface.dataset.glassTintAlpha = '0.025'
+      surface.dataset.glassTint = '#ffffff'
+      for (const key of ['blur', 'refraction', 'dispersion'])
+        surface.setAttribute(`data-glass-${key}`, document.getElementById(key).value)
+    }
+    if (document.getElementById('mixed').checked) {
+      const frosted = document.querySelector('.square .glass')
+      const clear = document.querySelector('.circle .glass')
+      frosted.dataset.glassBlur = '28'
+      frosted.dataset.glassTintAlpha = '0.38'
+      clear.dataset.glassBlur = '2'
+      clear.dataset.glassTintAlpha = '0.02'
+    }
+    document.querySelector('.circle').style.left = `${440 + Number(document.getElementById('gap').value)}px`
+    document.querySelector('.circle .glass').dataset.glassLayer = document.getElementById('layer').value
+  }
+  update()
+  for (const input of document.querySelectorAll('input, select'))
+    input.addEventListener('input', update)
+  const stage = new CanvasStage({canvas, onFault: console.error})
+  await stage.init()
+  stage.start(root)
+  window.addEventListener('pagehide', () => stage.dispose(), {once: true})
+</script>
+</body>
+</html>

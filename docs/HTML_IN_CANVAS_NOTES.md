@@ -496,6 +496,8 @@ OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面�
 
 ## 16. 文件索引
 
+> 下表记录的是撰写本文时的路径。拆分为 monorepo 之后，`src/stage/` 下的文件位于 `packages/liquid-in-canvas/src/`，其余 `src/` 与 `tests/` 位于 `apps/demo/`，当前结构见 [架构](ARCHITECTURE.md)。
+
 | 路径 | 作用 |
 | --- | --- |
 | `src/stage/CanvasStage.ts` | three.js WebGPU renderer、ExternalTexture、全屏 mesh、paint 上传、resize |
