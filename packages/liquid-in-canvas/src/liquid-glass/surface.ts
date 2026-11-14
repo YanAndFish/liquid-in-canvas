@@ -79,6 +79,28 @@ export interface GlassSurface extends ContentSource {
   onTransitionEnd: () => void
   /** 按压弹簧。 */
   readonly press: SpringState
+  /** 材质化弹簧，见 `VolumeSurface.materialize`。 */
+  readonly materialize: SpringState
+  /** 上一帧元素是否显示（`checkVisibility()`）。由隐藏变为显示时重新材质化。 */
+  shown: boolean
+  /** 是否曾经显示过。由隐藏变回显示时据此直接在新位置出现，新登记的玻璃不受影响（可能正从同名玻璃流出来）。 */
+  everShown: boolean
+  /** 元素已经隐藏，玻璃按上一帧的位置与内容退去，材质化回到 0 后不再绘制。 */
+  hiding: boolean
+  /** 元素已经离开文档，玻璃保留纹理退去，结束后释放。 */
+  fading: boolean
+  /**
+   * 内容显现的进度，0–1，只增不减。出现、同名玻璃交接与展开时从 0 开始，按时间走到 1：
+   * 内容的模糊与放大只收敛一次，不跟随玻璃的回弹与晃动。
+   */
+  reveal: number
+  /** 展开期间内容的可见范围（视口坐标：左、上、右、下），只扩大不缩小。 */
+  readonly revealClip: number[]
+  /** 本次显现是否是展开：此时内容按 `revealClip` 显露。 */
+  revealGrowing: boolean
+  /** 显现的来源在视口中的位置：展开时内容从这里放大后收拢。 */
+  revealX: number
+  revealY: number
 
   /** 元素在视口中的矩形，每帧更新。 */
   readonly rect: Rect
@@ -151,6 +173,19 @@ export function createSurface(init: SurfaceInit): GlassSurface {
     onScroll: () => {},
     onTransitionEnd: () => {},
     press: { value: 0, velocity: 0 },
+    materialize: {
+      value: init.options.materialize ? 0 : 1,
+      velocity: 0,
+    },
+    shown: false,
+    everShown: false,
+    hiding: false,
+    fading: false,
+    reveal: 1,
+    revealClip: [0, 0, 0, 0],
+    revealGrowing: false,
+    revealX: 0,
+    revealY: 0,
     rect: { left: 0, top: 0, width: 0, height: 0 },
     layout: { left: 0, top: 0, width: 0, height: 0 },
     originX: 0,
@@ -169,6 +204,7 @@ export function createSurface(init: SurfaceInit): GlassSurface {
       brightness: 1,
       paintOrder: 0,
       press: 0,
+      materialize: 1,
       host: init.host?.id ?? null,
     },
     hasVolume: false,
@@ -186,14 +222,21 @@ export function createSurface(init: SurfaceInit): GlassSurface {
       brightness: 1,
       paintOrder: 0,
       press: 0,
+      materialize: 1,
       host: init.host?.id ?? null,
     },
     hasTail: false,
     padding: 0,
     contentClip: [0, 0, 0, 0],
     contentOpacity: 1,
+    contentScale: 1,
+    contentBlur: 0,
+    contentOriginX: 0,
+    contentOriginY: 0,
     occluders: [],
     occluderCount: 0,
+    backdropOccluders: [],
+    backdropOccluderCount: 0,
   }
 }
 

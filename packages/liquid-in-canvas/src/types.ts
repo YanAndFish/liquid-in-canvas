@@ -17,6 +17,15 @@ export interface StageFault {
   cause?: unknown
 }
 
+/**
+ * 画布渲染的光路计算方式。
+ *
+ * - `profile`（缺省）：按到轮廓的距离查预先沿截面追踪的光路，每个像素的开销固定、远低于逐步求交；
+ *   单块玻璃上与 `raymarch` 一致，融合连接处与小圆角拐角是近似。
+ * - `raymarch`：在三维距离场里逐步求交，融合连接处与拐角都按三维实体折射，开销约为前者的三倍。
+ */
+export type GlassOptics = 'raymarch' | 'profile'
+
 export interface StageMetrics {
   cssWidth: number
   cssHeight: number

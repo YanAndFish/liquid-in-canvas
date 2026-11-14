@@ -1,0 +1,20 @@
+{
+  "query": "scene=capsule&panel=0&adaptive=0&maxPixelRatio=2&maxGlassPixelRatio=2&blur=0",
+  "dpr": 2,
+  "scene": "capsule",
+  "outlines": [
+    {
+      "x": 542,
+      "y": 387,
+      "width": 480,
+      "height": 240,
+      "radius": 120
+    }
+  ],
+  "boundary": {
+    "x": 781.5,
+    "y": 459,
+    "angle": 0
+  },
+  "ready": true
+}

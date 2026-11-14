@@ -1,5 +1,11 @@
 // 这个入口不静态引入画布渲染器：它在 `mountLiquidGlass()` 确认浏览器支持后才动态加载，
 // 只能使用回退实现的浏览器不会下载它。需要直接使用 `CanvasStage` 时从 `liquid-in-canvas/canvas` 引入。
+export type {
+  GlassNumberAttribute,
+  GlassPresenceAttribute,
+  GlassRadiusAttribute,
+  LiquidGlassAttributes,
+} from './attributes'
 export type { CanvasStage, CanvasStageOptions } from './CanvasStage'
 export {
   attr,
@@ -36,6 +42,7 @@ export type { GlassRenderMode, LiquidGlassMount, MountLiquidGlassOptions } from 
 export { DEFAULT_STAGE_RESOLUTION } from './resolution'
 export { detectStageSupport } from './support'
 export type {
+  GlassOptics,
   StageCapability,
   StageFault,
   StageMetrics,

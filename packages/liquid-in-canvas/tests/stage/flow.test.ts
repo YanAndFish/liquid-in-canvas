@@ -280,6 +280,7 @@ describe('嵌套玻璃的融合', () => {
       brightness: 1,
       paintOrder: 0,
       press: 0,
+      materialize: 1,
       options,
       fusion: options.fusion,
     }

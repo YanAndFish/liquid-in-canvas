@@ -19,6 +19,8 @@ export const GLASS_OPTION_ATTRS = [
   'data-glass-bottom-bevel',
   'data-glass-dispersion',
   'data-glass-lens',
+  'data-glass-saturation',
+  'data-glass-brightness',
   'data-glass-tint',
   'data-glass-tint-alpha',
   'data-glass-specular',
@@ -29,6 +31,7 @@ export const GLASS_OPTION_ATTRS = [
   'data-glass-morph-stretch',
   'data-glass-morph-bounce',
   'data-glass-morph-wobble',
+  'data-glass-materialize',
 ] as const
 
 /** HTML 元素声明的玻璃外观参数，长度均使用 CSS 像素。 */
@@ -57,6 +60,10 @@ export interface GlassOptions {
   dispersion: number
   /** 凸透镜强度，0 表示平板。玻璃中间的背景被放大约 1 / (1 − lens) 倍。 */
   lens: number
+  /** 透射背景的饱和度倍数，1 表示不变。 */
+  saturation: number
+  /** 透射背景的亮度倍数，1 表示不变。 */
+  brightness: number
   /** 用于承托前景文字的十六进制颜色。 */
   tint: string
   /** 染色比例，0 表示无染色。 */
@@ -82,6 +89,8 @@ export interface GlassOptions {
   morphBounce: number
   /** 液体迁移的晃动，0–1。0 表示到达后不晃动。 */
   morphWobble: number
+  /** 出现与移除时以材质化过渡：光线先弯折再成为磨砂。`data-glass-materialize="none"` 关闭。 */
+  materialize: boolean
 }
 
 function numberAttribute(
@@ -175,6 +184,8 @@ export function parseGlassOptions(
     bottomBevel: numberAttribute(element, 'data-glass-bottom-bevel', material.bottomBevel, GLASS_LIMITS.bottomBevel),
     dispersion: numberAttribute(element, 'data-glass-dispersion', material.dispersion, GLASS_LIMITS.dispersion),
     lens: numberAttribute(element, 'data-glass-lens', material.lens, GLASS_LIMITS.lens),
+    saturation: numberAttribute(element, 'data-glass-saturation', material.saturation, GLASS_LIMITS.saturation),
+    brightness: numberAttribute(element, 'data-glass-brightness', material.brightness, GLASS_LIMITS.brightness),
     tint: parseTint(element.getAttribute('data-glass-tint'), material.tint),
     tintAlpha: numberAttribute(element, 'data-glass-tint-alpha', material.tintAlpha, GLASS_LIMITS.tintAlpha),
     specular: numberAttribute(element, 'data-glass-specular', material.specular, GLASS_LIMITS.specular),
@@ -186,6 +197,7 @@ export function parseGlassOptions(
     morphStretch: numberAttribute(element, 'data-glass-morph-stretch', defaults.morphStretch, GLASS_LIMITS.morphStretch),
     morphBounce: numberAttribute(element, 'data-glass-morph-bounce', defaults.morphBounce, GLASS_LIMITS.morphBounce),
     morphWobble: numberAttribute(element, 'data-glass-morph-wobble', defaults.morphWobble, GLASS_LIMITS.morphWobble),
+    materialize: element.getAttribute('data-glass-materialize')?.trim().toLowerCase() !== 'none',
   }
 }
 
@@ -203,6 +215,8 @@ export function glassOptionsSignature(options: GlassOptions): string {
     bottomBevel: options.bottomBevel,
     dispersion: options.dispersion,
     lens: options.lens,
+    saturation: options.saturation,
+    brightness: options.brightness,
     tint: options.tint,
     tintAlpha: options.tintAlpha,
     specular: options.specular,
@@ -214,5 +228,6 @@ export function glassOptionsSignature(options: GlassOptions): string {
     morphStretch: options.morphStretch,
     morphBounce: options.morphBounce,
     morphWobble: options.morphWobble,
+    materialize: options.materialize,
   })
 }

@@ -30,6 +30,7 @@ function surface(id: number, left: number, layer = 0, fusion = 32): VolumeSurfac
     brightness: 1,
     paintOrder: 0,
     press: 0,
+    materialize: 1,
     layer,
     host: null,
     fusion,
@@ -71,16 +72,22 @@ describe('玻璃层级与融合', () => {
       [1, 2, 3],
     ])
   })
-  it('按压时横向拉伸、纵向压缩，中心不变', () => {
+  it('按压时只略微横向拉伸、纵向压缩，不放大；材质化时从略小的尺寸长出来，中心不变', () => {
     const pressed = {
       ...surface(1, 0),
       press: 1,
     }
     const [cx, cy, hx, hy] = pressedBox(pressed)
     expect([cx, cy]).toEqual([50, 50])
-    expect(hx).toBeGreaterThan(50)
-    expect(hy).toBeLessThan(50)
+    expect(hx).toBeCloseTo(50.9)
+    expect(hy).toBeCloseTo(48.75)
     expect(pressedBox(surface(1, 0))).toEqual([50, 50, 50, 50])
+    const appearing = pressedBox({
+      ...surface(1, 0),
+      materialize: 0,
+    })
+    expect(appearing[2]).toBeCloseTo(46)
+    expect(appearing[3]).toBeCloseTo(46)
   })
   it('拉开距离后连接组拆分', () => {
     const a = surface(1, 0)

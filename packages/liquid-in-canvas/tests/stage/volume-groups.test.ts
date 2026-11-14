@@ -28,6 +28,7 @@ function surface(id: number, left: number, attributes: Record<string, string> = 
     brightness: 1,
     paintOrder: 0,
     press: 0,
+    materialize: 1,
     options,
     fusion: options.fusion,
   }
@@ -48,7 +49,7 @@ function setup() {
     views: [{}, {}, {}, {}, {}],
     generation: 0,
   } as unknown as BackdropBlur
-  const groups = new VolumeGroups(fake.gpu, blur)
+  const groups = new VolumeGroups(fake.gpu, [blur])
   const list = new DrawList()
   /** 画一帧，返回画布遍里的绘制项。 */
   const frame = (surfaces: VolumeSurface[], shading = SHADING) => {
@@ -172,10 +173,10 @@ describe('三维玻璃组', () => {
     // 白色染色乘染色比例，在线性空间中为 0.5。
     expect(data[member + 20]).toBeCloseTo(0.5)
     expect(data[member + 23]).toBe(1)
-    // 截面：半厚度 24 时倒角宽高都是 0.68 倍，三次超椭圆，上下对称。
-    expect(data[member + 8]).toBe(24)
-    expect(data[member + 24]).toBeCloseTo(16.32)
-    expect(data[member + 25]).toBeCloseTo(16.32)
+    // 截面：100 × 100 的控件半厚度受短边限制为 30，倒角宽 0.45 倍、高等于半厚度，三次超椭圆，上下对称。
+    expect(data[member + 8]).toBe(30)
+    expect(data[member + 24]).toBeCloseTo(13.5)
+    expect(data[member + 25]).toBeCloseTo(30)
     expect(data[member + 26]).toBe(3)
     expect(data[member + 27]).toBe(1)
   })

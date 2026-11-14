@@ -1,4 +1,4 @@
-import type { GlassRenderMode } from 'liquid-in-canvas'
+import type { GlassOptics, GlassRenderMode } from 'liquid-in-canvas'
 import type { RendererController } from '@/composables/useRenderer'
 import { mount } from '@vue/test-utils'
 import { DEFAULT_STAGE_RESOLUTION, getGlassDefaults, resetGlassDefaults } from 'liquid-in-canvas'
@@ -31,6 +31,7 @@ function createRenderer(canvasSupported = true, svgSupported = true): RendererCo
     ? 'canvas'
     : svgSupported ? 'svg' : 'css')
   const resolution = ref({ ...DEFAULT_STAGE_RESOLUTION })
+  const optics = ref<GlassOptics>('profile')
   return {
     mode,
     canvasSupported,
@@ -38,6 +39,7 @@ function createRenderer(canvasSupported = true, svgSupported = true): RendererCo
     switching: ref(false),
     error: ref(''),
     resolution,
+    optics,
     metrics: () => ({
       cssWidth: 1000,
       cssHeight: 800,
@@ -54,6 +56,9 @@ function createRenderer(canvasSupported = true, svgSupported = true): RendererCo
         ...resolution.value,
         ...patch,
       }
+    }),
+    setOptics: vi.fn((next) => {
+      optics.value = next
     }),
   }
 }
@@ -95,7 +100,7 @@ describe('调参面板', () => {
     await wrapper.get('input[data-field="blur"]').setValue('40')
     expect(getGlassDefaults().materials.regular.dark.blur).toBe(40)
     expect(getGlassDefaults().materials.regular.light.blur).toBe(18)
-    expect(getGlassDefaults().materials.clear.dark.blur).toBe(8)
+    expect(getGlassDefaults().materials.clear.dark.blur).toBe(2)
 
     await wrapper.get('button[data-variant="clear"]').trigger('click')
     await wrapper.get('input[data-field="dispersion"]').setValue('0.8')
@@ -192,6 +197,17 @@ describe('渲染方式开关', () => {
     await wrapper.get('.tuner-launcher').trigger('click')
     await wrapper.get('[data-section="renderer"] input[type="range"]').setValue('1.5')
     expect(renderer.setResolution).toHaveBeenCalledWith({ maxPixelRatio: 1.5 })
+  })
+
+  it('切换三维求交与剖面光学', async () => {
+    const renderer = createRenderer()
+    wrapper = mountTuner(renderer)
+    await wrapper.get('.tuner-launcher').trigger('click')
+    const checkbox = wrapper.get('[data-section="renderer"] input[data-field="optics"]')
+    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
+    await checkbox.setValue(false)
+    expect(renderer.setOptics).toHaveBeenCalledWith('raymarch')
+    expect(renderer.optics.value).toBe('raymarch')
   })
 
   it('没有渲染控制器时只显示玻璃参数', async () => {

@@ -1,5 +1,5 @@
 import type { StageGpu } from '../gpu'
-import { BLEND_NORMAL, PipelineTable, shaderPrelude, SLOT_CANVAS, SLOT_TARGET } from '../gpu'
+import { BLEND_NORMAL, PipelineTable, shaderPrelude, SLOT_CANVAS, SLOT_TARGET, wgslFloat } from '../gpu'
 
 /** 每块上层玻璃的轮廓占用的浮点数个数，对应着色器里的 `Mask`。 */
 export const MASK_FLOATS = 12
@@ -25,8 +25,25 @@ fn mask_coverage(position: vec2f, mask: Mask) -> f32 {
 }
 `
 
+/**
+ * 内容模糊的取样点与权重：5 × 5 网格，间距为模糊半径的一半，按标准差为半径一半的高斯分布加权。
+ * 稀疏的圆盘取样在文字上会留下几道清晰的重影，网格加权平均是连续的柔化。
+ */
+const CONTENT_BLUR_TAPS: readonly (readonly [number, number, number])[] = (() => {
+  const taps: [number, number, number][] = []
+  let total = 0
+  for (let y = -2; y <= 2; y++) {
+    for (let x = -2; x <= 2; x++) {
+      const weight = Math.exp(-(x * x + y * y) / 2)
+      taps.push([x / 2, y / 2, weight])
+      total += weight
+    }
+  }
+  return taps.map(([x, y, weight]) => [x, y, Math.round(weight / total * 1e5) / 1e5] as const)
+})()
+
 /** 内容 uniform 中矩形与目标尺寸之后、遮挡轮廓之前的浮点数个数。 */
-export const CONTENT_FLOATS = 12
+export const CONTENT_FLOATS = 16
 
 /**
  * 生成指定遮挡数量的内容着色器。
@@ -40,8 +57,10 @@ export function createContentShader(occluders: number): string {
   clip: vec4f,
   // 内容的宽高，以及含四周余量的绘制矩形宽高。
   sizes: vec4f,
-  // 不透明度。
-  params: vec4f,${occluders > 0
+  // 不透明度、缩放、模糊半径（CSS 像素）。
+  params: vec4f,
+  // 缩放中心相对内容中心的偏移（CSS 像素）。
+  origin: vec4f,${occluders > 0
     ? `
   masks: array<Mask, ${occluders}>,`
     : ''}`
@@ -59,32 +78,49 @@ ${Array.from({ length: occluders }, (_, i) => `  coverage = max(coverage, mask_c
 }
 
 fn content_uv(in: VertexOutput) -> vec2f {
-  let local = (in.uv - 0.5) * u.sizes.zw;
+  let local = u.origin.xy + ((in.uv - 0.5) * u.sizes.zw - u.origin.xy) / max(u.params.y, 0.01);
   return (local + u.sizes.xy * 0.5) / u.sizes.xy;
+}
+
+// 取样内容。显现与退去期间按模糊半径做 ${CONTENT_BLUR_TAPS.length} 点高斯加权，按不透明度加权平均，
+// 透明边缘不会把文字压暗；平时只取一次。
+fn content_sample(at: vec2f) -> vec4f {
+  if (u.params.z < 0.05) {
+    return textureSample(content, samp, at);
+  }
+  let radius = u.params.z / u.sizes.xy;
+  var sum = vec4f(0.0);
+${CONTENT_BLUR_TAPS.map(([x, y, w]) => `  {
+    let c = textureSample(content, samp, at + vec2f(${wgslFloat(x)}, ${wgslFloat(y)}) * radius);
+    sum += vec4f(c.rgb * c.a, c.a) * ${wgslFloat(w)};
+  }`).join('\n')}
+  return vec4f(sum.rgb / max(sum.a, 0.0001), sum.a);
 }
 
 @fragment
 fn clear(in: VertexOutput) -> @location(0) vec4f {
   let at = content_uv(in);
-  let pixel = textureSample(content, samp, at);
+  let pixel = content_sample(at);
   return vec4f(pixel.rgb, pixel.a * portions(in, at).x);
 }
 
 @fragment
 fn occluded(in: VertexOutput) -> @location(0) vec4f {
   let at = content_uv(in);
-  let pixel = textureSample(content, samp, at);
+  let pixel = content_sample(at);
   return vec4f(pixel.rgb, pixel.a * portions(in, at).y);
 }
 `
 }
 
 /**
- * 内容的两条管线表，按遮挡数量取用：清晰内容画进画布，被覆盖的内容画进背景的离屏副本。
+ * 内容的管线表，按遮挡数量取用：清晰内容画进画布，被覆盖的内容画进背景的离屏副本，
+ * 下层玻璃的完整内容画进上层玻璃那一级的背景。
  */
 export interface ContentPipelines {
   clear: PipelineTable
   occluded: PipelineTable
+  stacked: PipelineTable
 }
 
 export function createContentPipelines(gpu: StageGpu): ContentPipelines {
@@ -99,6 +135,13 @@ export function createContentPipelines(gpu: StageGpu): ContentPipelines {
     occluded: new PipelineTable(gpu, 'content:occluded', occluders => ({
       code: createContentShader(occluders),
       entry: 'occluded',
+      textures: 1,
+      format: gpu.formatOf(SLOT_TARGET),
+      blend: BLEND_NORMAL,
+    })),
+    stacked: new PipelineTable(gpu, 'content:stacked', occluders => ({
+      code: createContentShader(occluders),
+      entry: 'clear',
       textures: 1,
       format: gpu.formatOf(SLOT_TARGET),
       blend: BLEND_NORMAL,

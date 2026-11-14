@@ -12,7 +12,13 @@
   "exports": {
     ".": "./src/index.ts",
     "./canvas": "./src/canvas.ts",
-    "./motion": "./src/motion.ts"
+    "./motion": "./src/motion.ts",
+    "./vue": {
+      "types": "./src/vue.d.ts"
+    },
+    "./react": {
+      "types": "./src/react.d.ts"
+    }
   },
   "types": "./src/index.ts",
   "files": [
@@ -31,21 +37,41 @@
       "./motion": {
         "types": "./dist/motion.d.ts",
         "import": "./dist/motion.js"
+      },
+      "./vue": {
+        "types": "./dist/vue.d.ts"
+      },
+      "./react": {
+        "types": "./dist/react.d.ts"
       }
     },
     "types": "./dist/index.d.ts"
   },
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.build.json",
+    "build": "vite build && tsc -p tsconfig.build.json && node -e \"for (const name of ['vue', 'react']) require('node:fs').copyFileSync('src/' + name + '.d.ts', 'dist/' + name + '.d.ts')\"",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "pnpm build"
   },
+  "peerDependencies": {
+    "@types/react": ">=18",
+    "vue": ">=3.3"
+  },
+  "peerDependenciesMeta": {
+    "@types/react": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@types/react": "^19.3.0",
     "jsdom": "^31.0.0",
     "typescript": "~6.0.3",
     "vite": "^8.3.6",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "vue": "^3.5.45"
   }
 }

@@ -279,6 +279,12 @@ fn layer(in: VertexOutput) -> @location(0) vec4f {
 fn screen(in: VertexOutput) -> @location(0) vec4f {
   return textureSample(source, samp, in.position.xy / u.screen.xy);
 }
+
+// 按目标上的位置不透明地复制，用于只复制背景的一部分。
+@fragment
+fn screenOpaque(in: VertexOutput) -> @location(0) vec4f {
+  return vec4f(textureSample(source, samp, in.position.xy / u.screen.xy).rgb, 1.0);
+}
 `
 
 /** 舞台的 GPU 上下文：设备、共用的绑定布局、管线编译与本帧的编码器。 */
@@ -293,6 +299,8 @@ export class StageGpu {
   readonly blitOpaque: PipelineTable
   readonly blitLayer: PipelineTable
   readonly blitScreen: PipelineTable
+  /** 按目标位置不透明地复制背景的一部分。 */
+  readonly blitScreenOpaque: PipelineTable
   disposed = false
   private readonly sampler: GPUSampler
   private readonly uniformLayout: GPUBindGroupLayout
@@ -326,7 +334,7 @@ export class StageGpu {
     })
     this.timing = new PassTimer(device)
     this.frame = new FrameEncoder(device, this.uniformLayout, this.sampler, this.timing)
-    const blit = (kind: 'opaque' | 'layer' | 'screen', blend: GPUBlendState | undefined) => new PipelineTable(this, `blit:${kind}`, slot => ({
+    const blit = (kind: 'opaque' | 'layer' | 'screen' | 'screenOpaque', blend: GPUBlendState | undefined) => new PipelineTable(this, `blit:${kind}`, slot => ({
       code: BLIT_SHADER,
       entry: kind,
       textures: 1,
@@ -337,6 +345,7 @@ export class StageGpu {
     this.blitLayer = blit('layer', BLEND_NORMAL)
     // 离屏目标里已经是预乘颜色。
     this.blitScreen = blit('screen', BLEND_PREMULTIPLIED)
+    this.blitScreenOpaque = blit('screenOpaque', undefined)
   }
 
   /** 格式位置对应的纹理格式。 */

@@ -314,4 +314,102 @@ describe('玻璃内容纹理', () => {
     }
     finally { layer.dispose() }
   })
+
+  it('新出现的玻璃从零材质化，移除后在原处退去，再释放内容纹理', async () => {
+    const { layer, sync, element } = setup()
+    const frame = (layer as unknown as { frame: { advanceMotion: (seconds: number, pressed: HTMLElement | null, reduced: boolean) => boolean } }).frame
+    const settle = () => {
+      let steps = 0
+      while (steps < 240 && frame.advanceMotion(1 / 60, null, false))
+        steps++
+    }
+    try {
+      sync()
+      const surface = layer.surfaces[0]!
+      expect(surface.materialize.value).toBe(0)
+      expect(surface.reveal).toBe(0)
+      expect(surface.contentBlur).toBeGreaterThan(0)
+      settle()
+      expect(surface.materialize.value).toBe(1)
+      // 内容显现只收敛一次：清晰、原尺寸之后不再随玻璃变化。
+      expect(surface.reveal).toBe(1)
+      sync()
+      expect(surface.contentBlur).toBe(0)
+      expect(surface.contentScale).toBe(1)
+
+      element.remove()
+      await flush()
+      expect(layer.surfaces).toHaveLength(0)
+      expect(layer.fading).toEqual([surface])
+      const texture = surface.content!.texture
+      // 退去期间仍然绘制体积与内容。
+      expect(sync()).toBeGreaterThan(0)
+      expect(texture.destroy).not.toHaveBeenCalled()
+      settle()
+      expect(surface.materialize.value).toBe(0)
+      sync()
+      expect(layer.fading).toHaveLength(0)
+      expect(texture.destroy).toHaveBeenCalled()
+      expect(surface.content).toBeNull()
+    }
+    finally {
+      layer.dispose()
+    }
+  })
+
+  it('隐藏期间读到的空布局不会让迁移玻璃流走，重新显示时在原处出现', async () => {
+    const { layer, sync, element } = setup()
+    const frame = (layer as unknown as { frame: { advanceMotion: (seconds: number, pressed: HTMLElement | null, reduced: boolean) => boolean } }).frame
+    const settle = () => {
+      for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++)
+        sync()
+    }
+    let shown = true
+    let offsetLeft = 0
+    element.checkVisibility = () => shown
+    Object.defineProperty(element, 'offsetLeft', {
+      get: () => offsetLeft,
+      configurable: true,
+    })
+    try {
+      element.dataset.glassMorph = ''
+      await flush()
+      sync()
+      settle()
+      const surface = layer.surfaces[0]!
+      expect(surface.volume.left).toBe(100)
+
+      // 购物袋打开时按钮被隐藏：浏览器读到的布局是空的（这里用偏到左边的位置模拟）。
+      shown = false
+      offsetLeft = -100
+      sync()
+      settle()
+      expect(surface.flow?.active).toBe(false)
+
+      shown = true
+      offsetLeft = 0
+      sync()
+      expect(surface.flow?.active).toBe(false)
+      expect(surface.volume.left).toBe(100)
+    }
+    finally { layer.dispose() }
+  })
+
+  it('关闭材质化的玻璃直接出现，移除时立即释放', async () => {
+    const { layer, sync, element } = setup()
+    try {
+      element.dataset.glassMaterialize = 'none'
+      await flush()
+      sync()
+      const surface = layer.surfaces[0]!
+      expect(surface.materialize.value).toBe(1)
+      element.remove()
+      await flush()
+      expect(layer.fading).toHaveLength(0)
+      expect(surface.content).toBeNull()
+    }
+    finally {
+      layer.dispose()
+    }
+  })
 })

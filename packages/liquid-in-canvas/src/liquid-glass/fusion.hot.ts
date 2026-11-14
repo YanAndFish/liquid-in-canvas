@@ -33,6 +33,11 @@ export interface VolumeSurface {
   paintOrder: number
   /** 按压弹簧的当前强度。 */
   press: number
+  /**
+   * 材质化程度：0 表示还没有玻璃，1 表示完整的玻璃，出现时可以略微越过 1。
+   * 折射厚度、透镜、模糊、染色、阴影与尺寸都随它变化，出现与移除时光线先弯折、再成为磨砂。
+   */
+  materialize: number
   /** 嵌套玻璃所在外层玻璃的编号，顶层玻璃为 null。 */
   host: number | null
 }
@@ -64,15 +69,24 @@ function fusable(a: VolumeSurface, b: VolumeSurface): boolean {
   return reach > 0 && surfaceGap(a, b) <= reach
 }
 
+/** 材质化从这个比例长到原尺寸。 */
+export const MATERIALIZE_SCALE = 0.08
+
+/** 材质化决定的缩放比例。 */
+export function surfaceScale(surface: VolumeSurface): number {
+  return 1 - MATERIALIZE_SCALE + MATERIALIZE_SCALE * surface.materialize
+}
+
 /**
- * 写入按压后的轮廓：中心坐标与半宽高。横向略微拉伸、纵向压缩。
- * 体积距离场和内容遮挡必须使用同一形状。
+ * 写入按压后的轮廓：中心坐标与半宽高。按压时横向略微拉伸、纵向压缩，不放大；
+ * 材质化时从略小的尺寸长出来。体积距离场和内容遮挡必须使用同一形状。
  */
 export function writePressedBox(target: NumberSink, offset: number, surface: VolumeSurface): void {
+  const scale = surfaceScale(surface)
   target[offset] = surface.left + surface.width / 2
   target[offset + 1] = surface.top + surface.height / 2
-  target[offset + 2] = surface.width / 2 * (1 + surface.press * 0.018)
-  target[offset + 3] = surface.height / 2 * (1 - surface.press * 0.025)
+  target[offset + 2] = surface.width / 2 * (1 + surface.press * 0.018) * scale
+  target[offset + 3] = surface.height / 2 * (1 - surface.press * 0.025) * scale
 }
 
 /**

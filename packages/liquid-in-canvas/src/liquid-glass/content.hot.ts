@@ -20,9 +20,22 @@ export interface ContentSource {
   readonly contentClip: number[]
   /** 内容的不透明度。 */
   contentOpacity: number
-  /** 覆盖这块内容的上层玻璃，前 `occluderCount` 项有效。 */
+  /** 内容绕中心的缩放，与按压和材质化时的体积一致。 */
+  contentScale: number
+  /** 内容的模糊半径（CSS 像素），显现与退去期间不为零。 */
+  contentBlur: number
+  /** 缩放的中心相对内容中心的偏移（CSS 像素）。展开时内容从来源处放大后收拢。 */
+  contentOriginX: number
+  contentOriginY: number
+  /** 覆盖这块内容的上层玻璃，前 `occluderCount` 项有效。画布里这些部分被裁掉。 */
   readonly occluders: VolumeSurface[]
   occluderCount: number
+  /**
+   * `occluders` 中仍要把被覆盖部分写进页面背景的那些，前 `backdropOccluderCount` 项有效。
+   * 位于更高一级背景、能直接看到这块玻璃的上层玻璃不在其中：它的背景已经画了完整的内容。
+   */
+  readonly backdropOccluders: VolumeSurface[]
+  backdropOccluderCount: number
   /** 内容快照；嵌套玻璃没有自己的快照，为 null。 */
   readonly content: SampledTexture | null
 }
@@ -44,20 +57,21 @@ export function writeContentMask(target: NumberSink, offset: number, surface: Vo
 
 /**
  * 把一块内容写入本帧的 uniform，返回绘制项的字节偏移。同一块内容画到不同尺寸的目标时各写一次。
- * 管线按遮挡数量取用，见 `createContentPipelines()`。
+ * `occluders` 的前 `occluderCount` 项写成遮挡轮廓；管线按这个数量取用，见 `createContentPipelines()`。
  */
 export function writeContent(
   frame: FrameEncoder,
   source: ContentSource,
+  occluders: readonly VolumeSurface[],
+  occluderCount: number,
   cssWidth: number,
   cssHeight: number,
   targetWidth: number,
   targetHeight: number,
 ): number {
   const { rect, padding } = source
-  const occluders = source.occluderCount
   const start = frame.rect(
-    HEADER_FLOATS + CONTENT_FLOATS + occluders * MASK_FLOATS,
+    HEADER_FLOATS + CONTENT_FLOATS + occluderCount * MASK_FLOATS,
     rect.left - padding,
     rect.top - padding,
     rect.left + rect.width + padding,
@@ -79,9 +93,13 @@ export function writeContent(
   data[offset + 6] = rect.width + padding * 2
   data[offset + 7] = rect.height + padding * 2
   data[offset + 8] = source.contentOpacity
+  data[offset + 9] = source.contentScale
+  data[offset + 10] = source.contentBlur
+  data[offset + 12] = source.contentOriginX
+  data[offset + 13] = source.contentOriginY
   offset += CONTENT_FLOATS
-  for (let i = 0; i < occluders; i++) {
-    writeContentMask(data, offset, source.occluders[i]!)
+  for (let i = 0; i < occluderCount; i++) {
+    writeContentMask(data, offset, occluders[i]!)
     offset += MASK_FLOATS
   }
   return start * 4

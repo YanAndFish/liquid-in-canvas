@@ -1,5 +1,6 @@
 import type { DrawList } from '../frame.hot'
 import type { ElementTexture, SampledTexture, StageGpu } from '../gpu'
+import type { GlassOptics } from '../types'
 import type { GlassTheme } from './defaults'
 import type { GlassFrameHost } from './glass-frame.hot'
 import type { GlassOptions } from './options'
@@ -22,6 +23,8 @@ export interface LiquidGlassLayerOptions {
   getBackdrop: () => SampledTexture | null
   /** 固定主题；缺省时读取 `<html data-theme>`，再退回系统配色。 */
   theme?: GlassTheme | null
+  /** 光路计算方式，缺省为 `profile`。 */
+  optics?: GlassOptics
   onInvalidate: () => void
   onFault: (cause: unknown) => void
 }
@@ -79,6 +82,8 @@ export class LiquidGlassLayer implements GlassFrameHost {
   readonly surfaces: GlassSurface[] = []
   /** 正在流回同名玻璃的残影。 */
   readonly ghosts: GlassGhost[] = []
+  /** 已经离开文档、正在退去的玻璃。保留内容纹理，退去后由 `release()` 释放。 */
+  readonly fading: GlassSurface[] = []
   /** 下一个残影的编号，取负数以免与玻璃和拖尾的编号相同。 */
   private nextGhostId = -1_000_000
   private readonly canvas: HTMLCanvasElement
@@ -101,6 +106,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
   private stopDefaults: (() => void) | null = null
   private frame: GlassFrame | null = null
   private shadingScale = 1
+  private optics: GlassOptics
   private shadingSplit = Infinity
   private started = false
   private disposed = false
@@ -113,6 +119,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.themeSource = new GlassThemeSource(() => this.refreshAll(), options.theme ?? null)
     this.onInvalidate = options.onInvalidate
     this.onFault = options.onFault
+    this.optics = options.optics ?? 'profile'
   }
 
   start(): void {
@@ -124,6 +131,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.started = true
     this.frame = new GlassFrame(this.canvas, this.root, this.gpu, this)
     this.frame.setShading(this.shadingScale, this.shadingSplit)
+    this.frame.setOptics(this.optics)
     this.frame.warm(WARM_VOLUME_COUNTS, WARM_OCCLUDER_COUNTS)
     this.observer = new MutationObserver(records => this.handleMutations(records))
     this.observer.observe(this.root, {
@@ -177,6 +185,8 @@ export class LiquidGlassLayer implements GlassFrameHost {
     window.removeEventListener('resize', this.handleWindowResize)
     while (this.surfaces.length)
       this.unregister(this.surfaces[this.surfaces.length - 1]!)
+    while (this.fading.length)
+      this.release(this.fading[this.fading.length - 1]!)
     this.departed.clear()
     this.ghosts.length = 0
     this.frame?.dispose()
@@ -186,6 +196,12 @@ export class LiquidGlassLayer implements GlassFrameHost {
   /** 固定主题，传入 null 恢复跟随页面。 */
   setTheme(theme: GlassTheme | null): void {
     this.themeSource.set(theme)
+  }
+
+  /** 切换光路计算方式，下一帧生效。 */
+  setOptics(optics: GlassOptics): void {
+    this.optics = optics
+    this.frame?.setOptics(optics)
   }
 
   /**
@@ -211,6 +227,15 @@ export class LiquidGlassLayer implements GlassFrameHost {
 
   invalidate(): void {
     this.onInvalidate()
+  }
+
+  /** 退去结束的玻璃：移出列表并释放内容纹理。 */
+  release(surface: GlassSurface): void {
+    const index = this.fading.indexOf(surface)
+    if (index >= 0)
+      this.fading.splice(index, 1)
+    disposeElementTexture(surface.content)
+    surface.content = null
   }
 
   reducedMotion(): boolean {
@@ -408,6 +433,15 @@ export class LiquidGlassLayer implements GlassFrameHost {
     const remaining = surface.options.morph && surface.hasVolume && !surface.handedOver && !this.reducedMotion()
       ? this.sameName(surface.options.morph)
       : null
+    // 没有迁移去处的顶层玻璃在原处退去：保留内容纹理，材质化回到 0 后释放。
+    const fade = !remaining
+      && !surface.options.morph
+      && surface.host === null
+      && surface.options.materialize
+      && surface.visible
+      && surface.content !== null
+      && !this.disposed
+      && !this.reducedMotion()
     if (remaining) {
       // 同名玻璃还在页面上：体积流回它并被吸收，例如收起的面板并回按钮。
       this.ghosts.push(this.createGhost(surface, remaining))
@@ -439,8 +473,17 @@ export class LiquidGlassLayer implements GlassFrameHost {
     // kickPaint 写入的透明阴影只用于触发重绘，退出时还原，避免遮住样式表中的阴影。
     if (this.paintToggle.delete(surface.element) || surface.element.style.boxShadow.includes('rgba(0, 0, 0, 0)'))
       surface.element.style.boxShadow = ''
-    disposeElementTexture(surface.content)
-    surface.content = null
+    if (fade) {
+      surface.fading = true
+      surface.hiding = false
+      surface.hasTail = false
+      this.fading.push(surface)
+      this.startAnimation()
+    }
+    else {
+      disposeElementTexture(surface.content)
+      surface.content = null
+    }
     this.onInvalidate()
   }
 
@@ -510,6 +553,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
         brightness: target.volume.brightness,
         paintOrder: target.volume.paintOrder,
         press: 0,
+        materialize: 1,
         host: target.volume.host,
       },
     }

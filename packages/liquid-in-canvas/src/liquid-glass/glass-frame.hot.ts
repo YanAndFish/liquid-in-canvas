@@ -1,10 +1,11 @@
 import type { DrawList, FrameEncoder } from '../frame.hot'
 import type { SampledTexture, StageGpu } from '../gpu'
+import type { GlassOptics } from '../types'
 import type { ContentPipelines } from './content-shader'
 import type { FlowRect } from './flow.hot'
 import type { VolumeSurface } from './fusion.hot'
 import type { ElementBox, GlassGhost, GlassSurface, Rect } from './surface'
-import type { VolumeShading } from './VolumeGroups.hot'
+import type { VolumeGroupPlan, VolumeShading } from './VolumeGroups.hot'
 import { attr, GLASS_CLIP_ATTR, GLASS_FADE_ATTR, GLASS_MODAL_ATTR } from '../contract'
 import { glassContentRenderOrder } from '../render-order'
 import { advanceSpring } from '../shared/spring.hot'
@@ -14,6 +15,9 @@ import { createContentPipelines } from './content-shader'
 import { writeContent } from './content.hot'
 import { ContentBackdrop } from './ContentBackdrop.hot'
 import { rampedFusion } from './flow.hot'
+import { growFloat64 } from './pools'
+import { MAX_STACK_LEVELS, stackSees } from './stack.hot'
+import { StackBackdrops } from './StackBackdrops.hot'
 import { createElementBox, legacyShown, modalFactor } from './surface'
 import { REFLECTION_VARIANCE } from './volume-shader'
 import { VolumeGroups } from './VolumeGroups.hot'
@@ -24,6 +28,10 @@ export interface GlassFrameHost {
   readonly surfaces: readonly GlassSurface[]
   /** 正在流回同名玻璃的残影。每帧代码在残影结束时把它移出。 */
   readonly ghosts: GlassGhost[]
+  /** 已经离开文档、正在退去的玻璃。 */
+  readonly fading: GlassSurface[]
+  /** 退去结束的玻璃：移出列表并释放内容纹理。 */
+  release: (surface: GlassSurface) => void
   /** 本帧的页面快照。 */
   backdrop: () => SampledTexture | null
   /** 注销已经离开文档的玻璃。 */
@@ -72,6 +80,21 @@ function intersectsBox(rect: Rect, box: ElementBox): boolean {
 
 /** 残影最后缩成的尺寸。 */
 const GHOST_END = 2
+/** 材质化弹簧的刚度与阻尼：阻尼比约 0.55、约 0.6 秒到位，出现时先越过再回落。 */
+const MATERIALIZE_STIFFNESS = 120
+const MATERIALIZE_DAMPING = 12
+/** 材质化低于它时视为已经退去。 */
+const MATERIALIZE_GONE = 0.01
+/** 内容显现开始时的模糊半径，CSS 像素。 */
+const REVEAL_BLUR = 6
+/** 内容显现开始时的放大比例，收敛到原尺寸。展开时以来源为中心，出现时以内容中心为中心。 */
+const REVEAL_ZOOM = 0.2
+/** 展开期间玻璃额外加厚的比例：从来源长出来时更像一块厚透镜，到位后回到原厚度。 */
+const REVEAL_SWELL = 0.3
+/** 内容显现的时长，秒。 */
+const REVEAL_SECONDS = 0.45
+/** 目标面积比当前体积大这么多倍时算作展开，内容重新显现。 */
+const GROW_RATIO = 1.2
 
 function centerDistance(a: Rect, b: Rect): number {
   return Math.hypot(a.left + a.width / 2 - b.left - b.width / 2, a.top + a.height / 2 - b.top - b.height / 2)
@@ -96,10 +119,16 @@ export class GlassFrame {
   private readonly root: HTMLElement
   private readonly frame: FrameEncoder
   private readonly host: GlassFrameHost
-  private readonly blur: BackdropBlur
+  /** 各级背景的模糊，下标是背景级别。 */
+  private readonly blurs: BackdropBlur[] = []
   private readonly volumes: VolumeGroups
   private readonly content: ContentPipelines
   private readonly backdrop: ContentBackdrop
+  private readonly stack: StackBackdrops
+  /** 可见玻璃各自所在的组，与 `visible` 对齐。 */
+  private readonly plans: (VolumeGroupPlan | null)[] = []
+  /** 可见玻璃内容在画布遍中的绘制顺序，与 `visible` 对齐。 */
+  private contentOrders = new Float64Array(32)
   private readonly order = new PaintOrder()
   private readonly boxes = new WeakMap<Element, ElementBox>()
   /** 本帧可见的玻璃，排序后按从下到上排列，前 `visibleCount` 项有效。 */
@@ -131,10 +160,12 @@ export class GlassFrame {
     this.root = root
     this.frame = gpu.frame
     this.host = host
-    this.blur = new BackdropBlur(gpu)
-    this.volumes = new VolumeGroups(gpu, this.blur)
+    for (let i = 0; i < MAX_STACK_LEVELS; i++)
+      this.blurs.push(new BackdropBlur(gpu))
+    this.volumes = new VolumeGroups(gpu, this.blurs)
     this.content = createContentPipelines(gpu)
     this.backdrop = new ContentBackdrop(gpu, this.content.occluded)
+    this.stack = new StackBackdrops(gpu, this.blurs, this.content.stacked)
     // 浏览器在调用时复制变换，同一个矩阵可以每次改写后传入。
     this.matrix = new DOMMatrix()
     this.geometry = { canvasTransform: this.matrix }
@@ -145,6 +176,11 @@ export class GlassFrame {
     this.volumes.warm(volumeCounts)
     for (let i = 0; i < occluderCounts.length; i++)
       this.content.clear.warm(occluderCounts[i]!)
+  }
+
+  /** 切换光路计算方式。 */
+  setOptics(optics: GlassOptics): void {
+    this.volumes.setOptics(optics)
   }
 
   /**
@@ -194,6 +230,20 @@ export class GlassFrame {
         maxBlur = Math.max(maxBlur, surface.options.blur)
       }
     }
+    const fading = host.fading
+    let f = 0
+    while (f < fading.length) {
+      const surface = fading[f]!
+      if (surface.materialize.value <= MATERIALIZE_GONE && surface.materialize.velocity <= 0) {
+        // release() 把它移出列表，同一下标换成下一项。
+        host.release(surface)
+        continue
+      }
+      this.applyMaterialize(surface)
+      this.visible[visibleCount++] = surface
+      maxBlur = Math.max(maxBlur, surface.options.blur)
+      f++
+    }
     this.visibleCount = visibleCount
     this.updateGhosts()
 
@@ -201,25 +251,31 @@ export class GlassFrame {
     if (!page)
       return false
     this.arrange()
+    const volumes = this.volumes
+    volumes.group(this.volumeList, this.volumeCount, viewWidth, viewHeight)
     const occludedCount = this.planContent(list, viewWidth, viewHeight)
     const composed = this.backdrop.plan(page, this.occluded, occludedCount, viewWidth, viewHeight)
+    const blur = this.blurs[0]!
     if (visibleCount > 0)
-      this.blur.plan(composed.group, viewWidth, viewHeight, maxBlur * maxBlur + REFLECTION_VARIANCE)
+      blur.plan(composed.group, viewWidth, viewHeight, maxBlur * maxBlur + REFLECTION_VARIANCE)
     else
-      this.blur.plan(composed.group, 0, 0, 0)
+      blur.plan(composed.group, 0, 0, 0)
+    volumes.setSource(0, composed.view)
+    this.stack.plan(volumes, composed, this.visible, this.plans, this.contentOrders, visibleCount, viewWidth, viewHeight)
     const shading = this.shading
     shading.pixelWidth = this.canvas.width
     shading.pixelHeight = this.canvas.height
     shading.cssWidth = viewWidth
     shading.cssHeight = viewHeight
-    this.volumes.plan(this.volumeList, this.volumeCount, composed.view, shading, list)
+    volumes.draw(shading, list)
     return true
   }
 
-  /** 编码 `sync()` 安排的离屏绘制，顺序为背景合成、模糊、低分辨率体积。 */
+  /** 编码 `sync()` 安排的离屏绘制，顺序为背景合成、模糊、上层各级背景及其模糊、低分辨率体积。 */
   encode(encoder: GPUCommandEncoder): void {
     this.backdrop.encode(encoder)
-    this.blur.encode(encoder)
+    this.blurs[0]!.encode(encoder)
+    this.stack.encode(encoder)
     this.volumes.encode(encoder)
   }
 
@@ -233,8 +289,21 @@ export class GlassFrame {
         ? 1
         : 0
       moving = advanceSpring(surface.press, press, seconds) || moving
+      moving = this.advanceMaterialize(surface, surface.shown ? 1 : 0, seconds, reduced) || moving
+      if (surface.reveal < 1) {
+        surface.reveal = reduced
+          ? 1
+          : Math.min(1, surface.reveal + Math.min(Math.max(seconds, 0), 1 / 30) / REVEAL_SECONDS)
+        moving = true
+      }
       if (surface.flow)
         moving = surface.flow.advance(seconds) || moving
+    }
+    const fading = this.host.fading
+    for (let i = 0; i < fading.length; i++) {
+      const surface = fading[i]!
+      moving = advanceSpring(surface.press, 0, seconds) || moving
+      moving = this.advanceMaterialize(surface, 0, seconds, reduced) || moving
     }
     const ghosts = this.host.ghosts
     for (let i = 0; i < ghosts.length; i++)
@@ -242,10 +311,86 @@ export class GlassFrame {
     return moving
   }
 
+  /** 推进材质化弹簧；关闭材质化或减少动态效果时直接到位。 */
+  private advanceMaterialize(surface: GlassSurface, target: number, seconds: number, reduced: boolean): boolean {
+    const spring = surface.materialize
+    if (reduced || !surface.options.materialize) {
+      spring.value = target
+      spring.velocity = 0
+      return false
+    }
+    return advanceSpring(spring, target, seconds, MATERIALIZE_STIFFNESS, MATERIALIZE_DAMPING)
+  }
+
+  /**
+   * 内容从模糊、略微放大开始显现。`growing` 表示展开：内容按只扩大的可见范围显露，起点是当前体积。
+   */
+  private startReveal(surface: GlassSurface, growing: boolean): void {
+    surface.reveal = 0
+    surface.revealGrowing = growing
+    const volume = surface.volume
+    surface.revealX = volume.left + volume.width / 2
+    surface.revealY = volume.top + volume.height / 2
+    const reveal = surface.revealClip
+    reveal[0] = volume.left
+    reveal[1] = volume.top
+    reveal[2] = volume.left + volume.width
+    reveal[3] = volume.top + volume.height
+  }
+
+  /**
+   * 把材质化与按压写进体积，把显现进度写进内容。
+   *
+   * 玻璃的厚度、透镜与尺寸随弹簧越过目标再回落；内容的不透明度、模糊与放大只看显现进度，
+   * 按时间单调收敛，清晰之后不再变化，不随玻璃晃动。退去时内容随材质化淡出。
+   */
+  private applyMaterialize(surface: GlassSurface): void {
+    const volume = surface.volume
+    const amount = surface.materialize.value
+    volume.materialize = amount
+    volume.press = surface.press.value
+    if (surface.hasTail)
+      surface.tail.materialize = amount
+    const base = volume.opacity * volume.brightness
+    if (surface.hiding || surface.fading) {
+      const settled = Math.min(1, Math.max(0, amount))
+      const fade = Math.min(1, Math.max(0, (settled - 0.3) / 0.6))
+      surface.contentOpacity = base * fade * fade * (3 - 2 * fade)
+      surface.contentBlur = (1 - settled) * REVEAL_BLUR
+      surface.contentScale = 1
+      surface.contentOriginX = 0
+      surface.contentOriginY = 0
+      return
+    }
+    const progress = surface.reveal
+    const eased = 1 - (1 - progress) * (1 - progress) * (1 - progress)
+    const fade = Math.min(1, progress * 2)
+    surface.contentOpacity = base * fade * fade * (3 - 2 * fade)
+    surface.contentBlur = (1 - eased) * REVEAL_BLUR
+    surface.contentScale = 1 + REVEAL_ZOOM * (1 - eased)
+    const rect = surface.rect
+    if (surface.revealGrowing && progress < 1) {
+      // 缩放中心夹在元素之内：起点在元素外时，放大会把内容整个推开，看起来是从远处移过来。
+      const originX = Math.min(Math.max(surface.revealX, rect.left), rect.left + rect.width)
+      const originY = Math.min(Math.max(surface.revealY, rect.top), rect.top + rect.height)
+      surface.contentOriginX = originX - rect.left - rect.width / 2
+      surface.contentOriginY = originY - rect.top - rect.height / 2
+      volume.materialize = amount * (1 + REVEAL_SWELL * (1 - eased))
+      if (surface.hasTail)
+        surface.tail.materialize = volume.materialize
+    }
+    else {
+      surface.contentOriginX = 0
+      surface.contentOriginY = 0
+    }
+  }
+
   dispose(): void {
     this.backdrop.dispose()
+    this.stack.dispose()
     this.volumes.dispose()
-    this.blur.dispose()
+    for (let i = 0; i < this.blurs.length; i++)
+      this.blurs[i]!.dispose()
   }
 
   /** 测量一块玻璃并更新它的内容状态与体积，返回本帧是否可见。 */
@@ -278,12 +423,48 @@ export class GlassFrame {
       }
     }
 
+    const shown = this.shown(element)
+    if (shown !== surface.shown) {
+      surface.shown = shown
+      const animate = surface.options.materialize && !host.reducedMotion()
+      if (shown) {
+        // 出现或由隐藏变为显示：重新材质化。滚动进入视口不会经过这里。
+        // 从同名玻璃流出来的体积已经是完整的玻璃，只让内容显现。
+        const handover = surface.flow !== null && surface.flow.active
+        surface.hiding = false
+        // 隐藏期间元素可能移动过：直接在新位置出现，不从隐藏前的位置流过去。
+        if (!handover && surface.everShown)
+          surface.snapFlow = true
+        surface.everShown = true
+        surface.materialize.value = animate && !handover
+          ? 0
+          : 1
+        surface.materialize.velocity = 0
+        if (animate) {
+          this.startReveal(surface, handover)
+          host.startAnimation()
+        }
+      }
+      else if (animate && surface.visible && surface.materialize.value > MATERIALIZE_GONE) {
+        surface.hiding = true
+        host.startAnimation()
+      }
+    }
+    if (surface.hiding) {
+      // 元素已经隐藏，布局读数无效：沿用上一帧的位置与内容退去。
+      if (surface.materialize.value > MATERIALIZE_GONE || surface.materialize.velocity > 0) {
+        this.applyMaterialize(surface)
+        return true
+      }
+      surface.hiding = false
+    }
+
     this.measure(surface)
     const rect = surface.rect
     const anchor = surface.anchor !== null && surface.anchor.isConnected
       ? this.box(surface.anchor)
       : null
-    const visible = this.shown(element)
+    const visible = shown
       && intersects(rect, viewWidth, viewHeight)
       && (anchor === null || intersectsBox(rect, anchor))
     // 只有明确要求裁剪的媒体区域才限制玻璃，普通定位父元素允许阴影溢出。
@@ -319,7 +500,11 @@ export class GlassFrame {
     const brightness = modal !== null && modal.contains(element)
       ? 1
       : dimming
-    this.flow(surface)
+    // 隐藏的元素读到的是空矩形，不能让液体迁移流向它；重新显示时从原处出现。
+    if (shown)
+      this.flow(surface)
+    else
+      surface.hasTail = false
     surface.hasVolume = visible
     if (visible) {
       const volume = surface.volume
@@ -358,12 +543,32 @@ export class GlassFrame {
       surface.contentClip[2] = clip ? clip.right : viewWidth
       surface.contentClip[3] = clip ? clip.bottom : viewHeight
       // 元素已经是新尺寸，体积还在过渡：内容只画在体积之内，随玻璃展开显露、收拢遮住。
+      // 展开时可见范围只扩大不缩小，玻璃越过目标后回弹、晃动时内容的边缘保持不动。
       if (surface.flow !== null && surface.flow.resizing) {
-        surface.contentClip[0] = Math.max(surface.contentClip[0]!, volume.left)
-        surface.contentClip[1] = Math.max(surface.contentClip[1]!, volume.top)
-        surface.contentClip[2] = Math.min(surface.contentClip[2]!, volume.left + volume.width)
-        surface.contentClip[3] = Math.min(surface.contentClip[3]!, volume.top + volume.height)
+        const reveal = surface.revealClip
+        let left = volume.left
+        let top = volume.top
+        let right = volume.left + volume.width
+        let bottom = volume.top + volume.height
+        // 从更大的同名玻璃收拢回来（例如购物袋关闭后回到按钮）不是展开：内容随体积显露。
+        if (surface.revealGrowing && rect.width * rect.height < (reveal[2]! - reveal[0]!) * (reveal[3]! - reveal[1]!))
+          surface.revealGrowing = false
+        if (surface.revealGrowing) {
+          reveal[0] = Math.min(reveal[0]!, left)
+          reveal[1] = Math.min(reveal[1]!, top)
+          reveal[2] = Math.max(reveal[2]!, right)
+          reveal[3] = Math.max(reveal[3]!, bottom)
+          left = reveal[0]!
+          top = reveal[1]!
+          right = reveal[2]!
+          bottom = reveal[3]!
+        }
+        surface.contentClip[0] = Math.max(surface.contentClip[0]!, left)
+        surface.contentClip[1] = Math.max(surface.contentClip[1]!, top)
+        surface.contentClip[2] = Math.min(surface.contentClip[2]!, right)
+        surface.contentClip[3] = Math.min(surface.contentClip[3]!, bottom)
       }
+      this.applyMaterialize(surface)
     }
 
     // 有完整快照时保留离屏部分；首次只有部分可见时也要上传，否则文字会一直为空。
@@ -479,37 +684,56 @@ export class GlassFrame {
     this.volumeCount = total
   }
 
-  /** a 是否应排在 b 之前绘制。 */
+  /** a 是否应排在 b 之前绘制。正在退去的玻璃已经离开文档，排在同层其他玻璃之上。 */
   private before(a: GlassSurface, b: GlassSurface): boolean {
     const layers = a.volume.layer - b.volume.layer
     if (layers !== 0)
       return layers < 0
+    if (a.fading || b.fading)
+      return !a.fading && b.fading
     return this.order.compare(a.element, b.element) < 0
   }
 
-  /** 写入每块内容的清晰部分，收集被上层玻璃覆盖的内容，返回被覆盖内容的数量。 */
+  /**
+   * 写入每块内容的清晰部分，收集被上层玻璃覆盖、需要写进页面背景的内容，返回这些内容的数量。
+   *
+   * 能在更高一级背景里直接看到这块玻璃的上层玻璃仍然裁掉画布里被覆盖的部分，
+   * 但不再把这部分写进页面背景：它的背景已经画了这块玻璃的完整内容。
+   */
   private planContent(list: DrawList, viewWidth: number, viewHeight: number): number {
     const visible = this.visible
     const count = this.visibleCount
     const clear = this.content.clear
+    const groups = this.volumes.groups
     const canvasWidth = this.canvas.width
     const canvasHeight = this.canvas.height
+    if (this.contentOrders.length < count)
+      this.contentOrders = growFloat64(count)
     let occludedCount = 0
     for (let i = 0; i < count; i++) {
       const surface = visible[i]!
+      const plan = groups.planOf(surface.volume)
+      this.plans[i] = plan
       surface.occluderCount = 0
+      surface.backdropOccluderCount = 0
+      const order = glassContentRenderOrder(surface.volume.layer, surface.volume.paintOrder)
+      this.contentOrders[i] = order
       const content = surface.content
       if (!content)
         continue
       for (let j = i + 1; j < count; j++) {
         const other = visible[j]!.volume
         // 嵌套玻璃画在外层内容之下，不遮挡外层的文字。
-        if (other.host !== surface.id && covers(surface.rect, other))
-          surface.occluders[surface.occluderCount++] = other
+        if (other.host === surface.id || !covers(surface.rect, other))
+          continue
+        surface.occluders[surface.occluderCount++] = other
+        const above = groups.planOf(other)
+        if (plan === null || above === null || above.level <= plan.level || !stackSees(plan, above))
+          surface.backdropOccluders[surface.backdropOccluderCount++] = other
       }
-      const uniform = writeContent(this.frame, surface, viewWidth, viewHeight, canvasWidth, canvasHeight)
-      list.push(glassContentRenderOrder(surface.volume.layer, surface.volume.paintOrder), clear.get(surface.occluderCount), uniform, content.group)
-      if (surface.occluderCount > 0)
+      const uniform = writeContent(this.frame, surface, surface.occluders, surface.occluderCount, viewWidth, viewHeight, canvasWidth, canvasHeight)
+      list.push(order, clear.get(surface.occluderCount), uniform, content.group)
+      if (surface.backdropOccluderCount > 0)
         this.occluded[occludedCount++] = surface
     }
     return occludedCount
@@ -641,8 +865,14 @@ export class GlassFrame {
     }
     const options = surface.options
     flow.configure(options.morphStretch, options.morphBounce, options.morphWobble)
-    if (flow.retarget(surface.layout))
+    // 只有从静止开始的展开才让内容重新显现；同一次过渡里的后续目标（例如布局尺寸动画）不会让清晰的内容再模糊。
+    const resting = !flow.active
+    if (flow.retarget(surface.layout)) {
+      const layout = surface.layout
+      if (resting && surface.reveal >= 1 && options.materialize && layout.width * layout.height > volume.width * volume.height * GROW_RATIO)
+        this.startReveal(surface, true)
       this.host.startAnimation()
+    }
     if (!flow.active) {
       copyRect(volume, surface.rect)
       return

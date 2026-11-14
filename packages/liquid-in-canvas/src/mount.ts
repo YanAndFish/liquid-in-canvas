@@ -13,7 +13,7 @@ import { detectStageSupport } from './support'
  */
 export type GlassRenderMode = 'canvas' | 'svg' | 'css'
 
-export interface MountLiquidGlassOptions extends Pick<CanvasStageOptions, 'resolution' | 'theme'> {
+export interface MountLiquidGlassOptions extends Pick<CanvasStageOptions, 'resolution' | 'theme' | 'optics'> {
   /** 页面根元素。画布模式下挂载后成为画布的子元素，仍然可以交互。 */
   root: HTMLElement
   /**
@@ -73,7 +73,7 @@ interface CanvasBackend {
  * 回退实现不改变页面结构，只给 `[data-liquid-glass]` 元素加上样式。
  */
 export async function mountLiquidGlass(options: MountLiquidGlassOptions): Promise<LiquidGlassMount> {
-  const { root, canvasClass, canvasId, beforeStart, onFault, resolution } = options
+  const { root, canvasClass, canvasId, beforeStart, onFault, resolution, optics } = options
   const requested = options.mode ?? 'auto'
   const support = detectStageSupport()
   let theme = options.theme ?? null
@@ -145,6 +145,7 @@ export async function mountLiquidGlass(options: MountLiquidGlassOptions): Promis
     const stage = new CanvasStage({
       canvas,
       resolution,
+      optics,
       theme: theme ?? undefined,
       onFault: handleRuntimeFault,
     })

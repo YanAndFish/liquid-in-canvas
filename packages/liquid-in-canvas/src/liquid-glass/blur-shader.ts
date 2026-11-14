@@ -28,10 +28,12 @@ const BLUR_SHADER = /* wgsl */`${shaderPrelude(`
   step: vec4f,`)}
 @group(1) @binding(0) var source: texture_2d<f32>;
 
+// 按目标上的位置取样：绘制矩形可以只覆盖目标的一部分（多层玻璃的上层背景只卷积需要的范围）。
 @fragment
 fn blur(in: VertexOutput) -> @location(0) vec4f {
+  let uv = in.position.xy / u.screen.xy;
   var sum = vec3f(0.0);
-${gaussianKernel().map(tap => `  sum += textureSample(source, samp, in.uv + u.step.xy * ${wgslFloat(tap.offset)}).rgb * ${wgslFloat(tap.weight)};`).join('\n')}
+${gaussianKernel().map(tap => `  sum += textureSample(source, samp, uv + u.step.xy * ${wgslFloat(tap.offset)}).rgb * ${wgslFloat(tap.weight)};`).join('\n')}
   return vec4f(sum, 1.0);
 }
 `

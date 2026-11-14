@@ -38,7 +38,7 @@ describe('cssGlassProperties', () => {
     expect(properties['--lg-blur']).toBe('18px')
     expect(properties['--lg-tint']).toBe('rgba(23, 27, 32, 0.28)')
     expect(properties['--lg-radius']).toBe('10px 20px 10px 20px')
-    expect(properties['--lg-shadow']).toContain('0 4px 24px rgba(0, 0, 0, 0.192)')
+    expect(properties['--lg-shadow']).toContain('0 4px 24px rgba(0, 0, 0, 0.096)')
     expect(properties['--lg-shadow']).toContain('inset 0 0 0 1px')
   })
 
