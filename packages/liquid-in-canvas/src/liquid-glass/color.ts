@@ -14,3 +14,18 @@ export function hexToLinear(hex: string): [number, number, number] {
     srgbToLinear((value & 255) / 255),
   ]
 }
+
+const linearTints = new Map<string, readonly [number, number, number]>()
+
+/**
+ * `hexToLinear()` 的缓存版本，供每帧写入染色时使用。染色值来自属性与默认参数，种类很少；
+ * 第一次遇到某个颜色时解析并缓存，之后只是一次查表。
+ */
+export function linearTint(hex: string): readonly [number, number, number] {
+  let tint = linearTints.get(hex)
+  if (!tint) {
+    tint = hexToLinear(hex)
+    linearTints.set(hex, tint)
+  }
+  return tint
+}

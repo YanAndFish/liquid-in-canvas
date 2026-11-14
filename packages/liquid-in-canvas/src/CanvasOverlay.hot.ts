@@ -1,6 +1,8 @@
-import type { DrawItem, ElementTexture, StageGpu } from './gpu'
+import type { DrawList } from './frame.hot'
+import type { ElementTexture, StageGpu } from './gpu'
 import { STAGE_OVERLAY_ATTR } from './contract'
-import { blitPipeline, createElementTexture, disposeElementTexture, HEADER_FLOATS, uploadElement } from './gpu'
+import { HEADER_FLOATS } from './frame'
+import { createElementTexture, disposeElementTexture, SLOT_CANVAS } from './gpu'
 import { GLASS_LAYER_RANGE, OVERLAY_TOP_LAYER, overlayRenderOrder } from './render-order'
 
 /** 读取前景层声明的层级；没有声明或无法解析时位于所有玻璃之上。 */
@@ -38,32 +40,21 @@ export class CanvasOverlay {
     return overlayRenderOrder(parseOverlayLayer(this.element.getAttribute(STAGE_OVERLAY_ATTR)))
   }
 
-  /** 上传前景层并返回它在画布遍中的绘制项；前景层为空时不上传也不绘制。 */
-  sync(): DrawItem | null {
+  /** 上传前景层并把它加入画布遍；前景层为空时不上传也不绘制。 */
+  sync(list: DrawList): void {
     if (this.element.childElementCount === 0)
-      return null
+      return
     const { width, height } = this.canvas
-    if (!this.target || this.target.texture.width !== width || this.target.texture.height !== height) {
-      disposeElementTexture(this.target)
-      this.target = createElementTexture(this.gpu, width, height)
+    let target = this.target
+    if (!target || target.texture.width !== width || target.texture.height !== height) {
+      // 画布尺寸变化后重新创建，只在调整窗口或分辨率时发生。
+      disposeElementTexture(target)
+      target = createElementTexture(this.gpu, width, height)
+      this.target = target
     }
-    uploadElement(this.gpu.device, this.element, this.target.texture)
-    const start = this.gpu.allocUniform(HEADER_FLOATS, {
-      left: 0,
-      top: 0,
-      right: 1,
-      bottom: 1,
-      targetWidth: width,
-      targetHeight: height,
-      cssWidth: 1,
-      cssHeight: 1,
-    })
-    return {
-      order: this.renderOrder,
-      pipeline: blitPipeline(this.gpu, 'layer', this.gpu.canvasFormat),
-      uniform: start * 4,
-      textures: this.target.group,
-    }
+    const frame = this.gpu.frame
+    frame.upload(this.element, target.texture)
+    list.push(this.renderOrder, this.gpu.blitLayer.get(SLOT_CANVAS), frame.full(HEADER_FLOATS, width, height) * 4, target.group)
   }
 
   /** 释放前景纹理。 */

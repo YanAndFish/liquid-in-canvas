@@ -1,6 +1,7 @@
 import type { StageResolution } from '../../src/types'
 import { describe, expect, it } from 'vitest'
-import { AdaptiveScale, resolveGlassPixelRatio, resolvePixelRatio } from '../../src/resolution'
+import { AdaptiveScale } from '../../src/adaptive.hot'
+import { resolveGlassPixelRatio, resolvePixelRatio } from '../../src/resolution'
 
 const open: StageResolution = {
   maxPixelRatio: 3,

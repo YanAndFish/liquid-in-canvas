@@ -10,7 +10,7 @@
 pnpm add liquid-in-canvas
 ```
 
-没有运行时依赖。画布渲染器直接使用 WebGPU，在确认浏览器支持后才动态加载（演示商店的生产构建里压缩后约 57 kB，gzip 约 20 kB），只能使用回退实现的浏览器不会下载它。完整效果需要支持 HTML-in-Canvas、WebGPU 和 `GPUQueue.drawElementImageToTexture()` 的浏览器（开发时使用 Chrome 157）。
+没有运行时依赖。画布渲染器直接使用 WebGPU，在确认浏览器支持后才动态加载（演示商店的生产构建里压缩后约 66 kB，gzip 约 23 kB），只能使用回退实现的浏览器不会下载它。完整效果需要支持 HTML-in-Canvas、WebGPU 和 `GPUQueue.drawElementImageToTexture()` 的浏览器（开发时使用 Chrome 157）。
 
 ## 使用
 

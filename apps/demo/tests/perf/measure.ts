@@ -1,5 +1,5 @@
 import { CanvasStage } from 'liquid-in-canvas/canvas'
-import { createHtmlPaintOrderComparator } from '../../../../packages/liquid-in-canvas/src/liquid-glass/content-order'
+import { PaintOrder } from '../../../../packages/liquid-in-canvas/src/liquid-glass/content-order.hot'
 
 /** 生产构建测量入口，只在这个独立测试页面中记录每次绘制的 CPU 耗时。 */
 interface MeasuredStage {
@@ -124,7 +124,12 @@ sortButton.onclick = () => {
     return rect.width > 0 && rect.height > 0 && rect.left < innerWidth && rect.right > 0
       && rect.top < innerHeight && rect.bottom > 0 && !element.parentElement?.closest('[data-liquid-glass]')
   })
-  const sort = () => [...elements].sort(createHtmlPaintOrderComparator())
+  const paintOrder = new PaintOrder()
+  // 每次排序视为新的一帧，与舞台每帧重新读取样式一致。
+  const sort = () => {
+    paintOrder.begin()
+    return [...elements].sort((a, b) => paintOrder.compare(a, b))
+  }
   for (let index = 0; index < 100; index++)
     sort()
   const readStyle = window.getComputedStyle

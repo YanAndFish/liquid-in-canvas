@@ -1,12 +1,13 @@
-import type { DrawItem, ElementTexture } from './gpu'
+import type { ElementTexture } from './gpu'
 import type { GlassTheme } from './liquid-glass/defaults'
 import type { StageMetrics, StageResolution } from './types'
-import { CanvasOverlay } from './CanvasOverlay'
+import { AdaptiveScale } from './adaptive.hot'
+import { CanvasOverlay } from './CanvasOverlay.hot'
 import { attr, STAGE_OVERLAY_ATTR } from './contract'
-import { blitPipeline, createElementTexture, createStageDevice, disposeElementTexture, HEADER_FLOATS, StageGpu, uploadElement } from './gpu'
+import { createElementTexture, createStageDevice, disposeElementTexture, StageGpu } from './gpu'
 import { LiquidGlassLayer } from './liquid-glass/LiquidGlassLayer'
-import { PAGE_RENDER_ORDER } from './render-order'
-import { AdaptiveScale, DEFAULT_STAGE_RESOLUTION, resolveGlassPixelRatio, resolvePixelRatio } from './resolution'
+import { DEFAULT_STAGE_RESOLUTION, resolveGlassPixelRatio, resolvePixelRatio } from './resolution'
+import { StageFrame } from './stage-frame.hot'
 
 export interface CanvasStageOptions {
   /** 带有 `content="drawable"` 的画布，页面根元素需要是它的后代。 */
@@ -19,9 +20,6 @@ export interface CanvasStageOptions {
   theme?: GlassTheme
 }
 
-/** 画布遍的清除颜色。页面快照会铺满整张画布。 */
-const CLEAR_COLOR = { r: 0, g: 0, b: 0, a: 1 }
-
 function sameSize(a: StageMetrics, b: StageMetrics): boolean {
   return a.cssWidth === b.cssWidth
     && a.cssHeight === b.cssHeight
@@ -33,7 +31,8 @@ export class CanvasStage {
   private readonly canvas: HTMLCanvasElement
   private readonly onFault: (cause: unknown) => void
   private gpu: StageGpu | null = null
-  private context: GPUCanvasContext | null = null
+  /** 每帧的绘制，见 `stage-frame.hot.ts`。 */
+  private frame: StageFrame | null = null
   /** 整页快照，同时作为玻璃折射与模糊的背景。 */
   private page: ElementTexture | null = null
   private observer: ResizeObserver | null = null
@@ -75,7 +74,7 @@ export class CanvasStage {
       throw new Error('CanvasStage is disposed')
     }
     this.gpu = new StageGpu(device, format)
-    this.context = context
+    this.frame = new StageFrame(this.gpu, context, this.canvas)
     // 设备丢失或出现校验错误后画面不再可信，交给调用方决定是否改用回退实现。
     void device.lost.then((info) => {
       if (info.reason !== 'destroyed')
@@ -161,6 +160,10 @@ export class CanvasStage {
       const foreground = root.querySelector<HTMLElement>(attr(STAGE_OVERLAY_ATTR))
       if (foreground)
         this.overlay = new CanvasOverlay(this.canvas, foreground, gpu)
+      if (this.frame) {
+        this.frame.glass = this.glass
+        this.frame.overlay = this.overlay
+      }
     }
     this.attachVideoClock(root)
     this.invalidate()
@@ -200,7 +203,7 @@ export class CanvasStage {
 
     const gpu = this.gpu
     this.gpu = null
-    this.context = null
+    this.frame = null
     this.initialized = false
     if (gpu) {
       gpu.dispose()
@@ -233,57 +236,18 @@ export class CanvasStage {
     if (pending && this.applySize(pending))
       this.pendingSize = null
 
-    const gpu = this.gpu
-    const context = this.context
+    const frame = this.frame
     const page = this.page
     const root = this.root
-    if (!gpu || !context || !page || !root)
+    if (!frame || !page || !root)
       return
 
     if (this.resolution.adaptive)
       this.adaptive.sample(performance.now())
 
     try {
-      // 帧流水线：页面快照 → 前景 → 玻璃（内容遮挡、模糊、体积）→ 合成。
-      gpu.beginFrame()
-      const { width, height } = this.canvas
-      uploadElement(gpu.device, root, page.texture)
-      const items: DrawItem[] = [
-        {
-          order: PAGE_RENDER_ORDER,
-          pipeline: blitPipeline(gpu, 'opaque', gpu.canvasFormat),
-          uniform: gpu.allocUniform(HEADER_FLOATS, {
-            left: 0,
-            top: 0,
-            right: 1,
-            bottom: 1,
-            targetWidth: width,
-            targetHeight: height,
-            cssWidth: 1,
-            cssHeight: 1,
-          }) * 4,
-          textures: page.group,
-        },
-      ]
-      const overlay = this.overlay?.sync()
-      if (overlay)
-        items.push(overlay)
       const dpr = this.metrics?.dpr ?? 1
-      this.glass?.setShading(this.glassPixelRatio(dpr) / dpr, this.overlay?.renderOrder ?? Infinity)
-      const glass = this.glass?.sync(event)
-      if (glass)
-        items.push(...glass.items)
-
-      // 所有 uniform 写完后一次上传，离屏的几遍与画布遍编码进同一个命令缓冲。
-      const encoder = gpu.beginEncoding()
-      if (glass)
-        this.glass?.encode(encoder)
-      gpu.encodePass(encoder, 'canvas', {
-        view: context.getCurrentTexture().createView({ format: gpu.canvasFormat }),
-        width,
-        height,
-      }, CLEAR_COLOR, items)
-      gpu.submit(encoder)
+      frame.draw(root, page, this.glassPixelRatio(dpr) / dpr, event)
     }
     catch (cause) {
       this.fail(cause)
@@ -332,6 +296,7 @@ export class CanvasStage {
     const previous = this.page
     this.page = createElementTexture(gpu, size.pixelWidth, size.pixelHeight)
     disposeElementTexture(previous)
+    this.glass?.invalidateSizes()
 
     this.metrics = size
 

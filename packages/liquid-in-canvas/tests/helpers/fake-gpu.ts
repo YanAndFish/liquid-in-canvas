@@ -32,6 +32,7 @@ export function createFakeDevice() {
       createView: () => ({}),
       destroy: vi.fn(),
     })),
+    createCommandEncoder: vi.fn(() => ({})),
     queue: {
       writeBuffer: vi.fn(),
       submit: vi.fn(),

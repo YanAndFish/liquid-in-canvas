@@ -5,3 +5,4 @@ shellEmulator: true
 packages:
   - packages/*
   - apps/*
+  - tools/*

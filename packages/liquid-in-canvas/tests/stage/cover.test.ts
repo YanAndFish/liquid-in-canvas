@@ -1,6 +1,14 @@
-import type { CoverRect } from '../../src/liquid-glass/cover'
+import type { CoverRect } from '../../src/liquid-glass/cover.hot'
 import { describe, expect, it } from 'vitest'
-import { disjointCover } from '../../src/liquid-glass/cover'
+import { CoverBuilder } from '../../src/liquid-glass/cover.hot'
+
+const builder = new CoverBuilder()
+
+/** 复制结果：构建器里的矩形对象会在下一次构建时复用。 */
+function disjointCover(rects: CoverRect[]): CoverRect[] {
+  builder.build(rects, rects.length)
+  return builder.rects.slice(0, builder.count).map(rect => ({ ...rect }))
+}
 
 function rect(left: number, top: number, right: number, bottom: number): CoverRect {
   return { left, top, right, bottom }
@@ -53,6 +61,26 @@ describe('不重叠覆盖', () => {
     expect(cover).toEqual([
       rect(0, 0, 10, 30),
     ])
+  })
+
+  it('复用同一个构建器时结果互不影响', () => {
+    expect(disjointCover([
+      rect(0, 0, 10, 10),
+      rect(20, 0, 30, 10),
+      rect(40, 0, 50, 10),
+    ])).toHaveLength(3)
+    expect(disjointCover([
+      rect(0, 0, 10, 10),
+    ])).toEqual([
+      rect(0, 0, 10, 10),
+    ])
+  })
+
+  it('超过初始容量的输入', () => {
+    const many = Array.from({ length: 40 }, (_, i) => rect(i * 20, 0, i * 20 + 10, 10))
+    const cover = disjointCover(many)
+    expect(cover).toHaveLength(40)
+    expect(area(cover)).toBe(4000)
   })
 
   it('忽略没有面积的矩形', () => {

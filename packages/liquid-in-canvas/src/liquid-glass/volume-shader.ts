@@ -1,4 +1,5 @@
-import { shaderPrelude, wgslFloat } from '../gpu'
+import type { StageGpu } from '../gpu'
+import { BLEND_NORMAL, PipelineTable, shaderPrelude, SLOT_CANVAS, SLOT_TARGET, wgslFloat } from '../gpu'
 import { BLUR_SIGMAS } from './gaussian'
 
 /** 体积组 uniform 中矩形与目标尺寸之后、成员之前的浮点数个数：`params` 与 `shadow`。 */
@@ -308,4 +309,35 @@ ${each(count, i => `  {
   return vec4f(result.rgb, result.a * clip_coverage);
 }
 `
+}
+
+/** 体积着色器取样的背景与各级模糊的绑定，以及创建它时模糊纹理的代数。 */
+export interface VolumeTextures {
+  generation: number
+  group: GPUBindGroup
+}
+
+/** 冷路径：背景视图或模糊纹理变化后，重新创建体积着色器的纹理绑定。 */
+export function bindVolumeTextures(gpu: StageGpu, source: GPUTextureView, blurs: readonly GPUTextureView[], generation: number): VolumeTextures {
+  return {
+    generation,
+    group: gpu.textureGroupOf([
+      source,
+      ...blurs,
+    ]),
+  }
+}
+
+/**
+ * 体积管线表，下标是格式位置（画布、离屏目标），表内按成员数量取用。
+ * 着色器只取决于成员数量，同一数量的两张表共用一个着色器模块。
+ */
+export function createVolumePipelines(gpu: StageGpu): PipelineTable[] {
+  return [SLOT_CANVAS, SLOT_TARGET].map(slot => new PipelineTable(gpu, `volume:${slot}`, count => ({
+    code: createVolumeShader(count),
+    entry: 'volume',
+    textures: VOLUME_TEXTURES,
+    format: gpu.formatOf(slot),
+    blend: BLEND_NORMAL,
+  })))
 }

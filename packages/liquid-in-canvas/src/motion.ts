@@ -3,5 +3,5 @@
  * 页面自己的菜单动画使用同一套弹簧，手感才会和玻璃形变一致。
  */
 export { prefersReducedMotion, REDUCED_MOTION_QUERY, reducedMotionQuery } from './shared/motion'
-export { advanceSpring } from './shared/spring'
-export type { SpringState } from './shared/spring'
+export { advanceSpring } from './shared/spring.hot'
+export type { SpringState } from './shared/spring.hot'

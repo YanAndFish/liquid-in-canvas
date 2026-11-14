@@ -1,16 +1,17 @@
 # 架构
 
-仓库是一个 pnpm workspace，分成可发布的渲染库和演示商店两部分：
+仓库是一个 pnpm workspace，分成可发布的渲染库和演示商店两部分，另有一个只在仓库内使用的 ESLint 插件：
 
 ```
 packages/liquid-in-canvas   渲染库：HTML-in-Canvas + WebGPU 舞台、CSS 回退、全局默认参数
 apps/demo                   演示商店（Vue）：只通过 DOM 属性和库的公开 API 使用玻璃
+tools/eslint-plugin-hot     热路径规则：*.hot.ts 里每帧执行的函数不得分配堆内存
 docs                        设计记录、视觉依据与性能记录
 ```
 
 库不认识任何 Vue 组件，没有运行时依赖：画布渲染器直接使用 WebGPU。演示商店只从 `liquid-in-canvas` 和 `liquid-in-canvas/motion` 两个入口引入，不引用库的内部文件；性能测量页和画面检查页另外从 `liquid-in-canvas/canvas` 直接使用 `CanvasStage`。
 
-主入口不静态引入画布渲染器。`mountLiquidGlass()` 确认浏览器支持画布渲染后才动态加载 `CanvasStage`，只能使用回退实现的浏览器不会下载它（演示的生产构建里这一块压缩后 57 kB、gzip 20 kB；基于 three.js 时是 854 kB、gzip 232 kB）。
+主入口不静态引入画布渲染器。`mountLiquidGlass()` 确认浏览器支持画布渲染后才动态加载 `CanvasStage`，只能使用回退实现的浏览器不会下载它（演示的生产构建里这一块压缩后 66 kB、gzip 23 kB；基于 three.js 时是 854 kB、gzip 232 kB）。
 
 ## 渲染库
 
@@ -18,13 +19,17 @@ docs                        设计记录、视觉依据与性能记录
 src/index.ts            公开 API，不静态引入画布渲染器
 src/canvas.ts           liquid-in-canvas/canvas 入口：直接导出 CanvasStage
 src/mount.ts            mountLiquidGlass()：选择渲染方式、搭建与拆除
-src/CanvasStage.ts      画布舞台：页面上传、绘制、尺寸与分辨率、视频时钟
-src/resolution.ts       画布倍率、玻璃着色倍率与自适应缩放
+src/CanvasStage.ts      画布舞台：初始化、尺寸与分辨率、视频时钟
+src/stage-frame.hot.ts  一帧的绘制：页面快照、前景、玻璃、画布遍
+src/resolution.ts       画布倍率、玻璃着色倍率
+src/adaptive.hot.ts     玻璃着色倍率的自适应缩放
 src/css/                回退实现：backdrop-filter，加上可选的 SVG 位移滤镜
 src/liquid-glass/       三维距离场、同层融合、内容遮挡、多级模糊、液体迁移、默认参数与属性解析
 src/contract.ts         页面与舞台之间的 DOM 约定
 src/render-order.ts     页面、各层玻璃与前景的绘制顺序
-src/gpu.ts              WebGPU 设备与 sRGB 画布、管线缓存、每帧 uniform、元素纹理与离屏目标、逐遍计时
+src/gpu.ts              WebGPU 设备与 sRGB 画布、管线表、元素纹理与离屏目标、逐遍计时
+src/frame.hot.ts        每帧的 uniform、绘制列表、编码与元素上传
+src/frame.ts            每帧编码用到的常量、类型与扩容（冷路径）
 src/support.ts          能力检测
 src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas/motion 导出
 ```
@@ -82,6 +87,33 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 - **出错**：设备丢失或出现校验错误时舞台停止绘制并调用 `onFault`，`mountLiquidGlass` 据此改用回退实现。
 - **计时**：设备支持 `timestamp-query` 时，测量页可以打开逐遍计时（`StageGpu.timing`），平时不写时间戳。
 
+### 热路径
+
+滚动和动画期间每帧都会执行的代码放在 `*.hot.ts` 文件里，这些文件里的函数不得分配堆内存。规则由 `tools/eslint-plugin-hot` 检查（`hot/no-alloc`、`hot/no-closure`），说明见它的 README。
+
+| 文件 | 每帧做什么 |
+| --- | --- |
+| `stage-frame.hot.ts` | 上传页面快照，组装画布遍，编码并提交 |
+| `frame.hot.ts` | uniform 分配、绘制列表排序、渲染遍编码、元素上传 |
+| `CanvasOverlay.hot.ts` | 上传前景层 |
+| `adaptive.hot.ts` | 按绘制间隔调整玻璃着色倍率 |
+| `liquid-glass/glass-frame.hot.ts` | 测量玻璃、决定上传、排列前后顺序、写入内容 |
+| `liquid-glass/content.hot.ts`、`content-order.hot.ts` | 内容与遮挡轮廓的 uniform，HTML 绘制顺序 |
+| `liquid-glass/ContentBackdrop.hot.ts`、`blur.hot.ts` | 被遮挡内容的背景合成，多级模糊 |
+| `liquid-glass/VolumeGroups.hot.ts`、`fusion.hot.ts`、`cover.hot.ts` | 融合分组、体积 uniform、低分辨率分块合成 |
+| `liquid-glass/flow.hot.ts`、`shared/spring.hot.ts` | 液体迁移与按压弹簧 |
+
+做法：
+
+- **对象池**：绘制项、分组、覆盖矩形、体积规划在池里复用；每块玻璃的矩形、体积、遮挡列表与裁剪数组在注册时创建（`liquid-glass/surface.ts`），每帧改写字段。
+- **预先创建的描述对象**：渲染遍描述、动态偏移（`Uint32Array`）、元素上传的参数、画布纹理视图描述、`updateElementGeometry()` 的变换矩阵都在构造时创建。
+- **管线按整数取用**：`PipelineTable.get(count)` 是一次数组读取，不拼字符串键，也不创建回调。
+- **排序不用 `Array.prototype.sort`**：V8 的实现每次都分配工作数组，绘制列表与可见玻璃用插入排序。
+- **冷路径分开放**：池的扩容、缓存未命中时创建对象、纹理尺寸变化写在普通文件里（`frame.ts`、`liquid-glass/pools.ts`、`blur-shader.ts`、`content-shader.ts`、`volume-shader.ts`、`surface.ts`、`LiquidGlassLayer.ts`），热路径只在少见情况下调用。
+- **DOM 读取每帧每个元素只读一次**：定位基准、裁剪区域、淡入淡出容器的矩形与透明度按帧编号缓存（`ElementBox`）；可见性用返回布尔值的 `checkVisibility()`；快照尺寸只在元素或画布尺寸变化后重新读取。DOM 接口返回的对象由 Blink 的堆管理，只能等老生代 GC 回收，规则检查不到，这是它们单独处理的原因。
+
+数据见[性能记录](performance/2026-11-13-webgpu/README.md#追加热路径不再分配)。
+
 ### 凸透镜
 
 玻璃顶面按拱形隆起：沿短边方向是一条抛物线，沿长边方向只在两端一个短边半径的范围内下降。取样位置朝中心偏移，偏移与拱面坡度成正比，中间区域因此被放大约 1 / (1 − `lens`) 倍；长条形的玻璃只沿短边方向放大，相当于柱面透镜。两个方向的剖面相乘，偏移在整块玻璃内连续，并与倒角处的三维折射叠加。融合区域里透镜偏移和其他外观一样按平滑合并权重混合。
@@ -127,9 +159,10 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 | --- | --- | --- |
 | DOM 约定 | `contract.ts` | 页面与舞台之间的全部属性 |
 | 绘制顺序 | `render-order.ts` | 页面、各层玻璃、前景的 renderOrder 区间 |
-| 元素纹理 | `gpu.ts` | HTML 快照纹理的创建、上传、释放；离屏目标 |
-| 管线缓存 | `gpu.ts` `StageGpu.pipeline` | 按成员数量与遮挡数量缓存着色器，滚动中不重新编译 |
-| 液体迁移 | `liquid-glass/flow.ts` | 四边弹簧，体积在布局坐标中流向新位置 |
+| 元素纹理 | `gpu.ts`、`frame.hot.ts` | HTML 快照纹理的创建与释放；每帧的上传 |
+| 管线表 | `gpu.ts` `PipelineTable` | 按成员数量与遮挡数量缓存着色器，滚动中不重新编译 |
+| 液体迁移 | `liquid-glass/flow.hot.ts` | 四边弹簧，体积在布局坐标中流向新位置 |
+| 热路径规则 | `tools/eslint-plugin-hot` | `*.hot.ts` 里每帧执行的函数不得分配 |
 | 快照调度 | `LiquidGlassLayer` 内 `dirty` / `settleFrames` / `paintPending` / `contentComplete` | 决定何时向浏览器请求新的绘制记录、何时上传 |
 | 模态压暗 | `[data-glass-modal]` + `[data-glass-scrim]` | 模态层打开时压暗其外部玻璃的染色和高光 |
 | 页面淡入淡出 | `[data-glass-fade]` | 页面切换时把容器 opacity 传给内部玻璃 |
@@ -184,7 +217,8 @@ src/shared                  偏好存储与滚动容器
 
 ## 测试与诊断
 
-- `packages/liquid-in-canvas/tests`：Vitest + jsdom，覆盖属性解析、默认参数、分辨率、融合分组（含嵌套玻璃）、内容顺序、不重叠覆盖、液体迁移的弹簧、回退实现（含折射滤镜的贴图取值）和不支持时的挂载行为。管线缓存与 uniform 布局用记录调用的假设备（`tests/helpers/fake-gpu.ts`）驱动真实的 `StageGpu` 检查。
+- `packages/liquid-in-canvas/tests`：Vitest + jsdom，覆盖属性解析、默认参数、分辨率、融合分组（含嵌套玻璃）、内容顺序、不重叠覆盖、液体迁移的弹簧与交接、回退实现（含折射滤镜的贴图取值）和不支持时的挂载行为。管线缓存、uniform 布局、绘制列表与玻璃图层的每帧逻辑用记录调用的假设备（`tests/helpers/fake-gpu.ts`）驱动真实代码检查。
+- `tools/eslint-plugin-hot/tests`：热路径规则的正反用例。
 - `apps/demo/tests`：领域逻辑与视图。
 - `apps/demo/tests/visual/*.html`：在支持的浏览器中人工检查玻璃边缘与内容遮挡。
 - `apps/demo/tests/perf/`：独立构建入口，通过替换 `CanvasStage.prototype.draw` 记录帧时间，`?gpu` 时打开逐遍计时，结果保存在 `docs/performance/`。`?lens=0` 关闭透镜，用于和没有透镜的旧版本逐像素比对（`docs/performance/2026-11-13-webgpu/tools/`）。

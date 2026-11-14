@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createHtmlPaintOrderComparator } from '../../src/liquid-glass/content-order'
+import { PaintOrder } from '../../src/liquid-glass/content-order.hot'
+
+/** 新的一帧里的比较函数：每次调用都读取页面当前的样式。 */
+function comparator(): (a: HTMLElement, b: HTMLElement) => number {
+  const order = new PaintOrder()
+  order.begin()
+  return (a, b) => order.compare(a, b)
+}
 
 /** 建立指定 CSS 层级的容器及玻璃内容。 */
 function container(z?: number, parent = document.body): HTMLElement {
@@ -23,12 +30,12 @@ describe('hTML 内容前后顺序', () => {
   it('较高 z-index 的顶栏覆盖后出现的页面控件', () => {
     const header = container(40)
     const control = container()
-    expect(createHtmlPaintOrderComparator()(header, control)).toBeGreaterThan(0)
+    expect(comparator()(header, control)).toBeGreaterThan(0)
   })
   it('分支层级相同时按 DOM 顺序排列控件', () => {
     const first = container(10)
     const second = container(10)
-    expect(createHtmlPaintOrderComparator()(first, second)).toBeLessThan(0)
+    expect(comparator()(first, second)).toBeLessThan(0)
   })
   it('从分支首个 z-index 为零的上下文确定子控件的顺序', () => {
     const header = container(40)
@@ -36,7 +43,7 @@ describe('hTML 内容前后顺序', () => {
     const child = container(100, page)
     const readStyle = vi.spyOn(globalThis, 'getComputedStyle')
 
-    const sorted = [header, child].sort(createHtmlPaintOrderComparator())
+    const sorted = [header, child].sort(comparator())
 
     const styled = readStyle.mock.calls.map(([element]) => element)
     expect(sorted[0]).toBe(child)
@@ -54,7 +61,7 @@ describe('hTML 内容前后顺序', () => {
     const third = container(undefined, shared)
     const readStyle = vi.spyOn(globalThis, 'getComputedStyle')
 
-    const sorted = [third, first, second].sort(createHtmlPaintOrderComparator())
+    const sorted = [third, first, second].sort(comparator())
 
     const styled = readStyle.mock.calls.map(([element]) => element)
     expect(sorted[0]).toBe(first)
@@ -67,7 +74,7 @@ describe('hTML 内容前后顺序', () => {
     const parent = container(50)
     const child = container(-5, parent)
 
-    expect([parent, child].sort(createHtmlPaintOrderComparator())[0]).toBe(child)
+    expect([parent, child].sort(comparator())[0]).toBe(child)
   })
   it('祖先的 z-index 改变后，下一次排序使用新的顺序', () => {
     const header = container(40)
@@ -78,9 +85,9 @@ describe('hTML 内容前后顺序', () => {
     const control = container(undefined, parent)
     const elements = [header, control]
 
-    expect(elements.sort(createHtmlPaintOrderComparator())[0]).toBe(control)
+    expect(elements.sort(comparator())[0]).toBe(control)
     parent.style.zIndex = '50'
-    expect(elements.sort(createHtmlPaintOrderComparator())[0]).toBe(header)
+    expect(elements.sort(comparator())[0]).toBe(header)
   })
   it('控件移到另一个祖先下后，下一次排序使用新的顺序', () => {
     const back = container(-10)
@@ -90,8 +97,8 @@ describe('hTML 内容前后顺序', () => {
     front.append(moving)
     const elements = [moving, middle]
 
-    expect(elements.sort(createHtmlPaintOrderComparator())[0]).toBe(middle)
+    expect(elements.sort(comparator())[0]).toBe(middle)
     back.append(moving)
-    expect(elements.sort(createHtmlPaintOrderComparator())[0]).toBe(moving)
+    expect(elements.sort(comparator())[0]).toBe(moving)
   })
 })

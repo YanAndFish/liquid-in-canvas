@@ -1,0 +1,16 @@
+{
+  "name": "@liquid-in-canvas/eslint-plugin-hot",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ESLint rules that keep per-frame code in *.hot.ts files free of heap allocations.",
+  "exports": "./index.js",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^8.72.1",
+    "eslint": "^10.14.0",
+    "vitest": "^5.1.0"
+  }
+}

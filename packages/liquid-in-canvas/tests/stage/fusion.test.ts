@@ -1,7 +1,21 @@
-import type { VolumeSurface } from '../../src/liquid-glass/fusion'
+import type { VolumeSurface } from '../../src/liquid-glass/fusion.hot'
 import { describe, expect, it } from 'vitest'
-import { groupGlassSurfaces, pressedBox } from '../../src/liquid-glass/fusion'
+import { GlassGroups, writePressedBox } from '../../src/liquid-glass/fusion.hot'
 import { parseGlassOptions } from '../../src/liquid-glass/options'
+
+const groups = new GlassGroups()
+
+/** 复制分组结果：分组对象会在下一次分组时复用。 */
+function groupGlassSurfaces(surfaces: VolumeSurface[]): VolumeSurface[][] {
+  groups.build(surfaces, surfaces.length)
+  return groups.groups.slice(0, groups.count).map(group => group.members.slice(0, group.count))
+}
+
+function pressedBox(surface: VolumeSurface): number[] {
+  const box = [0, 0, 0, 0]
+  writePressedBox(box, 0, surface)
+  return box
+}
 
 /** 创建沿水平方向排列的独立玻璃。 */
 function surface(id: number, left: number, layer = 0, fusion = 32): VolumeSurface {
@@ -16,6 +30,8 @@ function surface(id: number, left: number, layer = 0, fusion = 32): VolumeSurfac
     brightness: 1,
     paintOrder: 0,
     press: 0,
+    layer,
+    host: null,
     options: {
       ...parseGlassOptions(document.createElement('div'), 'light'),
       layer,

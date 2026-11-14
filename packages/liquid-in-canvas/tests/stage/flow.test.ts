@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { hexToLinear, srgbToLinear } from '../../src/liquid-glass/color'
-import { LiquidFlow } from '../../src/liquid-glass/flow'
-import { groupGlassSurfaces } from '../../src/liquid-glass/fusion'
+import { LiquidFlow } from '../../src/liquid-glass/flow.hot'
+import { GlassGroups } from '../../src/liquid-glass/fusion.hot'
 import { parseGlassOptions } from '../../src/liquid-glass/options'
 
 const FROM = {
@@ -17,12 +17,18 @@ const TO = {
   height: 40,
 }
 
+function rectOf(flow: LiquidFlow) {
+  const out = { left: 0, top: 0, width: 0, height: 0 }
+  flow.rect(out)
+  return out
+}
+
 /** 以 120 Hz 推进，返回每帧的矩形。 */
 function run(flow: LiquidFlow, seconds: number) {
   const frames = []
   for (let t = 0; t < seconds; t += 1 / 120) {
     flow.advance(1 / 120)
-    frames.push(flow.rect())
+    frames.push(rectOf(flow))
   }
   return frames
 }
@@ -37,7 +43,7 @@ describe('液体迁移', () => {
     expect(widest).toBeGreaterThan(160)
     expect(thinnest).toBeLessThan(40)
     expect(flow.active).toBe(false)
-    expect(flow.rect()).toEqual(TO)
+    expect(rectOf(flow)).toEqual(TO)
   })
 
   it('前缘先到，尾部被拖在后面', () => {
@@ -56,7 +62,7 @@ describe('液体迁移', () => {
     flow.retarget(TO)
     flow.snap(TO)
     expect(flow.active).toBe(false)
-    expect(flow.rect()).toEqual(TO)
+    expect(rectOf(flow)).toEqual(TO)
   })
 
   it('30 Hz 与 120 Hz 下的轨迹接近', () => {
@@ -68,7 +74,7 @@ describe('液体迁移', () => {
       slow.advance(1 / 30)
     for (let i = 0; i < 24; i++)
       fast.advance(1 / 120)
-    expect(Math.abs(slow.rect().left - fast.rect().left)).toBeLessThan(2)
+    expect(Math.abs(rectOf(slow).left - rectOf(fast).left)).toBeLessThan(2)
   })
 })
 
@@ -92,19 +98,24 @@ describe('嵌套玻璃的融合', () => {
       top: 0,
       height: 40,
       width: 100,
-      clip: [0, 0, 1000, 1000] as const,
+      layer: 0,
+      host: null,
+      clip: [0, 0, 1000, 1000],
       opacity: 1,
       brightness: 1,
       paintOrder: 0,
       press: 0,
       options,
     }
-    const groups = groupGlassSurfaces([
+    const surfaces = [
       { ...base, id: 1, left: 0, width: 400 },
       { ...base, id: 2, left: 10, host: 1 },
       { ...base, id: 3, left: 120, host: 1 },
       { ...base, id: 4, left: 420 },
-    ])
+    ]
+    const grouping = new GlassGroups()
+    grouping.build(surfaces, surfaces.length)
+    const groups = grouping.groups.slice(0, grouping.count).map(group => group.members.slice(0, group.count))
     expect(groups.map(group => group.map(surface => surface.id))).toEqual([
       [1, 4],
       [2, 3],

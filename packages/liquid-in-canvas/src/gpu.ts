@@ -1,11 +1,14 @@
 /// <reference path="./html-in-canvas.d.ts" />
-
 /**
- * 舞台直接使用的 WebGPU 资源：设备与画布配置、每帧的 uniform 缓冲、管线缓存、元素纹理与离屏目标。
+ * 舞台直接使用的 WebGPU 资源中只在初始化或少见情况下执行的部分：设备与画布配置、管线表、
+ * 元素纹理与离屏目标。每帧的 uniform、绘制列表与编码在 `frame.hot.ts`。
  *
  * 所有绘制都是一个矩形加一段 uniform：顶点着色器按 uniform 开头的 NDC 矩形生成四个顶点，
  * 不需要顶点缓冲，也没有场景图。一帧内的全部 uniform 写进同一块缓冲，只上传一次。
  */
+
+import { BUFFER_USAGE } from './frame'
+import { FrameEncoder } from './frame.hot'
 
 /** WebGPU 规范规定的用途标志。写成常量后，没有 GPU 全局对象的环境（单元测试）也能加载这些模块。 */
 export const TEXTURE_USAGE = {
@@ -13,14 +16,6 @@ export const TEXTURE_USAGE = {
   COPY_DST: 0x02,
   TEXTURE_BINDING: 0x04,
   RENDER_ATTACHMENT: 0x10,
-} as const
-
-const BUFFER_USAGE = {
-  MAP_READ: 0x0001,
-  COPY_SRC: 0x0004,
-  COPY_DST: 0x0008,
-  UNIFORM: 0x0040,
-  QUERY_RESOLVE: 0x0200,
 } as const
 
 const SHADER_STAGE = {
@@ -32,11 +27,6 @@ const SHADER_STAGE = {
 export const ELEMENT_FORMAT: GPUTextureFormat = 'rgba8unorm-srgb'
 /** 离屏目标的格式：线性颜色，半精度。 */
 export const TARGET_FORMAT: GPUTextureFormat = 'rgba16float'
-
-/** uniform 绑定窗口的字节数，也是单个绘制项 uniform 的上限。 */
-const UNIFORM_WINDOW = 65536
-/** 动态偏移的对齐要求，规范的默认下限为 256 字节。 */
-const UNIFORM_ALIGN_FLOATS = 64
 
 /** 普通透明混合：片元输出未预乘的颜色。 */
 export const BLEND_NORMAL: GPUBlendState = {
@@ -90,17 +80,6 @@ export function wgslFloat(value: number): string {
   return Number.isInteger(value)
     ? value.toFixed(1)
     : String(value)
-}
-
-/** 画布遍或离屏遍中的一次矩形绘制。 */
-export interface DrawItem {
-  /** 绘制顺序，见 `render-order.ts`。同一遍内按从小到大绘制。 */
-  order: number
-  pipeline: GPURenderPipeline
-  /** uniform 在本帧缓冲中的字节偏移。 */
-  uniform: number
-  /** 第 1 组绑定：这次绘制取样的纹理。 */
-  textures: GPUBindGroup
 }
 
 /** 一遍绘制的计时结果。 */
@@ -207,83 +186,6 @@ export class PassTimer {
   }
 }
 
-/** 一帧内所有绘制项的 uniform。先在内存里写完，提交前一次上传。 */
-export class UniformArena {
-  /** 本帧的数据，`alloc()` 之后直接按下标写入。扩容后会换成新数组，不要跨 `alloc()` 保留引用。 */
-  data = new Float32Array(8192)
-  private used = 0
-  private buffer: GPUBuffer | null = null
-  private group: GPUBindGroup | null = null
-  private readonly device: GPUDevice
-  private readonly layout: GPUBindGroupLayout
-  private readonly sampler: GPUSampler
-
-  constructor(device: GPUDevice, layout: GPUBindGroupLayout, sampler: GPUSampler) {
-    this.device = device
-    this.layout = layout
-    this.sampler = sampler
-  }
-
-  /** 开始新的一帧。 */
-  reset(): void {
-    this.used = 0
-  }
-
-  /** 分配 `floats` 个浮点数并清零，返回它在 `data` 中的起始下标；乘以 4 就是绘制项的字节偏移。 */
-  alloc(floats: number): number {
-    const start = this.used
-    const end = start + Math.ceil(floats / UNIFORM_ALIGN_FLOATS) * UNIFORM_ALIGN_FLOATS
-    if (end > this.data.length) {
-      const grown = new Float32Array(Math.max(end, this.data.length * 2))
-      grown.set(this.data.subarray(0, start))
-      this.data = grown
-    }
-    else {
-      this.data.fill(0, start, end)
-    }
-    this.used = end
-    return start
-  }
-
-  /** 上传本帧的数据，返回第 0 组绑定。缓冲不够大时重新创建。 */
-  flush(): GPUBindGroup {
-    // 绑定窗口从任意绘制项的偏移开始都必须落在缓冲之内。
-    const required = this.data.length * 4 + UNIFORM_WINDOW
-    if (!this.buffer || this.buffer.size < required || !this.group) {
-      this.buffer?.destroy()
-      this.buffer = this.device.createBuffer({
-        size: required,
-        usage: BUFFER_USAGE.UNIFORM | BUFFER_USAGE.COPY_DST,
-      })
-      this.group = this.device.createBindGroup({
-        layout: this.layout,
-        entries: [
-          {
-            binding: 0,
-            resource: { buffer: this.buffer, offset: 0, size: UNIFORM_WINDOW },
-          },
-          { binding: 1, resource: this.sampler },
-        ],
-      })
-    }
-    if (this.used > 0)
-      this.device.queue.writeBuffer(this.buffer, 0, this.data.buffer, this.data.byteOffset, this.used * 4)
-    return this.group
-  }
-
-  dispose(): void {
-    this.buffer?.destroy()
-    this.buffer = null
-    this.group = null
-  }
-}
-
-/** 着色器取样的纹理数量对应的绑定布局。 */
-interface TextureLayout {
-  bindGroup: GPUBindGroupLayout
-  pipeline: GPUPipelineLayout
-}
-
 /** 创建管线所需的描述。布局与顶点阶段由 `StageGpu` 补全。 */
 export interface PipelineSpec {
   /** 完整的 WGSL，包含 `shaderPrelude()`。 */
@@ -296,37 +198,107 @@ export interface PipelineSpec {
   blend?: GPUBlendState
 }
 
-/** 一帧 uniform 的写入位置。 */
-export interface FrameHeader {
-  /** 矩形的左、上、右、下，单位为 CSS 像素。 */
-  left: number
-  top: number
-  right: number
-  bottom: number
-  /** 绘制目标的像素尺寸。 */
-  targetWidth: number
-  targetHeight: number
-  /** 视口的 CSS 尺寸。 */
-  cssWidth: number
-  cssHeight: number
+/** 绘制目标的格式位置：画布或离屏目标。管线表按它取用对应格式的管线。 */
+export const SLOT_CANVAS = 0
+export const SLOT_TARGET = 1
+
+/** 着色器取样的纹理数量对应的绑定布局。 */
+interface TextureLayout {
+  bindGroup: GPUBindGroupLayout
+  pipeline: GPUPipelineLayout
 }
 
-/** 舞台的 GPU 上下文：设备、共用的绑定布局、管线缓存和本帧的 uniform。 */
+/**
+ * 按整数下标缓存的一组管线，例如按体积组的成员数量、按内容的遮挡数量。
+ *
+ * `get()` 的快速路径只是一次数组读取，可以在每帧的代码里调用；同一个下标只编译一次，
+ * 滚动中成员或遮挡数量变化只会取用已有的管线。
+ */
+export class PipelineTable {
+  private readonly pipelines: (GPURenderPipeline | undefined)[] = []
+  private readonly warming = new Set<number>()
+  private readonly gpu: StageGpu
+  private readonly label: string
+  private readonly spec: (index: number) => PipelineSpec
+
+  constructor(gpu: StageGpu, label: string, spec: (index: number) => PipelineSpec) {
+    this.gpu = gpu
+    this.label = label
+    this.spec = spec
+  }
+
+  /** 取得第 `index` 条管线，没有时同步编译。 */
+  get(index: number): GPURenderPipeline {
+    return this.pipelines[index] ?? this.create(index)
+  }
+
+  /**
+   * 在后台编译一条稍后可能用到的管线，避免第一次绘制时卡顿。
+   * 编译完成前如果已经被 `get()` 同步创建，后台的结果直接丢弃。
+   */
+  warm(index: number): void {
+    if (this.pipelines[index] || this.warming.has(index))
+      return
+    const pending = this.gpu.compileAsync(`${this.label}:${index}`, this.spec(index))
+    if (!pending)
+      return
+    this.warming.add(index)
+    void pending.then((pipeline) => {
+      if (!this.gpu.disposed)
+        this.pipelines[index] ??= pipeline
+    }).catch(() => {}).finally(() => {
+      this.warming.delete(index)
+    })
+  }
+
+  private create(index: number): GPURenderPipeline {
+    const pipeline = this.gpu.compile(`${this.label}:${index}`, this.spec(index))
+    this.pipelines[index] = pipeline
+    return pipeline
+  }
+}
+
+/** 把整张纹理画到目标上：页面快照、前景层、低分辨率体积的分块合成。 */
+const BLIT_SHADER = /* wgsl */`${shaderPrelude('')}
+@group(1) @binding(0) var source: texture_2d<f32>;
+
+// 不透明地铺满矩形，用于页面快照。
+@fragment
+fn opaque(in: VertexOutput) -> @location(0) vec4f {
+  return vec4f(textureSample(source, samp, in.uv).rgb, 1.0);
+}
+
+// 带透明度的整层，用于前景层。
+@fragment
+fn layer(in: VertexOutput) -> @location(0) vec4f {
+  return textureSample(source, samp, in.uv);
+}
+
+// 按目标上的位置取样，用于把低分辨率的离屏结果分块放大回画布。
+@fragment
+fn screen(in: VertexOutput) -> @location(0) vec4f {
+  return textureSample(source, samp, in.position.xy / u.screen.xy);
+}
+`
+
+/** 舞台的 GPU 上下文：设备、共用的绑定布局、管线编译与本帧的编码器。 */
 export class StageGpu {
   readonly device: GPUDevice
   /** 画布视图的格式，带 sRGB 编码。 */
   readonly canvasFormat: GPUTextureFormat
-  readonly arena: UniformArena
   readonly timing: PassTimer
+  /** 每帧的 uniform、绘制列表编码与元素上传。 */
+  readonly frame: FrameEncoder
+  /** 把整张纹理画到目标上，按格式位置取用，见 `BLIT_SHADER`。 */
+  readonly blitOpaque: PipelineTable
+  readonly blitLayer: PipelineTable
+  readonly blitScreen: PipelineTable
+  disposed = false
   private readonly sampler: GPUSampler
   private readonly uniformLayout: GPUBindGroupLayout
   private readonly textureLayouts = new Map<number, TextureLayout>()
   private readonly modules = new Map<string, GPUShaderModule>()
-  private readonly pipelines = new Map<string, GPURenderPipeline>()
-  private readonly warming = new Set<string>()
   private readonly textureGroups = new WeakMap<GPUTextureView, GPUBindGroup>()
-  private uniforms: GPUBindGroup | null = null
-  private disposed = false
 
   constructor(device: GPUDevice, canvasFormat: GPUTextureFormat) {
     this.device = device
@@ -352,40 +324,38 @@ export class StageGpu {
         },
       ],
     })
-    this.arena = new UniformArena(device, this.uniformLayout, this.sampler)
     this.timing = new PassTimer(device)
+    this.frame = new FrameEncoder(device, this.uniformLayout, this.sampler, this.timing)
+    const blit = (kind: 'opaque' | 'layer' | 'screen', blend: GPUBlendState | undefined) => new PipelineTable(this, `blit:${kind}`, slot => ({
+      code: BLIT_SHADER,
+      entry: kind,
+      textures: 1,
+      format: this.formatOf(slot),
+      blend,
+    }))
+    this.blitOpaque = blit('opaque', undefined)
+    this.blitLayer = blit('layer', BLEND_NORMAL)
+    // 离屏目标里已经是预乘颜色。
+    this.blitScreen = blit('screen', BLEND_PREMULTIPLIED)
   }
 
-  /**
-   * 按键取得管线，没有时同步创建。
-   *
-   * 键必须唯一确定 `create()` 的结果。同一个键只创建一次：按成员数量取用体积管线时，
-   * 滚动中成员的变化不会触发着色器编译。
-   */
-  pipeline(key: string, create: () => PipelineSpec): GPURenderPipeline {
-    let pipeline = this.pipelines.get(key)
-    if (!pipeline) {
-      pipeline = this.device.createRenderPipeline(this.descriptor(key, create()))
-      this.pipelines.set(key, pipeline)
-    }
-    return pipeline
+  /** 格式位置对应的纹理格式。 */
+  formatOf(slot: number): GPUTextureFormat {
+    return slot === SLOT_CANVAS
+      ? this.canvasFormat
+      : TARGET_FORMAT
   }
 
-  /**
-   * 在后台编译一条稍后可能用到的管线，避免第一次绘制时卡顿。
-   *
-   * 编译完成前如果已经被 `pipeline()` 同步创建，后台的结果直接丢弃。
-   */
-  warm(key: string, create: () => PipelineSpec): void {
-    if (this.pipelines.has(key) || this.warming.has(key) || typeof this.device.createRenderPipelineAsync !== 'function')
-      return
-    this.warming.add(key)
-    void this.device.createRenderPipelineAsync(this.descriptor(key, create())).then((pipeline) => {
-      if (!this.disposed && !this.pipelines.has(key))
-        this.pipelines.set(key, pipeline)
-    }).catch(() => {}).finally(() => {
-      this.warming.delete(key)
-    })
+  /** 同步编译一条管线。 */
+  compile(label: string, spec: PipelineSpec): GPURenderPipeline {
+    return this.device.createRenderPipeline(this.descriptor(label, spec))
+  }
+
+  /** 在后台编译一条管线；不支持异步编译时返回 null。 */
+  compileAsync(label: string, spec: PipelineSpec): Promise<GPURenderPipeline> | null {
+    if (this.disposed || typeof this.device.createRenderPipelineAsync !== 'function')
+      return null
+    return this.device.createRenderPipelineAsync(this.descriptor(label, spec))
   }
 
   /** 只取样一张纹理的绘制项使用的绑定，按视图缓存。 */
@@ -406,91 +376,10 @@ export class StageGpu {
     })
   }
 
-  /**
-   * 分配一个绘制项的 uniform 并写入开头的矩形与目标尺寸，返回起始下标。
-   * 其余字段从下标加 8 开始，由调用方写入 `arena.data`。
-   */
-  allocUniform(floats: number, header: FrameHeader): number {
-    const start = this.arena.alloc(floats)
-    const data = this.arena.data
-    data[start] = header.left / header.cssWidth * 2 - 1
-    data[start + 1] = 1 - header.top / header.cssHeight * 2
-    data[start + 2] = header.right / header.cssWidth * 2 - 1
-    data[start + 3] = 1 - header.bottom / header.cssHeight * 2
-    data[start + 4] = header.targetWidth
-    data[start + 5] = header.targetHeight
-    data[start + 6] = header.cssWidth
-    data[start + 7] = header.cssHeight
-    return start
-  }
-
-  /** 开始一帧：清空 uniform，准备计时。 */
-  beginFrame(): void {
-    this.arena.reset()
-    this.uniforms = null
-    this.timing.begin()
-  }
-
-  /** 所有绘制项的 uniform 写完后调用，上传并返回本帧的命令编码器。 */
-  beginEncoding(): GPUCommandEncoder {
-    this.uniforms = this.arena.flush()
-    return this.device.createCommandEncoder()
-  }
-
-  /**
-   * 编码一遍绘制。`clear` 为 null 时保留目标原有的内容。
-   * 绘制项按 `order` 从小到大绘制，相同的保持传入顺序。
-   */
-  encodePass(
-    encoder: GPUCommandEncoder,
-    label: string,
-    target: { view: GPUTextureView, width: number, height: number },
-    clear: GPUColor | null,
-    items: readonly DrawItem[],
-  ): void {
-    const uniforms = this.uniforms
-    if (!uniforms)
-      throw new Error('StageGpu.beginEncoding() must be called before encodePass()')
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: target.view,
-          loadOp: clear
-            ? 'clear'
-            : 'load',
-          clearValue: clear ?? undefined,
-          storeOp: 'store',
-        },
-      ],
-      timestampWrites: this.timing.writes(label, target.width, target.height),
-    })
-    let pipeline: GPURenderPipeline | null = null
-    for (const item of [...items].sort((a, b) => a.order - b.order)) {
-      if (item.pipeline !== pipeline) {
-        pipeline = item.pipeline
-        pass.setPipeline(pipeline)
-      }
-      pass.setBindGroup(0, uniforms, [item.uniform])
-      pass.setBindGroup(1, item.textures)
-      pass.draw(4)
-    }
-    pass.end()
-  }
-
-  /** 提交本帧的命令。 */
-  submit(encoder: GPUCommandEncoder): void {
-    this.timing.finish(encoder)
-    this.device.queue.submit([
-      encoder.finish(),
-    ])
-    this.timing.collect()
-  }
-
   dispose(): void {
     this.disposed = true
-    this.arena.dispose()
+    this.frame.dispose()
     this.timing.dispose()
-    this.pipelines.clear()
     this.modules.clear()
   }
 
@@ -507,7 +396,10 @@ export class StageGpu {
       layout = {
         bindGroup,
         pipeline: this.device.createPipelineLayout({
-          bindGroupLayouts: [this.uniformLayout, bindGroup],
+          bindGroupLayouts: [
+            this.uniformLayout,
+            bindGroup,
+          ],
         }),
       }
       this.textureLayouts.set(count, layout)
@@ -618,18 +510,6 @@ export function disposeElementTexture(target: SampledTexture | null): void {
   target?.texture.destroy()
 }
 
-/** 把元素的当前绘制记录写入整张纹理。 */
-export function uploadElement(device: GPUDevice, element: Element, texture: GPUTexture): void {
-  device.queue.drawElementImageToTexture(
-    { source: element },
-    {
-      texture,
-      size: { width: texture.width, height: texture.height },
-      colorSpace: 'srgb',
-    },
-  )
-}
-
 /** 可以改变尺寸的离屏绘制目标。 */
 export class RenderTarget {
   width = 0
@@ -670,49 +550,3 @@ export class RenderTarget {
     return createSampled(this.gpu, width, height, TARGET_FORMAT, TEXTURE_USAGE.TEXTURE_BINDING | TEXTURE_USAGE.RENDER_ATTACHMENT)
   }
 }
-
-const BLIT_SHADER = /* wgsl */`${shaderPrelude('')}
-@group(1) @binding(0) var source: texture_2d<f32>;
-
-// 不透明地铺满矩形，用于页面快照。
-@fragment
-fn opaque(in: VertexOutput) -> @location(0) vec4f {
-  return vec4f(textureSample(source, samp, in.uv).rgb, 1.0);
-}
-
-// 带透明度的整层，用于前景层。
-@fragment
-fn layer(in: VertexOutput) -> @location(0) vec4f {
-  return textureSample(source, samp, in.uv);
-}
-
-// 按目标上的位置取样，用于把低分辨率的离屏结果分块放大回画布。
-@fragment
-fn screen(in: VertexOutput) -> @location(0) vec4f {
-  return textureSample(source, samp, in.position.xy / u.screen.xy);
-}
-`
-
-/** 整张纹理的三种画法，见 `BLIT_SHADER`。 */
-export type BlitKind = 'opaque' | 'layer' | 'screen'
-
-const BLIT_BLEND: Record<BlitKind, GPUBlendState | undefined> = {
-  opaque: undefined,
-  layer: BLEND_NORMAL,
-  // 离屏目标里已经是预乘颜色。
-  screen: BLEND_PREMULTIPLIED,
-}
-
-/** 取得把一张纹理画到指定格式目标上的管线。 */
-export function blitPipeline(gpu: StageGpu, kind: BlitKind, format: GPUTextureFormat): GPURenderPipeline {
-  return gpu.pipeline(`blit:${kind}:${format}`, () => ({
-    code: BLIT_SHADER,
-    entry: kind,
-    textures: 1,
-    format,
-    blend: BLIT_BLEND[kind],
-  }))
-}
-
-/** 只含矩形与目标尺寸的 uniform 的长度。 */
-export const HEADER_FLOATS = 8

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseOverlayLayer } from '../../src/CanvasOverlay'
+import { parseOverlayLayer } from '../../src/CanvasOverlay.hot'
 import {
   glassContentRenderOrder,
   glassRenderOrder,
