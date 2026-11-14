@@ -57,7 +57,7 @@ describe('全局默认参数', () => {
     expect(defaults.elevation).toBe(16)
     expect(defaults.materials.clear.light.dispersion).toBe(0)
     expect(defaults.materials.clear.light.specular).toBe(2)
-    expect(defaults.materials.clear.light.tint).toBe('#f7f2e8')
+    expect(defaults.materials.clear.light.tint).toBe('#ffffff')
   })
 
   it('染色规范为小写六位十六进制', () => {

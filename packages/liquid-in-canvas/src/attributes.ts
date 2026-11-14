@@ -35,21 +35,21 @@ export interface LiquidGlassAttributes {
   'data-glass-variant'?: 'regular' | 'clear' | null
   /** 圆角，0–2000。缺省 28。 */
   'data-glass-radius'?: GlassRadiusAttribute | null
-  /** 背景高斯模糊的标准差，0–80。缺省 18 / 2。 */
+  /** 背景高斯模糊的标准差，0–80。缺省 18 / 0。 */
   'data-glass-blur'?: GlassNumberAttribute | null
   /** 三维实体的半厚度上限，0–80。实际厚度为短边的 0.3 倍，不超过这个值。缺省 80。 */
   'data-glass-refraction'?: GlassNumberAttribute | null
-  /** 边缘倒角的水平宽度，按半厚度的倍数，0.1–4。缺省 0.45。 */
+  /** 边缘倒角的水平宽度，按半厚度的倍数，0.1–4。缺省 0.8。 */
   'data-glass-bevel-width'?: GlassNumberAttribute | null
   /** 边缘倒角的垂直高度，按半厚度的倍数，0.05–1；1 表示侧面没有竖直部分。缺省 1。 */
   'data-glass-bevel-height'?: GlassNumberAttribute | null
-  /** 倒角曲线的超椭圆指数，1–8：1 是直线斜面，2 是椭圆弧，越大越接近直角。缺省 3。 */
+  /** 倒角曲线的超椭圆指数，1–8：1 是直线斜面，2 是椭圆弧，越大越接近直角。缺省 2.75。 */
   'data-glass-bevel-curve'?: GlassNumberAttribute | null
   /** 底面倒角相对顶面倒角的比例，0–1；0 表示底面是带直角边的平面。缺省 1。 */
   'data-glass-bottom-bevel'?: GlassNumberAttribute | null
-  /** RGB 取样分离强度，0–1。缺省 0.3 / 0.4。 */
+  /** RGB 取样分离强度，0–1。缺省 0.05。 */
   'data-glass-dispersion'?: GlassNumberAttribute | null
-  /** 凸透镜强度，0–0.6，只对画布渲染有效。缺省 0.04 / 0.12。 */
+  /** 凸透镜强度，0–0.6，只对画布渲染有效。缺省 0。 */
   'data-glass-lens'?: GlassNumberAttribute | null
   /** 透射背景的饱和度倍数，0–3。缺省 1.3 / 1.15。 */
   'data-glass-saturation'?: GlassNumberAttribute | null

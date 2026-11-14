@@ -100,12 +100,12 @@ describe('调参面板', () => {
     await wrapper.get('input[data-field="blur"]').setValue('40')
     expect(getGlassDefaults().materials.regular.dark.blur).toBe(40)
     expect(getGlassDefaults().materials.regular.light.blur).toBe(18)
-    expect(getGlassDefaults().materials.clear.dark.blur).toBe(2)
+    expect(getGlassDefaults().materials.clear.dark.blur).toBe(0)
 
     await wrapper.get('button[data-variant="clear"]').trigger('click')
     await wrapper.get('input[data-field="dispersion"]').setValue('0.8')
     expect(getGlassDefaults().materials.clear.dark.dispersion).toBe(0.8)
-    expect(getGlassDefaults().materials.regular.dark.dispersion).toBe(0.3)
+    expect(getGlassDefaults().materials.regular.dark.dispersion).toBe(0.05)
   })
 
   it('形体参数与染色写入全局默认值', async () => {

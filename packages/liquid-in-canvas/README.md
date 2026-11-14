@@ -94,14 +94,14 @@ await mountLiquidGlass({
 | --- | --- | --- |
 | `data-glass-variant` | `regular` 或 `clear`，决定下面各项的默认值 | `regular` |
 | `data-glass-radius` | 圆角，支持 CSS 顺序的一至四个值 | 28 |
-| `data-glass-blur` | 背景高斯模糊的标准差，0–80 | 18 / 2 |
+| `data-glass-blur` | 背景高斯模糊的标准差，0–80 | 18 / 0 |
 | `data-glass-refraction` | 三维实体的半厚度上限，0–80。实际厚度为短边的 0.3 倍，不超过这个值 | 80 |
-| `data-glass-bevel-width` | 边缘倒角的水平宽度，按半厚度的倍数，0.1–4，不超过短边的一半 | 0.45 |
+| `data-glass-bevel-width` | 边缘倒角的水平宽度，按半厚度的倍数，0.1–4，不超过短边的一半 | 0.8 |
 | `data-glass-bevel-height` | 边缘倒角的垂直高度，按半厚度的倍数，0.05–1；1 表示侧面没有竖直部分 | 1 |
-| `data-glass-bevel-curve` | 倒角曲线的超椭圆指数，1–8：1 是直线斜面，2 是椭圆弧，越大越接近直角 | 3 |
+| `data-glass-bevel-curve` | 倒角曲线的超椭圆指数，1–8：1 是直线斜面，2 是椭圆弧，越大越接近直角 | 2.75 |
 | `data-glass-bottom-bevel` | 底面倒角相对顶面倒角的比例，0–1；0 表示底面是带直角边的平面 | 1 |
-| `data-glass-dispersion` | RGB 采样分离强度，0–1 | 0.3 / 0.4 |
-| `data-glass-lens` | 凸透镜强度，0–0.6。玻璃中间的背景放大约 1 / (1 − lens) 倍，长条形只沿短边放大 | 0.04 / 0.12 |
+| `data-glass-dispersion` | RGB 采样分离强度，0–1 | 0.05 |
+| `data-glass-lens` | 凸透镜强度，0–0.6。玻璃中间的背景放大约 1 / (1 − lens) 倍，长条形只沿短边放大 | 0 |
 | `data-glass-saturation` | 透射背景的饱和度倍数，0–3 | 1.3 / 1.15 |
 | `data-glass-brightness` | 透射背景的亮度倍数，0.5–1.5 | 浅色 1.06、深色 1 / 1 |
 | `data-glass-tint` | 十六进制染色值 | 随主题 |
