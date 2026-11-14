@@ -173,11 +173,11 @@ describe('三维玻璃组', () => {
     // 白色染色乘染色比例，在线性空间中为 0.5。
     expect(data[member + 20]).toBeCloseTo(0.5)
     expect(data[member + 23]).toBe(1)
-    // 截面：100 × 100 的控件半厚度受短边限制为 30，倒角宽 0.45 倍、高等于半厚度，三次超椭圆，上下对称。
+    // 截面：100 × 100 的控件半厚度受短边限制为 30，倒角宽 0.8 倍、高等于半厚度，指数 2.75 的超椭圆，上下对称。
     expect(data[member + 8]).toBe(30)
-    expect(data[member + 24]).toBeCloseTo(13.5)
+    expect(data[member + 24]).toBeCloseTo(24)
     expect(data[member + 25]).toBeCloseTo(30)
-    expect(data[member + 26]).toBe(3)
+    expect(data[member + 26]).toBe(2.75)
     expect(data[member + 27]).toBe(1)
   })
 })

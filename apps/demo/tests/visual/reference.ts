@@ -9,7 +9,7 @@ import { applyGlassQuery } from '../query'
  * 查询参数：
  * - `scene`：capsule / toolbar / disc / buttons。
  * - `variant`：clear / regular，缺省取场景自己的材质。
- * - `blur`、`refraction`、`bevelWidth`、`bevelHeight`、`bevelCurve`、`lens`、`dispersion`、`elevation`、`fusion`：
+ * - `blur`、`refraction`、`bevelWidth`、`bevelHeight`、`bevelCurve`、`lens`、`dispersion`、`specular`、`tintAlpha`、`elevation`、`fusion`：
  *   覆盖全局默认参数，未给出时使用场景的设定或库的默认值。三颗按钮的场景默认关闭融合，与参考画面一致。
  * - `split`：分界线相对玻璃中心的偏移，以玻璃短边为单位（胶囊向下为正，圆形向右下为正）。
  * - `panel=0`：隐藏参数面板，截图时使用。
@@ -44,7 +44,7 @@ declare global {
   }
 }
 
-type ParamKey = 'blur' | 'refraction' | 'bevelWidth' | 'bevelHeight' | 'bevelCurve' | 'lens' | 'dispersion' | 'elevation' | 'fusion'
+type ParamKey = 'blur' | 'refraction' | 'bevelWidth' | 'bevelHeight' | 'bevelCurve' | 'lens' | 'dispersion' | 'specular' | 'tintAlpha' | 'elevation' | 'fusion'
 
 interface SceneSetup {
   variant: GlassVariant
@@ -126,6 +126,22 @@ const PARAMS: Param[] = [
     key: 'dispersion',
     label: '色散',
     attr: 'data-glass-dispersion',
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  {
+    key: 'specular',
+    label: '轮廓反光',
+    attr: 'data-glass-specular',
+    min: 0,
+    max: 2,
+    step: 0.05,
+  },
+  {
+    key: 'tintAlpha',
+    label: '染色比例',
+    attr: 'data-glass-tint-alpha',
     min: 0,
     max: 1,
     step: 0.01,
