@@ -1,6 +1,8 @@
 # STILL · Liquid Glass in Canvas
 
-用 **HTML-in-Canvas + WebGPU** 在 Web 上渲染 iOS 风格的液态玻璃。仓库包含可单独发布的渲染库 `liquid-in-canvas`，和一个用它搭建的交互商店作为演示。页面与控件都是可点击、可聚焦的实时 HTML；浏览器把页面与玻璃控件分别上传为纹理，再合成到同一张画布。
+[![Netlify Status](https://api.netlify.com/api/v1/badges/5ad79257-b157-4b6d-86f2-cf0880c58eb2/deploy-status)](https://app.netlify.com/projects/liquid-in-canvas/deploys)
+
+用 **HTML-in-Canvas + WebGPU** 在 Web 上渲染 iOS 风格的液态玻璃。仓库包含可单独发布的渲染库 `liquid-in-canvas`，和一个用它搭建的交互商店作为演示。页面与控件都是可点击、可聚焦的实时 HTML；浏览器把页面与玻璃控件分别上传为纹理，再合成到同一张画布。 [Live Demo](https://liquid-in-canvas.netlify.app/)
 
 视觉依据包括 Apple 的 Liquid Glass 演示，以及 iOS 26 用户指南中的照片和 Safari 实际 UI。参考截图、观察结果和实现范围见 [视觉依据](docs/APPLE_LIQUID_GLASS_REFERENCE.md)。
 
