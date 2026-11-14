@@ -2,12 +2,11 @@
   "name": "liquid-in-canvas",
   "type": "module",
   "version": "0.1.0",
-  "description": "Liquid glass for live HTML, rendered with HTML-in-Canvas and three.js WebGPU.",
+  "description": "Liquid glass for live HTML, rendered with HTML-in-Canvas and WebGPU.",
   "keywords": [
     "liquid-glass",
     "html-in-canvas",
-    "webgpu",
-    "three"
+    "webgpu"
   ],
   "sideEffects": false,
   "exports": {
@@ -43,13 +42,8 @@
     "test:watch": "vitest",
     "prepublishOnly": "pnpm build"
   },
-  "peerDependencies": {
-    "three": ">=0.187.0"
-  },
   "devDependencies": {
-    "@types/three": "0.187.0",
     "jsdom": "^31.0.0",
-    "three": "0.187.0",
     "typescript": "~6.0.3",
     "vite": "^8.3.6",
     "vitest": "^5.1.0"

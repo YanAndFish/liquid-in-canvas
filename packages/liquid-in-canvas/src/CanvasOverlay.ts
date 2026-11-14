@@ -1,8 +1,6 @@
-import type { BufferGeometry, Scene } from 'three/webgpu'
-import type { ElementTexture } from './gpu'
-import { Mesh, MeshBasicMaterial } from 'three/webgpu'
+import type { DrawItem, ElementTexture, StageGpu } from './gpu'
 import { STAGE_OVERLAY_ATTR } from './contract'
-import { createElementTexture, disposeElementTexture, uploadElement } from './gpu'
+import { blitPipeline, createElementTexture, disposeElementTexture, HEADER_FLOATS, uploadElement } from './gpu'
 import { GLASS_LAYER_RANGE, OVERLAY_TOP_LAYER, overlayRenderOrder } from './render-order'
 
 /** 读取前景层声明的层级；没有声明或无法解析时位于所有玻璃之上。 */
@@ -22,72 +20,57 @@ export function parseOverlayLayer(raw: string | null): number {
 export class CanvasOverlay {
   private readonly canvas: HTMLCanvasElement
   private readonly element: HTMLElement
-  private readonly device: GPUDevice
-  private readonly scene: Scene
+  private readonly gpu: StageGpu
   private target: ElementTexture | null = null
-  private readonly material = new MeshBasicMaterial({
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
-    toneMapped: false,
-  })
 
-  private readonly mesh: Mesh
-
-  constructor(
-    canvas: HTMLCanvasElement,
-    element: HTMLElement,
-    device: GPUDevice,
-    scene: Scene,
-    geometry: BufferGeometry,
-  ) {
+  constructor(canvas: HTMLCanvasElement, element: HTMLElement, gpu: StageGpu) {
     this.canvas = canvas
     this.element = element
-    this.device = device
-    this.scene = scene
-    this.mesh = new Mesh(geometry, this.material)
-    this.mesh.frustumCulled = false
-    this.mesh.renderOrder = this.order()
-    this.mesh.visible = false
-    scene.add(this.mesh)
+    this.gpu = gpu
     element.setAttribute('drawable', '')
     canvas.updateElementGeometry(element, {
       canvasTransform: new DOMMatrix(),
     })
   }
 
-  /** 前景层当前的场景顺序。 */
+  /** 前景层当前的绘制顺序。 */
   get renderOrder(): number {
-    return this.mesh.renderOrder
+    return overlayRenderOrder(parseOverlayLayer(this.element.getAttribute(STAGE_OVERLAY_ATTR)))
   }
 
-  /** 前景层为空时不上传也不绘制。 */
-  sync(): void {
-    this.mesh.renderOrder = this.order()
-    this.mesh.visible = this.element.childElementCount > 0
-    if (!this.mesh.visible)
-      return
+  /** 上传前景层并返回它在画布遍中的绘制项；前景层为空时不上传也不绘制。 */
+  sync(): DrawItem | null {
+    if (this.element.childElementCount === 0)
+      return null
     const { width, height } = this.canvas
     if (!this.target || this.target.texture.width !== width || this.target.texture.height !== height) {
       disposeElementTexture(this.target)
-      this.target = createElementTexture(this.device, width, height)
-      this.material.map = this.target.external
-      this.material.needsUpdate = true
+      this.target = createElementTexture(this.gpu, width, height)
     }
-    uploadElement(this.device, this.element, this.target.texture)
+    uploadElement(this.gpu.device, this.element, this.target.texture)
+    const start = this.gpu.allocUniform(HEADER_FLOATS, {
+      left: 0,
+      top: 0,
+      right: 1,
+      bottom: 1,
+      targetWidth: width,
+      targetHeight: height,
+      cssWidth: 1,
+      cssHeight: 1,
+    })
+    return {
+      order: this.renderOrder,
+      pipeline: blitPipeline(this.gpu, 'layer', this.gpu.canvasFormat),
+      uniform: start * 4,
+      textures: this.target.group,
+    }
   }
 
-  /** 释放前景纹理，几何体由舞台统一释放。 */
+  /** 释放前景纹理。 */
   dispose(): void {
     this.canvas.clearElementGeometry(this.element)
     this.element.removeAttribute('drawable')
-    this.scene.remove(this.mesh)
-    this.material.dispose()
     disposeElementTexture(this.target)
     this.target = null
-  }
-
-  private order(): number {
-    return overlayRenderOrder(parseOverlayLayer(this.element.getAttribute(STAGE_OVERLAY_ATTR)))
   }
 }

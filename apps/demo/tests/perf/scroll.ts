@@ -1,35 +1,40 @@
-import type { WebGPURenderer } from 'three/webgpu'
 import { CanvasStage } from 'liquid-in-canvas/canvas'
 import { getStageScroller } from '../../src/shared/scroll'
+import { applyGlassQuery } from '../query'
 
-/** 供独立测试入口观察的绘制方法与 GPU 渲染器。 */
+/** 一遍绘制的 GPU 时间，由舞台的计时器读回。 */
+interface PassTiming {
+  /** 这一遍的用途：`backdrop`、`blur`、`band` 或 `canvas`。 */
+  label: string
+  /** 绘制目标的像素尺寸。 */
+  target: [number, number]
+  /** 从开始到结束的时间，毫秒。 */
+  ms: number
+  /** 开始与结束相对本帧第一遍开始的时间，毫秒。 */
+  begin: number
+  end: number
+}
+
+/** 供独立测试入口观察的绘制方法与 GPU 上下文。 */
 interface ObservedStage {
   /** 上传页面并提交这一帧的绘制命令。 */
   draw: (event?: Event) => void
-  /** 初始化后的渲染器，尚未初始化时为 null。 */
-  renderer: WebGPURenderer | null
+  /** 初始化后的 GPU 上下文，尚未初始化时为 null。 */
+  gpu: {
+    device: GPUDevice
+    timing: {
+      enabled: boolean
+      onFrame: ((passes: PassTiming[]) => void) | null
+    }
+  } | null
   /** 修改分辨率限制。 */
   setResolution: CanvasStage['setResolution']
 }
 
-/** Three.js GPU 查询完成后提供的逐遍绘制记录。 */
-interface TimestampBackend {
-  /** 按渲染或计算分类的查询池。 */
-  timestampQueryPool: {
-    /** 尚未创建查询池时为 undefined。 */
-    render?: {
-      /** 键包含绘制上下文和帧号，值为毫秒。 */
-      timestamps: Map<string, number>
-    }
-  }
-}
-
-/** 将 GPU 时间对应到实际绘制场景和目标尺寸。 */
+/** 将 GPU 时间对应到绘制目标。 */
 interface PassInfo {
-  /** 场景或全屏网格的类型。 */
+  /** 这一遍的用途。 */
   scene: string
-  /** 场景的直接子节点数量。 */
-  children: number
   /** 离屏目标尺寸；null 表示输出到画布。 */
   target: number[] | null
 }
@@ -57,18 +62,18 @@ const resolutionOverride = {
 const configured = new WeakSet<object>()
 const errors: string[] = []
 let active = false
-let resolving = false
 let measurement = 0
 let durations: number[] = []
 let paints: number[] = []
 let frames: number[] = []
 let gpuTimes: number[] = []
+let gpuPassSums: number[] = []
 let gpuPassTimes: number[][] = []
-let gpuPassInfo: (PassInfo | undefined)[][] = []
+let gpuPassInfo: PassInfo[][] = []
 let positions: number[] = []
-const observedRenderers = new WeakSet<WebGPURenderer>()
-const passInfo = new Map<string, PassInfo>()
 let adapterInfo: Record<string, string | boolean> | null = null
+
+applyGlassQuery(query)
 
 prototype.draw = function (event) {
   if (!configured.has(this)) {
@@ -76,11 +81,9 @@ prototype.draw = function (event) {
     if (Object.keys(resolutionOverride).length)
       this.setResolution(resolutionOverride)
   }
-  const renderer = this.renderer
-  const backend = renderer?.backend
-  const timestamps = !!renderer?.hasFeature('timestamp-query')
-  if (!adapterInfo && backend && 'device' in backend && backend.device) {
-    const info = (backend.device as GPUDevice).adapterInfo
+  const gpu = this.gpu
+  if (!adapterInfo && gpu) {
+    const info = gpu.device.adapterInfo
     if (info) {
       adapterInfo = {
         vendor: info.vendor,
@@ -91,25 +94,26 @@ prototype.draw = function (event) {
       }
     }
   }
-  if (gpuDiagnostic && renderer && !observedRenderers.has(renderer)) {
-    observedRenderers.add(renderer)
-    const inspector = renderer.inspector
-    const beginRender = inspector.beginRender.bind(inspector)
-    inspector.beginRender = (uid, scene, camera, target) => {
-      if (active) {
-        passInfo.set(uid, {
-          scene: scene.type,
-          children: scene.children.length,
-          target: target
-            ? [target.width, target.height]
-            : null,
-        })
+  if (gpuDiagnostic && gpu && !gpu.timing.onFrame) {
+    gpu.timing.enabled = true
+    let frameMeasurement = measurement
+    gpu.timing.onFrame = (passes) => {
+      if (!active || frameMeasurement !== measurement) {
+        frameMeasurement = measurement
+        return
       }
-      beginRender(uid, scene, camera, target)
+      // 同一命令缓冲里的遍相互重叠，整帧时间取第一遍开始到最后一遍结束；逐遍相加会重复计算等待。
+      gpuTimes.push(Math.max(...passes.map(pass => pass.end)))
+      gpuPassSums.push(passes.reduce((sum, pass) => sum + pass.ms, 0))
+      gpuPassTimes.push(passes.map(pass => pass.ms))
+      gpuPassInfo.push(passes.map(pass => ({
+        scene: pass.label,
+        target: pass.label === 'canvas'
+          ? null
+          : pass.target,
+      })))
     }
   }
-  if (gpuDiagnostic && backend && 'trackTimestamp' in backend)
-    backend.trackTimestamp = timestamps
   if (!active) {
     draw.call(this, event)
     return
@@ -118,23 +122,6 @@ prototype.draw = function (event) {
   draw.call(this, event)
   durations.push(performance.now() - start)
   paints.push(start)
-  if (gpuDiagnostic && renderer && timestamps && !resolving) {
-    resolving = true
-    const currentMeasurement = measurement
-    void renderer.resolveTimestampsAsync().then((duration) => {
-      if (active && currentMeasurement === measurement && duration !== undefined) {
-        gpuTimes.push(duration)
-        const pool = (renderer.backend as unknown as TimestampBackend).timestampQueryPool.render
-        const passes = [
-          ...pool?.timestamps ?? [],
-        ]
-        const frame = passes.at(-1)?.[0].split(':f').at(-1)
-        const framePasses = passes.filter(([key]) => key.endsWith(`:f${frame}`))
-        gpuPassTimes.push(framePasses.map(([, value]) => value))
-        gpuPassInfo.push(framePasses.map(([key]) => passInfo.get(key)))
-      }
-    }).finally(() => { resolving = false })
-  }
 }
 window.addEventListener('error', event => errors.push(event.message))
 window.addEventListener('unhandledrejection', event => errors.push(String(event.reason)))
@@ -179,9 +166,9 @@ button.onclick = () => {
   paints = []
   frames = []
   gpuTimes = []
+  gpuPassSums = []
   gpuPassTimes = []
   gpuPassInfo = []
-  passInfo.clear()
   measurement++
   positions = []
   errors.length = 0
@@ -221,6 +208,7 @@ button.onclick = () => {
         animationInterval: distribution(intervals(frames)),
         longAnimationFrames: intervals(frames).filter(value => value > 50).length,
         gpu: distribution(gpuTimes),
+        gpuPassSum: distribution(gpuPassSums),
         gpuPassTimes,
         gpuPassInfo,
         errors,

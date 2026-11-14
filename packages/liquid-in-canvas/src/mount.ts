@@ -133,7 +133,7 @@ export async function mountLiquidGlass(options: MountLiquidGlassOptions): Promis
   }
 
   async function startCanvas(): Promise<void> {
-    // 渲染器连同 three.js 在这里才加载，用不到画布的浏览器不会下载它们。
+    // 画布渲染器在这里才加载，用不到画布的浏览器不会下载它。
     const { CanvasStage } = await import('./CanvasStage')
     const canvas = document.createElement('canvas')
     if (canvasId)

@@ -160,6 +160,8 @@ t=673  app.scrollLeft = 0
 
 ## 7. WebGPU 和 three.js
 
+> 2026-11-13 起渲染器直接使用 WebGPU，不再依赖 three.js，结构见 [架构](ARCHITECTURE.md) 的“GPU 结构”一节。下文记录的是当时的做法；7.2 之后关于上下文配置、sRGB 与上传顺序的结论仍然适用。
+
 ### 7.1 three.js HTMLTexture 在 Chrome 157 不可用
 
 three.js r187 的 WebGPU `HTMLTexture` 路径检查的是 `copyElementImageToTexture`。Chrome 157 已经改用 `drawElementImageToTexture`，旧的 `copyElementImageToTexture` 不存在。结果是不会报错，也不会上传纹理，画面保持空白。

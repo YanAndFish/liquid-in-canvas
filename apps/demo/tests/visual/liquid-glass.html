@@ -48,6 +48,8 @@
 </div></canvas>
 <script type="module">
   import { CanvasStage } from 'liquid-in-canvas/canvas'
+  import { applyGlassQuery } from '../query'
+  applyGlassQuery(new URLSearchParams(location.search))
   const canvas = document.querySelector('#stage')
   const root = document.querySelector('#app')
   const surfaces = [...document.querySelectorAll('[data-liquid-glass]')]

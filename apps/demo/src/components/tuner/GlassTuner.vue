@@ -52,6 +52,12 @@ const MATERIAL_FIELDS: readonly Field<MaterialNumber>[] = [
     step: 0.01,
   },
   {
+    key: 'lens',
+    zh: '透镜放大',
+    en: 'Magnification',
+    step: 0.01,
+  },
+  {
     key: 'tintAlpha',
     zh: '染色浓度',
     en: 'Tint amount',
@@ -369,10 +375,10 @@ onBeforeUnmount(() => {
                 {{ tr('画布启动失败，已改用回退实现：', 'The canvas failed to start; using the fallback: ') }}{{ renderer.error.value }}
               </p>
               <p v-else-if="renderer.mode.value === 'svg'" class="tuner-hint">
-                {{ tr('SVG 滤镜回退：backdrop-filter 加位移贴图，有边缘折射与色散；融合、抬升和内容遮挡不起作用。', 'SVG filter fallback: backdrop-filter with a displacement map gives edge refraction and dispersion. Fusion, elevation and content occlusion have no effect.') }}
+                {{ tr('SVG 滤镜回退：backdrop-filter 加位移贴图，有边缘折射与色散；透镜放大、融合、抬升和内容遮挡不起作用。', 'SVG filter fallback: backdrop-filter with a displacement map gives edge refraction and dispersion. Magnification, fusion, elevation and content occlusion have no effect.') }}
               </p>
               <p v-else-if="renderer.mode.value === 'css'" class="tuner-hint">
-                {{ tr('纯 CSS 回退只有模糊、染色、阴影和轮廓高光，厚度、色散、融合不起作用。', 'The CSS-only fallback has blur, tint, shadow and an edge highlight. Thickness, dispersion and fusion have no effect.') }}
+                {{ tr('纯 CSS 回退只有模糊、染色、阴影和轮廓高光，厚度、色散、透镜放大、融合不起作用。', 'The CSS-only fallback has blur, tint, shadow and an edge highlight. Thickness, dispersion, magnification and fusion have no effect.') }}
               </p>
               <p v-if="!renderer.canvasSupported" class="tuner-hint">
                 {{ tr('这个浏览器缺少 HTML-in-Canvas 或 WebGPU，不能使用画布渲染。', 'This browser lacks HTML-in-Canvas or WebGPU, so canvas rendering is unavailable.') }}

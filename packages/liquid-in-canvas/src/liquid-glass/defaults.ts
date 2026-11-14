@@ -9,6 +9,8 @@ export interface GlassMaterial {
   refraction: number
   /** RGB 采样位置的分离强度。 */
   dispersion: number
+  /** 凸透镜强度，0 表示平板。玻璃中间的背景被放大约 1 / (1 − lens) 倍，只对画布渲染有效。 */
+  lens: number
   /** 用于承托前景文字的十六进制颜色。 */
   tint: string
   /** 染色比例，0 表示无染色。 */
@@ -55,6 +57,7 @@ export const GLASS_LIMITS: Readonly<Record<NumericKey, readonly [min: number, ma
   blur: [0, 80],
   refraction: [0, 80],
   dispersion: [0, 1],
+  lens: [0, 0.6],
   tintAlpha: [0, 1],
   specular: [0, 2],
   shadow: [0, 1],
@@ -67,6 +70,7 @@ const MATERIAL_NUMBERS = [
   'blur',
   'refraction',
   'dispersion',
+  'lens',
   'tintAlpha',
   'specular',
   'shadow',
@@ -85,6 +89,7 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
         blur: 18,
         refraction: 24,
         dispersion: 0.3,
+        lens: 0.14,
         tint: '#171b20',
         tintAlpha: 0.28,
         specular: 0.7,
@@ -95,6 +100,7 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
         blur: 18,
         refraction: 24,
         dispersion: 0.3,
+        lens: 0.14,
         tint: '#f6f6f8',
         tintAlpha: 0.32,
         specular: 0.7,
@@ -107,6 +113,7 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
         blur: 8,
         refraction: 20,
         dispersion: 0.4,
+        lens: 0.22,
         tint: '#ffffff',
         tintAlpha: 0.01,
         specular: 0.9,
@@ -117,6 +124,7 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
         blur: 8,
         refraction: 20,
         dispersion: 0.4,
+        lens: 0.22,
         tint: '#f7f2e8',
         tintAlpha: 0.04,
         specular: 0.9,

@@ -15,9 +15,5 @@ export default defineConfig({
       },
       formats: ['es'],
     },
-    rolldownOptions: {
-      // three.js 由使用方提供，避免页面中出现两份渲染器。
-      external: [/^three(\/.*)?$/],
-    },
   },
 })

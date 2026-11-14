@@ -29,9 +29,3 @@ interface GPUElementImageDestination {
   size?: GPUExtent3D
   colorSpace?: 'srgb' | 'display-p3'
 }
-
-declare const GPUTextureUsage: {
-  readonly TEXTURE_BINDING: number
-  readonly COPY_DST: number
-  readonly RENDER_ATTACHMENT: number
-}

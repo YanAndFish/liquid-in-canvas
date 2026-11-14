@@ -62,8 +62,11 @@ export function createHtmlPaintOrderComparator(): (a: HTMLElement, b: HTMLElemen
   }
 }
 
-/** 返回覆盖当前内容的上层玻璃；仅相邻但未重叠的表面不遮挡文字。 */
-export function contentOccluders(surface: VolumeSurface, above: readonly VolumeSurface[]): VolumeSurface[] {
+/** 返回覆盖当前内容矩形的上层玻璃；仅相邻但未重叠的表面不遮挡文字。 */
+export function contentOccluders(
+  surface: Pick<VolumeSurface, 'left' | 'top' | 'width' | 'height'>,
+  above: readonly VolumeSurface[],
+): VolumeSurface[] {
   return above.filter(other => surface.left < other.left + other.width
     && surface.left + surface.width > other.left
     && surface.top < other.top + other.height

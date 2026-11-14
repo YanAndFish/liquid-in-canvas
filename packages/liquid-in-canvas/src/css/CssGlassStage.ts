@@ -192,8 +192,8 @@ export class CssGlassStage {
   }
 
   private register(element: HTMLElement): void {
-    // 与画布实现一致：嵌套在另一块玻璃里的元素不单独成为玻璃。
-    if (this.surfaces.has(element) || !element.isConnected || element.parentElement?.closest(attr(GLASS_ATTR)))
+    // 嵌套玻璃（例如激活的标签项）在回退实现里是外层之上的一层染色与模糊。
+    if (this.surfaces.has(element) || !element.isConnected)
       return
     this.surfaces.set(element, {
       signature: null,

@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useLocale } from '@/composables/useLocale'
 import { useSpring } from '@/composables/useSpring'
+import { activeGlass } from './active-glass'
 
 const { t } = useLocale()
 const frame = ref<HTMLElement | null>(null)
@@ -15,7 +16,6 @@ const variant = ref<'clear' | 'regular'>('clear')
 const playing = ref(false)
 const requestedPlayback = ref(true)
 const progress = useSpring(() => settings.value ? 1 : 0)
-const selection = useSpring(() => scene.value)
 const panelStyle = computed(() => ({
   width: `calc(52px + (min(292px, 100vw - 56px) - 52px) * ${progress.value})`,
   height: `${52 + 192 * progress.value}px`,
@@ -173,8 +173,10 @@ onBeforeUnmount(() => {
       </div>
       <div class="scene-controls-anchor">
         <div class="scene-controls" data-liquid-glass data-glass-radius="999" v-bind="surface" role="group" :aria-label="t('glass.background')">
-          <span class="scene-selection" :style="{ transform: `translateX(${selection * 100}%)` }" aria-hidden="true" />
-          <button v-for="(key, index) in (['glass.nature', 'glass.objects', 'glass.light'] as const)" :key="key" type="button" :aria-pressed="scene === index" @click="selectScene(index)">
+          <button
+            v-for="(key, index) in (['glass.nature', 'glass.objects', 'glass.light'] as const)" :key="key" type="button"
+            v-bind="activeGlass('scene', scene === index)" :aria-pressed="scene === index" @click="selectScene(index)"
+          >
             {{ t(key) }}
           </button>
         </div>
@@ -226,7 +228,6 @@ onBeforeUnmount(() => {
 .scene-controls-anchor { position: relative; width: 246px; height: 56px; }
 .scene-controls { display: flex; align-items: center; width: 100%; height: 56px; padding: 6px; border-radius: 999px; }
 .scene-controls button { position: relative; flex: 1; height: 44px; border-radius: 999px; z-index: 1; font-size: 13px; font-weight: 550; }
-.scene-selection { position: absolute; top: 6px; left: 6px; width: calc((100% - 12px) / 3); height: 44px; background: #ffffff25; border-radius: 999px; box-shadow: inset 0 1px 1px #ffffff38; }
 .scene-play-anchor { position: relative; width: 270px; height: 52px; }
 .scene-play { position: absolute; right: 0; top: 0; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; }
 .scene-play:disabled { color: #ffffff50; cursor: default; }

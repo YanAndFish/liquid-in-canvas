@@ -25,6 +25,8 @@
 <div id="controls"><button id="toggle">移出视口</button><button id="full">完全显示</button><button id="content">更新文字</button><span id="status">等待绘制</span></div>
 <script type="module">
   import { CanvasStage } from 'liquid-in-canvas/canvas'
+  import { applyGlassQuery } from '../query'
+  applyGlassQuery(new URLSearchParams(location.search))
   const canvas = document.querySelector('#stage')
   const root = document.querySelector('#app')
   const moving = document.querySelector('#moving')

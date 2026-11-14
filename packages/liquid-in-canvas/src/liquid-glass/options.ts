@@ -14,12 +14,14 @@ export const GLASS_OPTION_ATTRS = [
   'data-glass-blur',
   'data-glass-refraction',
   'data-glass-dispersion',
+  'data-glass-lens',
   'data-glass-tint',
   'data-glass-tint-alpha',
   'data-glass-specular',
   'data-glass-shadow',
   'data-glass-shadow-size',
   'data-glass-anchor',
+  'data-glass-morph',
 ] as const
 
 /** HTML 元素声明的玻璃外观参数，长度均使用 CSS 像素。 */
@@ -38,6 +40,8 @@ export interface GlassOptions {
   refraction: number
   /** RGB 采样位置的分离强度。 */
   dispersion: number
+  /** 凸透镜强度，0 表示平板。玻璃中间的背景被放大约 1 / (1 − lens) 倍。 */
+  lens: number
   /** 用于承托前景文字的十六进制颜色。 */
   tint: string
   /** 染色比例，0 表示无染色。 */
@@ -52,6 +56,11 @@ export interface GlassOptions {
   variant: GlassVariant
   /** 用于定位的非 drawable 祖先选择器，null 表示使用 offsetParent。 */
   anchor: string | null
+  /**
+   * 液体迁移。null 表示关闭；空字符串表示这块玻璃自己的位置或尺寸变化时以液体流动过渡；
+   * 非空时还作为名字：同名的玻璃消失、另一块同名玻璃出现时，体积从旧位置流向新位置。
+   */
+  morph: string | null
 }
 
 function numberAttribute(
@@ -140,6 +149,7 @@ export function parseGlassOptions(
     blur: numberAttribute(element, 'data-glass-blur', material.blur, GLASS_LIMITS.blur),
     refraction: numberAttribute(element, 'data-glass-refraction', material.refraction, GLASS_LIMITS.refraction),
     dispersion: numberAttribute(element, 'data-glass-dispersion', material.dispersion, GLASS_LIMITS.dispersion),
+    lens: numberAttribute(element, 'data-glass-lens', material.lens, GLASS_LIMITS.lens),
     tint: parseTint(element.getAttribute('data-glass-tint'), material.tint),
     tintAlpha: numberAttribute(element, 'data-glass-tint-alpha', material.tintAlpha, GLASS_LIMITS.tintAlpha),
     specular: numberAttribute(element, 'data-glass-specular', material.specular, GLASS_LIMITS.specular),
@@ -147,6 +157,7 @@ export function parseGlassOptions(
     shadowSize: numberAttribute(element, 'data-glass-shadow-size', material.shadowSize, GLASS_LIMITS.shadowSize),
     variant,
     anchor: parseAnchor(element.getAttribute('data-glass-anchor')),
+    morph: element.getAttribute('data-glass-morph')?.trim() ?? null,
   }
 }
 
@@ -159,6 +170,7 @@ export function glassOptionsSignature(options: GlassOptions): string {
     blur: options.blur,
     refraction: options.refraction,
     dispersion: options.dispersion,
+    lens: options.lens,
     tint: options.tint,
     tintAlpha: options.tintAlpha,
     specular: options.specular,
@@ -166,5 +178,6 @@ export function glassOptionsSignature(options: GlassOptions): string {
     shadowSize: options.shadowSize,
     variant: options.variant,
     anchor: options.anchor,
+    morph: options.morph,
   })
 }

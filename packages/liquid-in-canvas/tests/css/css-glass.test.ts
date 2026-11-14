@@ -59,7 +59,7 @@ describe('cssGlassStage', () => {
     expect(document.getElementById('liquid-in-canvas-css')?.textContent).toContain('backdrop-filter')
   })
 
-  it('嵌套在玻璃里的玻璃不单独处理', () => {
+  it('嵌套在玻璃里的玻璃也加上回退样式，用作激活项的高亮', () => {
     const outer = glass()
     const inner = glass()
     outer.append(inner)
@@ -67,7 +67,7 @@ describe('cssGlassStage', () => {
     stage = new CssGlassStage({ root })
     stage.start()
     expect(outer.hasAttribute(GLASS_CSS_ATTR)).toBe(true)
-    expect(inner.hasAttribute(GLASS_CSS_ATTR)).toBe(false)
+    expect(inner.hasAttribute(GLASS_CSS_ATTR)).toBe(true)
   })
 
   it('跟随后来加入、修改和取消声明的元素', async () => {

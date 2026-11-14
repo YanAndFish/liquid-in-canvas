@@ -1,78 +1,73 @@
-import type { Texture, WebGPURenderer } from 'three/webgpu'
-import { screenUV, texture } from 'three/tsl'
-import { HalfFloatType, Mesh, MeshBasicNodeMaterial, OrthographicCamera, PlaneGeometry, RenderTarget, Scene } from 'three/webgpu'
+import type { DrawItem, SampledTexture, StageGpu } from '../gpu'
+import type { ContentPart } from './content-material'
+import { blitPipeline, HEADER_FLOATS, RenderTarget, TARGET_FORMAT } from '../gpu'
 
-/** 一块需要写入模糊背景的内容。 */
-interface ContentOverlay {
-  /** 提供内容位置、尺寸及几何体的场景网格。 */
-  mesh: Mesh
-  /** 仅输出被上层玻璃覆盖部分的内容材质。 */
-  material: MeshBasicNodeMaterial
-}
+/** 取得一块被遮挡内容在指定目标上的绘制项，见 `planGlassContent()`。 */
+type ContentDraw = (part: ContentPart, format: GPUTextureFormat, order: number) => DrawItem
 
-/** 把被上层玻璃覆盖的 HTML 内容加入背景，供折射和高斯卷积取样。 */
+/**
+ * 把被上层玻璃覆盖的 HTML 内容加入背景，供折射和高斯卷积取样。
+ *
+ * 页面快照先复制到一张 CSS 分辨率的离屏目标，再叠加被覆盖的内容。快照本身还要画到画布上，
+ * 不能直接写进去：上层玻璃的抗锯齿边缘和淡入淡出期间，被覆盖的文字会从下面透出来。
+ */
 export class ContentBackdrop {
-  private readonly renderer: WebGPURenderer
-  private readonly scene = new Scene()
-  private readonly camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1)
-  private readonly target = new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false })
-  private readonly geometry = new PlaneGeometry(2, 2)
-  private readonly source: ReturnType<typeof texture<'vec4'>>
-  private readonly material = new MeshBasicNodeMaterial({ depthTest: false, depthWrite: false, toneMapped: false })
-  private readonly contents = new Map<number, Mesh>()
+  private readonly gpu: StageGpu
+  private readonly target: RenderTarget
+  private items: DrawItem[] = []
 
-  constructor(renderer: WebGPURenderer, backdrop: Texture) {
-    this.renderer = renderer
-    this.source = texture(backdrop)
-    this.material.colorNode = this.source.sample(screenUV)
-    const mesh = new Mesh(this.geometry, this.material)
-    mesh.renderOrder = -1
-    mesh.frustumCulled = false
-    this.scene.add(mesh)
+  constructor(gpu: StageGpu) {
+    this.gpu = gpu
+    this.target = new RenderTarget(gpu)
   }
 
-  /** 合成当前可见的被遮挡内容；没有重叠时直接返回页面快照。 */
-  render(backdrop: Texture, overlays: ContentOverlay[], width: number, height: number): Texture {
-    const used = new Set(overlays.map(overlay => overlay.mesh.id))
-    for (const [id, mesh] of this.contents) {
-      if (!used.has(id)) {
-        this.scene.remove(mesh)
-        this.contents.delete(id)
-      }
+  /** 被遮挡内容所在目标的像素尺寸，内容的 uniform 需要按它写入。 */
+  static targetSize(cssWidth: number, cssHeight: number): { width: number, height: number } {
+    return {
+      width: Math.max(1, Math.ceil(cssWidth)),
+      height: Math.max(1, Math.ceil(cssHeight)),
     }
+  }
+
+  /**
+   * 安排本帧的合成，返回玻璃应当取样的背景；没有重叠时直接返回页面快照。
+   * `overlays` 按从下到上的顺序排列。
+   */
+  plan(page: SampledTexture, overlays: readonly ContentDraw[], cssWidth: number, cssHeight: number): { view: GPUTextureView, group: GPUBindGroup } {
+    this.items = []
     if (overlays.length === 0)
-      return backdrop
-    this.source.value = backdrop
-    this.target.setSize(Math.max(1, Math.ceil(width)), Math.max(1, Math.ceil(height)))
-    overlays.forEach((overlay, i) => {
-      let mesh = this.contents.get(overlay.mesh.id)
-      if (!mesh) {
-        mesh = new Mesh(overlay.mesh.geometry, overlay.material)
-        mesh.frustumCulled = false
-        this.contents.set(overlay.mesh.id, mesh)
-        this.scene.add(mesh)
-      }
-      mesh.position.copy(overlay.mesh.position)
-      mesh.scale.copy(overlay.mesh.scale)
-      mesh.renderOrder = i
+      return page
+    const size = ContentBackdrop.targetSize(cssWidth, cssHeight)
+    this.target.resize(size.width, size.height)
+    const start = this.gpu.allocUniform(HEADER_FLOATS, {
+      left: 0,
+      top: 0,
+      right: 1,
+      bottom: 1,
+      targetWidth: size.width,
+      targetHeight: size.height,
+      cssWidth: 1,
+      cssHeight: 1,
     })
-    const previous = this.renderer.getRenderTarget()
-    try {
-      this.renderer.setRenderTarget(this.target)
-      this.renderer.render(this.scene, this.camera)
-    }
-    finally {
-      this.renderer.setRenderTarget(previous)
-    }
-    return this.target.texture
+    this.items.push({
+      order: -1,
+      pipeline: blitPipeline(this.gpu, 'opaque', TARGET_FORMAT),
+      uniform: start * 4,
+      textures: page.group,
+    })
+    overlays.forEach((draw, i) => this.items.push(draw('occluded', TARGET_FORMAT, i)))
+    return this.target
   }
 
-  /** 释放离屏背景，内容材质和内容几何体由各表面管理。 */
+  /** 编码 `plan()` 安排的合成。 */
+  encode(encoder: GPUCommandEncoder): void {
+    if (this.items.length)
+      this.gpu.encodePass(encoder, 'backdrop', this.target, { r: 0, g: 0, b: 0, a: 1 }, this.items)
+  }
+
+  /** 释放离屏背景，内容纹理由各表面管理。 */
   dispose(): void {
-    this.scene.clear()
-    this.contents.clear()
-    this.material.dispose()
-    this.geometry.dispose()
+    this.items = []
     this.target.dispose()
   }
 }

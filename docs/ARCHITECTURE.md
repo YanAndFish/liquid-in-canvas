@@ -8,23 +8,23 @@ apps/demo                   演示商店（Vue）：只通过 DOM 属性和库�
 docs                        设计记录、视觉依据与性能记录
 ```
 
-库不认识任何 Vue 组件，只依赖 three.js（peer 依赖）。演示商店只从 `liquid-in-canvas` 和 `liquid-in-canvas/motion` 两个入口引入，不引用库的内部文件；性能测量页和画面检查页另外从 `liquid-in-canvas/canvas` 直接使用 `CanvasStage`。
+库不认识任何 Vue 组件，没有运行时依赖：画布渲染器直接使用 WebGPU。演示商店只从 `liquid-in-canvas` 和 `liquid-in-canvas/motion` 两个入口引入，不引用库的内部文件；性能测量页和画面检查页另外从 `liquid-in-canvas/canvas` 直接使用 `CanvasStage`。
 
-主入口不静态引入 three.js。`mountLiquidGlass()` 确认浏览器支持画布渲染后才动态加载 `CanvasStage`，只能使用回退实现的浏览器不会下载渲染器（演示的生产构建里，这一块压缩后约 232 kB，其余全部脚本约 72 kB）。
+主入口不静态引入画布渲染器。`mountLiquidGlass()` 确认浏览器支持画布渲染后才动态加载 `CanvasStage`，只能使用回退实现的浏览器不会下载它（演示的生产构建里这一块压缩后 57 kB、gzip 20 kB；基于 three.js 时是 854 kB、gzip 232 kB）。
 
 ## 渲染库
 
 ```
-src/index.ts            公开 API，不静态引入 three.js
+src/index.ts            公开 API，不静态引入画布渲染器
 src/canvas.ts           liquid-in-canvas/canvas 入口：直接导出 CanvasStage
 src/mount.ts            mountLiquidGlass()：选择渲染方式、搭建与拆除
 src/CanvasStage.ts      画布舞台：页面上传、绘制、尺寸与分辨率、视频时钟
 src/resolution.ts       画布倍率、玻璃着色倍率与自适应缩放
 src/css/                回退实现：backdrop-filter，加上可选的 SVG 位移滤镜
-src/liquid-glass/       三维距离场、同层融合、内容遮挡、多级模糊、默认参数与属性解析
+src/liquid-glass/       三维距离场、同层融合、内容遮挡、多级模糊、液体迁移、默认参数与属性解析
 src/contract.ts         页面与舞台之间的 DOM 约定
 src/render-order.ts     页面、各层玻璃与前景的绘制顺序
-src/gpu.ts              元素纹理、sRGB 画布输出、全屏三角形
+src/gpu.ts              WebGPU 设备与 sRGB 画布、管线缓存、每帧 uniform、元素纹理与离屏目标、逐遍计时
 src/support.ts          能力检测
 src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas/motion 导出
 ```
@@ -35,7 +35,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 
 | 方式 | 实现 | 页面结构 | 效果 |
 | --- | --- | --- | --- |
-| `canvas` | `CanvasStage` | 创建 `<canvas content="drawable">`，根元素移入画布 | 折射、色散、同层融合、内容遮挡、按压形变 |
+| `canvas` | `CanvasStage` | 创建 `<canvas content="drawable">`，根元素移入画布 | 折射、凸透镜放大、色散、同层融合、内容遮挡、按压形变、液体迁移 |
 | `svg` | `CssGlassStage`（带折射滤镜） | 不变，另外在 `<body>` 末尾放一个隐藏的 `<svg>` 保存滤镜 | 模糊、染色、圆角、阴影，加上边缘折射、色散和按光照方向分布的轮廓高光 |
 | `css` | `CssGlassStage` | 不变，只给玻璃元素写入自定义属性并安装一张样式表 | 模糊、染色、圆角、阴影、轮廓高光 |
 
@@ -59,15 +59,43 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 
 ### 帧流水线（画布）
 
-浏览器的 `paint` 事件驱动一帧，舞台本身没有常驻循环。只有视频播放和按压弹簧运动时才逐帧请求重绘。
+浏览器的 `paint` 事件驱动一帧，舞台本身没有常驻循环。只有视频播放、按压弹簧和液体迁移运动时才逐帧请求重绘。
 
 1. **页面快照**：`CanvasStage` 把整个根元素上传为纹理，同时作为全屏背景和玻璃的折射源。
 2. **玻璃表面**（`LiquidGlassLayer.sync`）：测量每块 `[data-liquid-glass]`，按需上传其 HTML 内容。
-3. **内容遮挡**（`content-order.ts`、`ContentBackdrop`）：按层级、层叠上下文与 DOM 顺序排序；被上层玻璃覆盖的下层文字写回背景，参与模糊。
+3. **内容遮挡**（`content-order.ts`、`ContentBackdrop`）：按层级、层叠上下文与 DOM 顺序排序；被上层玻璃覆盖的下层文字写进背景的副本，参与模糊。
 4. **多级模糊**（`blur.ts`）：对合成背景逐级做高斯卷积，σ 为 2/6/16/40/80 CSS 像素；本帧用不到的层不生成。
-5. **三维体积**（`VolumeGroups`、`volume-shader.ts`）：同层邻近玻璃合成一个距离场，按 RGB 三条光路折射取样。
+5. **三维体积**（`VolumeGroups`、`volume-shader.ts`）：同层邻近玻璃合成一个距离场，按 RGB 三条光路折射取样，再叠加凸透镜偏移。
 6. **前景**（`CanvasOverlay`）：`[data-stage-overlay]` 单独上传，画在低层玻璃之上。
-7. three.js 合成到画布。
+7. **画布遍**：页面快照、前景、体积与玻璃内容按绘制顺序画进画布。
+
+### GPU 结构
+
+渲染器直接使用 WebGPU，不经过通用的场景图。所有绘制都是“一个矩形 + 一段 uniform”，`gpu.ts` 围绕这一点组织：
+
+- **顶点**：顶点着色器按 uniform 开头的矩形生成四个顶点，没有顶点缓冲。
+- **uniform**：一帧内所有绘制项的 uniform 先写进同一块内存，提交前一次 `writeBuffer`，绘制时用动态偏移切换。没有逐对象的缓冲和绑定组。
+- **绑定**：第 0 组是 uniform 与取样器，全帧共用；第 1 组是这次绘制取样的纹理，按纹理视图缓存。
+- **管线**：按键缓存。体积着色器按成员数量生成，内容着色器按遮挡数量生成；滚动中成员或遮挡变化只会取用已有的管线。启动时在后台编译常见数量（体积 1–4 名成员、遮挡 0–2 块），第一次出现更大的数量时同步编译。
+- **命令**：一帧只有一个命令缓冲，依次是背景合成、模糊、低分辨率体积和画布遍。
+- **颜色**：HTML 快照是 `rgba8unorm-srgb`，取样时由硬件解码；离屏目标是线性 `rgba16float`；画布配置为 8 位格式，以 sRGB 视图写入，混合在线性空间进行，写入时编码，不需要额外的颜色转换遍。
+- **出错**：设备丢失或出现校验错误时舞台停止绘制并调用 `onFault`，`mountLiquidGlass` 据此改用回退实现。
+- **计时**：设备支持 `timestamp-query` 时，测量页可以打开逐遍计时（`StageGpu.timing`），平时不写时间戳。
+
+### 凸透镜
+
+玻璃顶面按拱形隆起：沿短边方向是一条抛物线，沿长边方向只在两端一个短边半径的范围内下降。取样位置朝中心偏移，偏移与拱面坡度成正比，中间区域因此被放大约 1 / (1 − `lens`) 倍；长条形的玻璃只沿短边方向放大，相当于柱面透镜。两个方向的剖面相乘，偏移在整块玻璃内连续，并与倒角处的三维折射叠加。融合区域里透镜偏移和其他外观一样按平滑合并权重混合。
+
+### 嵌套玻璃与液体迁移
+
+外层玻璃里的 `[data-liquid-glass]` 是嵌套玻璃：只有体积，没有自己的内容快照（它的 HTML 已在外层快照里）。它与外层同层，画在外层体积之后、外层内容之前，不遮挡外层内容；只与同一外层里的嵌套玻璃融合。
+
+`data-glass-morph` 打开液体迁移（`liquid-glass/flow.ts`）。体积矩形的四条边各有一根弹簧，朝运动方向的边刚度大、先到并略微越过目标，背向的边刚度小、被拖在后面；体积被拉长时另一个方向按面积守恒的一半收窄。弹簧在元素的布局坐标里运动（定位基准内的 `offsetLeft` / `offsetTop`），滚动不会触发流动。两种来源：
+
+- 同一个元素的布局位置或尺寸变化。
+- 同名玻璃交接：带名字的玻璃注销后 400 ms 内同名玻璃注册，新玻璃从旧体积的位置出发。同一批 DOM 变更里两条记录的先后不固定，先注册的一方直接取仍在登记中的旧表面。
+
+窗口尺寸变化引起的重新排版不算迁移，体积直接到位；系统要求减少动态效果时也直接到位。
 
 ### 逐像素开销
 
@@ -99,7 +127,9 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 | --- | --- | --- |
 | DOM 约定 | `contract.ts` | 页面与舞台之间的全部属性 |
 | 绘制顺序 | `render-order.ts` | 页面、各层玻璃、前景的 renderOrder 区间 |
-| 元素纹理 | `gpu.ts` | HTML 快照纹理的创建、上传、释放；全屏三角形 |
+| 元素纹理 | `gpu.ts` | HTML 快照纹理的创建、上传、释放；离屏目标 |
+| 管线缓存 | `gpu.ts` `StageGpu.pipeline` | 按成员数量与遮挡数量缓存着色器，滚动中不重新编译 |
+| 液体迁移 | `liquid-glass/flow.ts` | 四边弹簧，体积在布局坐标中流向新位置 |
 | 快照调度 | `LiquidGlassLayer` 内 `dirty` / `settleFrames` / `paintPending` / `contentComplete` | 决定何时向浏览器请求新的绘制记录、何时上传 |
 | 模态压暗 | `[data-glass-modal]` + `[data-glass-scrim]` | 模态层打开时压暗其外部玻璃的染色和高光 |
 | 页面淡入淡出 | `[data-glass-fade]` | 页面切换时把容器 opacity 传给内部玻璃 |
@@ -114,7 +144,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 
 | 钩子 | 舞台行为 |
 | --- | --- |
-| `[data-liquid-glass]` + `data-glass-*` | 注册为玻璃表面，参数见包的 README |
+| `[data-liquid-glass]` + `data-glass-*` | 注册为玻璃表面，参数见包的 README；嵌套在另一块玻璃里时只绘制体积 |
 | `[data-glass-clip]` | 限制后代玻璃与阴影的绘制范围 |
 | `[data-glass-modal]` | 模态层根节点，内部玻璃不被压暗 |
 | `[data-glass-scrim]` | 背景色 alpha × 模态层 opacity 决定压暗强度 |
@@ -125,7 +155,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 
 ## 绘制顺序
 
-| renderOrder | 内容 |
+| 顺序 | 内容 |
 | --- | --- |
 | 0 | 页面快照 |
 | 900 + 10·L … +0.5 | 第 L 层玻璃的体积组 |
@@ -154,10 +184,10 @@ src/shared                  偏好存储与滚动容器
 
 ## 测试与诊断
 
-- `packages/liquid-in-canvas/tests`：Vitest + jsdom，覆盖属性解析、默认参数、分辨率、融合分组、内容顺序、不重叠覆盖、回退实现（含折射滤镜的贴图取值）和不支持时的挂载行为。
+- `packages/liquid-in-canvas/tests`：Vitest + jsdom，覆盖属性解析、默认参数、分辨率、融合分组（含嵌套玻璃）、内容顺序、不重叠覆盖、液体迁移的弹簧、回退实现（含折射滤镜的贴图取值）和不支持时的挂载行为。管线缓存与 uniform 布局用记录调用的假设备（`tests/helpers/fake-gpu.ts`）驱动真实的 `StageGpu` 检查。
 - `apps/demo/tests`：领域逻辑与视图。
 - `apps/demo/tests/visual/*.html`：在支持的浏览器中人工检查玻璃边缘与内容遮挡。
-- `apps/demo/tests/perf/`：独立构建入口，通过替换 `CanvasStage.prototype.draw` 记录帧时间，结果保存在 `docs/performance/`。
+- `apps/demo/tests/perf/`：独立构建入口，通过替换 `CanvasStage.prototype.draw` 记录帧时间，`?gpu` 时打开逐遍计时，结果保存在 `docs/performance/`。`?lens=0` 关闭透镜，用于和没有透镜的旧版本逐像素比对（`docs/performance/2026-11-13-webgpu/tools/`）。
 
 jsdom 不绘制 WebGPU，测试通过不能证明着色器的画面。画面需要在支持这些 API 的浏览器中检查。
 

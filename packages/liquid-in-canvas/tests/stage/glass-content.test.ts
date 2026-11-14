@@ -1,50 +1,44 @@
-import type { WebGPURenderer } from 'three/webgpu'
-import { ExternalTexture, Scene } from 'three/webgpu'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createElementTexture } from '../../src/gpu'
 import { LiquidGlassLayer } from '../../src/liquid-glass/LiquidGlassLayer'
+import { createFakeGpu } from '../helpers/fake-gpu'
 
-const { syncVolumes } = vi.hoisted(() => ({
-  syncVolumes: vi.fn(),
+const { planVolumes } = vi.hoisted(() => ({
+  planVolumes: vi.fn((_surfaces: unknown[]) => []),
 }))
 
 vi.mock('../../src/liquid-glass/ContentBackdrop', () => ({
   ContentBackdrop: class {
-    render(backdrop: unknown) { return backdrop }
+    static targetSize() { return { width: 1, height: 1 } }
+    plan(backdrop: unknown) { return backdrop }
+    encode() {}
     dispose() {}
   },
 }))
 vi.mock('../../src/liquid-glass/VolumeGroups', () => ({
   VolumeGroups: class {
-    sync = syncVolumes
+    plan = planVolumes
+    warm() {}
+    encode() {}
     dispose() {}
   },
 }))
 vi.mock('../../src/liquid-glass/blur', () => ({
   BackdropBlur: class {
-    textures = []
-    render() {}
+    views = []
+    generation = 0
+    plan() {}
+    encode() {}
     dispose() {}
   },
 }))
-vi.mock('../../src/liquid-glass/content-material', async () => {
-  const { MeshBasicMaterial } = await import('three/webgpu')
-  return {
-    createGlassContent: () => ({
-      material: new MeshBasicMaterial(),
-      occludedMaterial: new MeshBasicMaterial(),
-      setOccluders() {},
-      setPanel() {},
-      setContent() {},
-      setClip() {},
-      setOpacity() {},
-      dispose() {},
-    }),
-  }
-})
+vi.mock('../../src/liquid-glass/content-material', () => ({
+  planGlassContent: () => () => ({}),
+  warmContentPipeline() {},
+}))
 
 /** 创建可以移动位置的玻璃控件，记录上传操作而不启动 GPU。 */
 function setup(height = 60) {
-  vi.stubGlobal('GPUTextureUsage', { TEXTURE_BINDING: 4, COPY_DST: 2, RENDER_ATTACHMENT: 16 })
   vi.stubGlobal('DOMMatrix', class {
     translate() {
       return this
@@ -84,21 +78,13 @@ function setup(height = 60) {
   canvas.updateElementGeometry = vi.fn()
   canvas.clearElementGeometry = vi.fn()
   canvas.getElementImageDefaultSize = () => ({ width: 160, height })
-  const upload = vi.fn()
-  const device = {
-    createTexture: ({ size }: { size: { width: number, height: number } }) => ({
-      ...size,
-      destroy: vi.fn(),
-    }),
-    queue: { drawElementImageToTexture: upload },
-  } as unknown as GPUDevice
-  const backdrop = new ExternalTexture({} as GPUTexture)
+  const { gpu, queue } = createFakeGpu()
+  const upload = queue.drawElementImageToTexture
+  const backdrop = createElementTexture(gpu, 800, 600)
   const layer = new LiquidGlassLayer({
     canvas,
     root,
-    device,
-    renderer: {} as WebGPURenderer,
-    scene: new Scene(),
+    gpu,
     getBackdrop: () => backdrop,
     onInvalidate: vi.fn(),
     onFault: vi.fn(),
@@ -221,10 +207,10 @@ describe('玻璃内容纹理', () => {
       shell.append(scrim)
       root.append(shell)
       layer.sync()
-      expect(syncVolumes.mock.lastCall?.[0][0]).toMatchObject({ opacity: 1, brightness: 0.48 })
+      expect(planVolumes.mock.lastCall?.[0][0]).toMatchObject({ opacity: 1, brightness: 0.48 })
       shell.remove()
       layer.sync()
-      expect(syncVolumes.mock.lastCall?.[0][0]).toMatchObject({ opacity: 1, brightness: 1 })
+      expect(planVolumes.mock.lastCall?.[0][0]).toMatchObject({ opacity: 1, brightness: 1 })
     }
     finally { layer.dispose() }
   })

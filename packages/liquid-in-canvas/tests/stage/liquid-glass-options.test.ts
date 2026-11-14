@@ -30,6 +30,7 @@ describe('parseGlassOptions', () => {
       blur: 18,
       refraction: 24,
       dispersion: 0.3,
+      lens: 0.14,
       tint: '#171b20',
       tintAlpha: 0.28,
       specular: 0.7,
@@ -37,6 +38,7 @@ describe('parseGlassOptions', () => {
       shadowSize: 32,
       variant: 'regular',
       anchor: null,
+      morph: null,
     })
   })
 
@@ -49,6 +51,7 @@ describe('parseGlassOptions', () => {
       blur: 18,
       refraction: 24,
       dispersion: 0.3,
+      lens: 0.14,
       tint: '#f6f6f8',
       tintAlpha: 0.32,
       specular: 0.7,
@@ -56,6 +59,7 @@ describe('parseGlassOptions', () => {
       shadowSize: 32,
       variant: 'regular',
       anchor: null,
+      morph: null,
     })
   })
 
@@ -85,6 +89,7 @@ describe('parseGlassOptions', () => {
       blur: 8,
       refraction: 20,
       dispersion: 0.4,
+      lens: 0.22,
       tint: '#ffffff',
       tintAlpha: 0.01,
       specular: 0.9,
@@ -92,6 +97,7 @@ describe('parseGlassOptions', () => {
       shadowSize: 28,
       variant: 'clear',
       anchor: null,
+      morph: null,
     })
   })
 
@@ -110,6 +116,8 @@ describe('parseGlassOptions', () => {
       'data-glass-dispersion': '1',
       'data-glass-tint': '#abc',
       'data-glass-shadow-size': '90',
+      'data-glass-lens': '0.5',
+      'data-glass-morph': ' tab ',
     }), 'light')
 
     expect(options).toEqual({
@@ -120,6 +128,7 @@ describe('parseGlassOptions', () => {
       blur: 40,
       refraction: 20,
       dispersion: 1,
+      lens: 0.5,
       tint: '#aabbcc',
       tintAlpha: 0.04,
       specular: 0.9,
@@ -127,7 +136,17 @@ describe('parseGlassOptions', () => {
       shadowSize: 90,
       variant: 'clear',
       anchor: null,
+      morph: 'tab',
     })
+  })
+
+  it('limits the lens strength and treats an empty morph as an unnamed transition', () => {
+    const options = parseGlassOptions(makeElement({
+      'data-glass-lens': '3',
+      'data-glass-morph': '',
+    }), 'light')
+    expect(options.lens).toBe(0.6)
+    expect(options.morph).toBe('')
   })
 
   it('falls back on invalid numbers and clamps valid ones', () => {

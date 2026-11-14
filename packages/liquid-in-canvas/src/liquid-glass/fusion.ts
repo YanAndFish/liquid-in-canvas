@@ -24,6 +24,8 @@ export interface VolumeSurface {
   paintOrder: number
   /** 按压弹簧的当前强度。 */
   press: number
+  /** 嵌套玻璃所在外层玻璃的编号，顶层玻璃没有这一项。 */
+  host?: number
 }
 
 /** 返回两个矩形间的最短距离；重叠时为零。 */
@@ -34,7 +36,12 @@ export function surfaceGap(a: VolumeSurface, b: VolumeSurface): number {
   )
 }
 
-/** 按层级与邻近关系分组，间接相连的表面一起绘制。 */
+/**
+ * 按层级与邻近关系分组，间接相连的表面一起绘制。
+ *
+ * 顶层玻璃只与顶层玻璃融合；嵌套玻璃只与同一块外层玻璃里的嵌套玻璃融合，
+ * 不会和自己的外层合成一个体积。
+ */
 export function groupGlassSurfaces(surfaces: readonly VolumeSurface[]): VolumeSurface[][] {
   const groups: VolumeSurface[][] = []
   const remaining = new Set(surfaces)
@@ -45,7 +52,7 @@ export function groupGlassSurfaces(surfaces: readonly VolumeSurface[]): VolumeSu
     for (let index = 0; index < group.length; index++) {
       const current = group[index]!
       for (const candidate of remaining) {
-        if (candidate.options.layer !== current.options.layer)
+        if (candidate.options.layer !== current.options.layer || candidate.host !== current.host)
           continue
         const reach = Math.min(candidate.options.fusion, current.options.fusion)
         if (reach <= 0 || surfaceGap(current, candidate) > reach)
