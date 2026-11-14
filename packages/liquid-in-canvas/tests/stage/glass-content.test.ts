@@ -262,4 +262,56 @@ describe('玻璃内容纹理', () => {
     }
     finally { layer.dispose() }
   })
+
+  it('同名玻璃仍在页面上时，新玻璃从它里面流出来；移除后体积流回它并被吸收', async () => {
+    const { layer, element, anchor, sync } = setup()
+    const advance = (seconds: number) => (layer as unknown as { frame: { advanceMotion: (s: number, p: null, r: boolean) => boolean } })
+      .frame
+      .advanceMotion(seconds, null, false)
+    try {
+      const button = nestedButton(element, anchor, 6)
+      const panel = nestedButton(element, anchor, 90)
+      button.dataset.liquidGlass = ''
+      button.dataset.glassMorph = 'pop'
+      await flush()
+      sync()
+      sync()
+      const source = layer.surfaces.find(surface => surface.element === button)!
+
+      panel.dataset.liquidGlass = ''
+      panel.dataset.glassMorph = 'pop'
+      await flush()
+      sync()
+      const grown = layer.surfaces.find(surface => surface.element === panel)!
+      expect(grown.partner).toBe(source)
+      expect(grown.flow?.active).toBe(true)
+      // 从按钮的位置出发，融合距离从接近零开始，两块玻璃不会一起鼓起来。
+      expect(grown.volume.left).toBeLessThan(110)
+      expect(grown.volume.fusion).toBeLessThan(grown.options.fusion)
+      // 按钮下一帧仍在页面上，不算交出体积。
+      sync()
+      expect(source.handedOver).toBe(false)
+      for (let frame = 0; frame < 120; frame++) {
+        advance(1 / 60)
+        sync()
+      }
+      expect(grown.flow?.active).toBe(false)
+      expect(grown.partner).toBeNull()
+      expect(grown.volume.fusion).toBe(grown.options.fusion)
+
+      delete panel.dataset.liquidGlass
+      await flush()
+      expect(layer.ghosts).toHaveLength(1)
+      expect(layer.ghosts[0]!.target).toBe(source)
+      sync()
+      const ghost = layer.ghosts[0]!.volume
+      expect(ghost.left).toBeGreaterThan(150)
+      for (let frame = 0; frame < 240 && layer.ghosts.length > 0; frame++) {
+        advance(1 / 60)
+        sync()
+      }
+      expect(layer.ghosts).toHaveLength(0)
+    }
+    finally { layer.dispose() }
+  })
 })

@@ -21,6 +21,8 @@ export interface VolumeSurface {
   layer: number
   /** 外观参数。 */
   options: GlassOptions
+  /** 融合距离。通常等于 `options.fusion`；液体流动的拖尾按它离本体的距离取较小的值。 */
+  fusion: number
   /** 祖先裁剪范围，依次为左、上、右、下。 */
   clip: number[]
   /** 页面切换产生的透明度。 */
@@ -58,7 +60,7 @@ export function surfaceGap(a: VolumeSurface, b: VolumeSurface): number {
 function fusable(a: VolumeSurface, b: VolumeSurface): boolean {
   if (a.layer !== b.layer || a.host !== b.host)
     return false
-  const reach = Math.min(a.options.fusion, b.options.fusion)
+  const reach = Math.min(a.fusion, b.fusion)
   return reach > 0 && surfaceGap(a, b) <= reach
 }
 

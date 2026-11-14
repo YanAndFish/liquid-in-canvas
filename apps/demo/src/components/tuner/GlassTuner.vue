@@ -5,10 +5,10 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useGlassDefaults } from '@/composables/useGlassDefaults'
 import { useLocale } from '@/composables/useLocale'
 import { useRenderer } from '@/composables/useRenderer'
-import { useSpring } from '@/composables/useSpring'
 import { useTheme } from '@/composables/useTheme'
 import AppIcon from '../ui/AppIcon.vue'
 import { clampLauncherPosition, tunerPanelPosition } from './position'
+import ProfileDiagram from './ProfileDiagram.vue'
 
 const props = defineProps<{
   /** 购物袋等模态界面打开时隐藏调参入口。 */
@@ -17,6 +17,7 @@ const props = defineProps<{
 
 type MaterialNumber = Exclude<keyof GlassMaterial, 'tint'>
 type ShapeNumber = 'fusion' | 'elevation' | 'radius'
+type MorphNumber = 'morphStretch' | 'morphBounce' | 'morphWobble'
 
 /** 一个滑块的说明。 */
 interface Field<Key extends string> {
@@ -35,13 +36,6 @@ const MATERIAL_FIELDS: readonly Field<MaterialNumber>[] = [
     key: 'blur',
     zh: '模糊',
     en: 'Blur',
-    step: 1,
-    unit: 'px',
-  },
-  {
-    key: 'refraction',
-    zh: '厚度',
-    en: 'Thickness',
     step: 1,
     unit: 'px',
   },
@@ -83,6 +77,42 @@ const MATERIAL_FIELDS: readonly Field<MaterialNumber>[] = [
     unit: 'px',
   },
 ]
+/** 截面：厚度与边缘倒角的形状，倒角宽高是相对半厚度的比例。 */
+const PROFILE_FIELDS: readonly Field<MaterialNumber>[] = [
+  {
+    key: 'refraction',
+    zh: '半厚度',
+    en: 'Half thickness',
+    step: 1,
+    unit: 'px',
+  },
+  {
+    key: 'bevelWidth',
+    zh: '倒角宽度',
+    en: 'Bevel width',
+    step: 0.01,
+    unit: '×',
+  },
+  {
+    key: 'bevelHeight',
+    zh: '倒角高度',
+    en: 'Bevel height',
+    step: 0.01,
+    unit: '×',
+  },
+  {
+    key: 'bevelCurve',
+    zh: '曲线指数',
+    en: 'Edge curve',
+    step: 0.05,
+  },
+  {
+    key: 'bottomBevel',
+    zh: '底面倒角',
+    en: 'Bottom bevel',
+    step: 0.01,
+  },
+]
 const SHAPE_FIELDS: readonly Field<ShapeNumber>[] = [
   {
     key: 'fusion',
@@ -105,6 +135,26 @@ const SHAPE_FIELDS: readonly Field<ShapeNumber>[] = [
     step: 1,
     max: 64,
     unit: 'px',
+  },
+]
+const MORPH_FIELDS: readonly Field<MorphNumber>[] = [
+  {
+    key: 'morphStretch',
+    zh: '拉伸',
+    en: 'Stretch',
+    step: 0.01,
+  },
+  {
+    key: 'morphBounce',
+    zh: '回弹',
+    en: 'Bounce',
+    step: 0.01,
+  },
+  {
+    key: 'morphWobble',
+    zh: '晃动',
+    en: 'Wobble',
+    step: 0.01,
   },
 ]
 const VARIANTS: readonly { id: GlassVariant, zh: string, en: string }[] = [
@@ -144,19 +194,21 @@ const panelSize = computed(() => ({
   y: Math.min(620, viewport.value.y - buttonSize.value - 48),
 }))
 const panelPosition = computed(() => tunerPanelPosition(position.value, viewport.value, panelSize.value, buttonSize.value))
-const progress = useSpring(() => opened.value ? 1 : 0)
-const visible = computed(() => opened.value || progress.value > 0.002)
-const ready = computed(() => opened.value && progress.value >= 0.98)
-const panelStyle = computed(() => {
-  const t = Math.max(0, Math.min(1, progress.value))
-  return {
-    left: `${position.value.x + (panelPosition.value.x - position.value.x) * t}px`,
-    top: `${position.value.y + (panelPosition.value.y - position.value.y) * t}px`,
-    width: `${buttonSize.value + (panelSize.value.x - buttonSize.value) * t}px`,
-    height: `${buttonSize.value + (panelSize.value.y - buttonSize.value) * t}px`,
-  }
-})
+/**
+ * 面板一步出现在最终位置与尺寸。面板和入口按钮共用 `data-glass-morph="tuner"`：画布渲染下，
+ * 面板的玻璃从按钮里流出来、长成面板，内容随玻璃展开显露；关闭时玻璃流回按钮并被吸收。
+ * 逐帧改变面板的位置和尺寸会让画布每帧重建内容快照，文字与控件随之闪烁。
+ */
+const panelStyle = computed(() => ({
+  'left': `${panelPosition.value.x}px`,
+  'top': `${panelPosition.value.y}px`,
+  'width': `${panelSize.value.x}px`,
+  'height': `${panelSize.value.y}px`,
+  // 回退实现没有液体流动，用缩放过渡，从按钮所在的方向展开。
+  'transform-origin': `${position.value.x + buttonSize.value / 2 - panelPosition.value.x}px ${position.value.y + buttonSize.value / 2 - panelPosition.value.y}px`,
+}))
 const material = computed(() => defaults.value.materials[variant.value][theme.value])
+const variantOption = computed(() => VARIANTS.find(option => option.id === variant.value) ?? VARIANTS[0]!)
 const canvasActive = computed(() => renderer?.mode.value === 'canvas')
 let suppressClick = false
 let gesture: { pointerId: number, startX: number, startY: number, left: number, top: number } | null = null
@@ -192,7 +244,7 @@ function setMaterial(key: keyof GlassMaterial, value: number | string): void {
   })
 }
 
-function setShape(key: ShapeNumber, value: number): void {
+function setShape(key: ShapeNumber | MorphNumber, value: number): void {
   setGlassDefaults({ [key]: value })
 }
 
@@ -324,201 +376,247 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-show="!disabled" class="tuner-root" @keydown.esc.stop.prevent="close()">
-    <div v-if="visible" class="tuner-panel-anchor" :style="panelStyle">
-      <section
-        data-liquid-glass
-        :data-glass-layer="PANEL_LAYER"
-        data-glass-radius="28"
-        data-glass-fusion="40"
-        data-glass-variant="regular"
-        :data-glass-blur="1 + Math.min(1, progress) * 27"
-        data-glass-refraction="20"
-        :data-glass-tint="theme === 'dark' ? '#10191a' : '#f5f5ef'"
-        :data-glass-tint-alpha="0.04 + Math.min(1, progress) * (theme === 'dark' ? 0.64 : 0.62)"
-        class="tuner-panel"
-        role="dialog"
-        aria-modal="false"
-        aria-labelledby="tuner-title"
-        :aria-hidden="!ready"
-        :inert="!ready"
-      >
-        <div class="tuner-content" :style="{ opacity: ready ? 1 : 0 }">
-          <header class="tuner-heading">
-            <div>
-              <h2 id="tuner-title">
-                {{ tr('玻璃调参', 'Glass tuning') }}
-              </h2>
-              <p>{{ tr('全局默认参数 · 实时生效', 'Global defaults · applied live') }}</p>
-            </div>
-            <button type="button" class="tuner-close" :aria-label="tr('关闭调参面板', 'Close tuning panel')" @click="close()">
-              <AppIcon name="close" :size="18" />
-            </button>
-          </header>
-
-          <div class="tuner-body">
-            <section v-if="renderer" class="tuner-section" data-section="renderer">
-              <h3>{{ tr('渲染方式', 'Renderer') }}</h3>
-              <div class="tuner-segment" role="group" :aria-label="tr('渲染方式', 'Renderer')">
-                <button
-                  v-for="option in MODES"
-                  :key="option.id"
-                  type="button"
-                  :data-mode="option.id"
-                  :aria-pressed="renderer.mode.value === option.id"
-                  :disabled="renderer.switching.value || (option.id === 'canvas' && !renderer.canvasSupported) || (option.id === 'svg' && !renderer.svgSupported)"
-                  @click="renderer.setMode(option.id)"
-                >
-                  {{ tr(option.zh, option.en) }}
-                </button>
+    <Transition name="tuner-pop" :css="!canvasActive">
+      <div v-if="opened" class="tuner-panel-anchor" :style="panelStyle">
+        <section
+          data-liquid-glass
+          :data-glass-layer="PANEL_LAYER"
+          data-glass-radius="28"
+          data-glass-fusion="40"
+          data-glass-variant="regular"
+          data-glass-morph="tuner"
+          data-glass-blur="28"
+          data-glass-refraction="20"
+          :data-glass-tint="theme === 'dark' ? '#10191a' : '#f5f5ef'"
+          :data-glass-tint-alpha="theme === 'dark' ? 0.68 : 0.66"
+          class="tuner-panel"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="tuner-title"
+        >
+          <div class="tuner-content">
+            <header class="tuner-heading">
+              <div>
+                <h2 id="tuner-title">
+                  {{ tr('玻璃调参', 'Glass tuning') }}
+                </h2>
+                <p>{{ tr('全局默认参数 · 实时生效', 'Global defaults · applied live') }}</p>
               </div>
-              <p v-if="renderer.error.value" class="tuner-hint is-error">
-                {{ tr('画布启动失败，已改用回退实现：', 'The canvas failed to start; using the fallback: ') }}{{ renderer.error.value }}
-              </p>
-              <p v-else-if="renderer.mode.value === 'svg'" class="tuner-hint">
-                {{ tr('SVG 滤镜回退：backdrop-filter 加位移贴图，有边缘折射与色散；透镜放大、融合、抬升和内容遮挡不起作用。', 'SVG filter fallback: backdrop-filter with a displacement map gives edge refraction and dispersion. Magnification, fusion, elevation and content occlusion have no effect.') }}
-              </p>
-              <p v-else-if="renderer.mode.value === 'css'" class="tuner-hint">
-                {{ tr('纯 CSS 回退只有模糊、染色、阴影和轮廓高光，厚度、色散、透镜放大、融合不起作用。', 'The CSS-only fallback has blur, tint, shadow and an edge highlight. Thickness, dispersion, magnification and fusion have no effect.') }}
-              </p>
-              <p v-if="!renderer.canvasSupported" class="tuner-hint">
-                {{ tr('这个浏览器缺少 HTML-in-Canvas 或 WebGPU，不能使用画布渲染。', 'This browser lacks HTML-in-Canvas or WebGPU, so canvas rendering is unavailable.') }}
-              </p>
-              <template v-if="canvasActive">
-                <label class="tuner-field">
-                  <span>{{ tr('画布倍率上限（文字）', 'Max canvas ratio (text)') }}</span>
-                  <output>{{ renderer.resolution.value.maxPixelRatio.toFixed(2) }}×</output>
-                  <input
-                    type="range" min="1" max="3" step="0.25" data-field="maxPixelRatio"
-                    :value="renderer.resolution.value.maxPixelRatio"
-                    @input="renderer.setResolution({ maxPixelRatio: inputNumber($event) })"
+              <button type="button" class="tuner-close" :aria-label="tr('关闭调参面板', 'Close tuning panel')" @click="close()">
+                <AppIcon name="close" :size="18" />
+              </button>
+            </header>
+
+            <div class="tuner-body">
+              <section v-if="renderer" class="tuner-section" data-section="renderer">
+                <h3>{{ tr('渲染方式', 'Renderer') }}</h3>
+                <div class="tuner-segment" role="group" :aria-label="tr('渲染方式', 'Renderer')">
+                  <button
+                    v-for="option in MODES"
+                    :key="option.id"
+                    type="button"
+                    :data-mode="option.id"
+                    :aria-pressed="renderer.mode.value === option.id"
+                    :disabled="renderer.switching.value || (option.id === 'canvas' && !renderer.canvasSupported) || (option.id === 'svg' && !renderer.svgSupported)"
+                    @click="renderer.setMode(option.id)"
                   >
-                </label>
-                <label class="tuner-field">
-                  <span>{{ tr('玻璃着色倍率上限', 'Max glass shading ratio') }}</span>
-                  <output>{{ renderer.resolution.value.maxGlassPixelRatio.toFixed(2) }}×</output>
-                  <input
-                    type="range" min="0.5" max="3" step="0.25" data-field="maxGlassPixelRatio"
-                    :value="renderer.resolution.value.maxGlassPixelRatio"
-                    @input="renderer.setResolution({ maxGlassPixelRatio: inputNumber($event) })"
-                  >
-                </label>
-                <label class="tuner-check">
-                  <input
-                    type="checkbox"
-                    :checked="renderer.resolution.value.adaptive"
-                    @change="renderer.setResolution({ adaptive: ($event.target as HTMLInputElement).checked })"
-                  >
-                  <span>{{ tr('帧率不足时自动降低玻璃着色倍率', 'Lower the glass shading ratio when frames drop') }}</span>
-                </label>
-                <p v-if="ratios" class="tuner-hint" data-role="ratios">
-                  {{ tr('当前画布', 'Canvas now') }} {{ ratios.canvas.toFixed(2) }}× · {{ tr('玻璃着色', 'glass shading') }} {{ ratios.glass.toFixed(2) }}×
+                    {{ tr(option.zh, option.en) }}
+                  </button>
+                </div>
+                <p v-if="renderer.error.value" class="tuner-hint is-error">
+                  {{ tr('画布启动失败，已改用回退实现：', 'The canvas failed to start; using the fallback: ') }}{{ renderer.error.value }}
                 </p>
-              </template>
-            </section>
+                <p v-else-if="renderer.mode.value === 'svg'" class="tuner-hint">
+                  {{ tr('SVG 滤镜回退：backdrop-filter 加位移贴图，有边缘折射与色散；透镜放大、融合、抬升和内容遮挡不起作用。', 'SVG filter fallback: backdrop-filter with a displacement map gives edge refraction and dispersion. Magnification, fusion, elevation and content occlusion have no effect.') }}
+                </p>
+                <p v-else-if="renderer.mode.value === 'css'" class="tuner-hint">
+                  {{ tr('纯 CSS 回退只有模糊、染色、阴影和轮廓高光，厚度、色散、透镜放大、融合不起作用。', 'The CSS-only fallback has blur, tint, shadow and an edge highlight. Thickness, dispersion, magnification and fusion have no effect.') }}
+                </p>
+                <p v-if="!renderer.canvasSupported" class="tuner-hint">
+                  {{ tr('这个浏览器缺少 HTML-in-Canvas 或 WebGPU，不能使用画布渲染。', 'This browser lacks HTML-in-Canvas or WebGPU, so canvas rendering is unavailable.') }}
+                </p>
+                <template v-if="canvasActive">
+                  <label class="tuner-field">
+                    <span>{{ tr('画布倍率上限（文字）', 'Max canvas ratio (text)') }}</span>
+                    <output>{{ renderer.resolution.value.maxPixelRatio.toFixed(2) }}×</output>
+                    <input
+                      type="range" min="1" max="3" step="0.25" data-field="maxPixelRatio"
+                      :value="renderer.resolution.value.maxPixelRatio"
+                      @input="renderer.setResolution({ maxPixelRatio: inputNumber($event) })"
+                    >
+                  </label>
+                  <label class="tuner-field">
+                    <span>{{ tr('玻璃着色倍率上限', 'Max glass shading ratio') }}</span>
+                    <output>{{ renderer.resolution.value.maxGlassPixelRatio.toFixed(2) }}×</output>
+                    <input
+                      type="range" min="0.5" max="3" step="0.25" data-field="maxGlassPixelRatio"
+                      :value="renderer.resolution.value.maxGlassPixelRatio"
+                      @input="renderer.setResolution({ maxGlassPixelRatio: inputNumber($event) })"
+                    >
+                  </label>
+                  <label class="tuner-check">
+                    <input
+                      type="checkbox"
+                      :checked="renderer.resolution.value.adaptive"
+                      @change="renderer.setResolution({ adaptive: ($event.target as HTMLInputElement).checked })"
+                    >
+                    <span>{{ tr('帧率不足时自动降低玻璃着色倍率', 'Lower the glass shading ratio when frames drop') }}</span>
+                  </label>
+                  <p v-if="ratios" class="tuner-hint" data-role="ratios">
+                    {{ tr('当前画布', 'Canvas now') }} {{ ratios.canvas.toFixed(2) }}× · {{ tr('玻璃着色', 'glass shading') }} {{ ratios.glass.toFixed(2) }}×
+                  </p>
+                </template>
+              </section>
 
-            <section class="tuner-section" data-section="material">
-              <h3>{{ tr('材质', 'Material') }} · {{ theme === 'dark' ? tr('深色主题', 'dark theme') : tr('浅色主题', 'light theme') }}</h3>
-              <div class="tuner-segment" role="group" :aria-label="tr('材质', 'Material')">
-                <button
-                  v-for="option in VARIANTS"
-                  :key="option.id"
-                  type="button"
-                  :data-variant="option.id"
-                  :aria-pressed="variant === option.id"
-                  @click="variant = option.id"
-                >
-                  {{ tr(option.zh, option.en) }}
-                </button>
-              </div>
-              <label v-for="field in MATERIAL_FIELDS" :key="field.key" class="tuner-field">
-                <span>{{ tr(field.zh, field.en) }}</span>
-                <output>{{ format(material[field.key], field) }}</output>
-                <input
-                  type="range"
-                  :data-field="field.key"
-                  :min="GLASS_LIMITS[field.key][0]"
-                  :max="field.max ?? GLASS_LIMITS[field.key][1]"
-                  :step="field.step"
-                  :value="material[field.key]"
-                  @input="setMaterial(field.key, inputNumber($event))"
-                >
-              </label>
-              <label class="tuner-field is-color">
-                <span>{{ tr('染色', 'Tint color') }}</span>
-                <output>{{ material.tint }}</output>
-                <input
-                  type="color"
-                  data-field="tint"
-                  :value="material.tint"
-                  @input="setMaterial('tint', ($event.target as HTMLInputElement).value)"
-                >
-              </label>
-            </section>
+              <section class="tuner-section" data-section="material">
+                <h3>{{ tr('材质', 'Material') }} · {{ theme === 'dark' ? tr('深色主题', 'dark theme') : tr('浅色主题', 'light theme') }}</h3>
+                <div class="tuner-segment" role="group" :aria-label="tr('材质', 'Material')">
+                  <button
+                    v-for="option in VARIANTS"
+                    :key="option.id"
+                    type="button"
+                    :data-variant="option.id"
+                    :aria-pressed="variant === option.id"
+                    @click="variant = option.id"
+                  >
+                    {{ tr(option.zh, option.en) }}
+                  </button>
+                </div>
+                <label v-for="field in MATERIAL_FIELDS" :key="field.key" class="tuner-field">
+                  <span>{{ tr(field.zh, field.en) }}</span>
+                  <output>{{ format(material[field.key], field) }}</output>
+                  <input
+                    type="range"
+                    :data-field="field.key"
+                    :min="GLASS_LIMITS[field.key][0]"
+                    :max="field.max ?? GLASS_LIMITS[field.key][1]"
+                    :step="field.step"
+                    :value="material[field.key]"
+                    @input="setMaterial(field.key, inputNumber($event))"
+                  >
+                </label>
+                <label class="tuner-field is-color">
+                  <span>{{ tr('染色', 'Tint color') }}</span>
+                  <output>{{ material.tint }}</output>
+                  <input
+                    type="color"
+                    data-field="tint"
+                    :value="material.tint"
+                    @input="setMaterial('tint', ($event.target as HTMLInputElement).value)"
+                  >
+                </label>
+              </section>
 
-            <section class="tuner-section" data-section="shape">
-              <h3>{{ tr('形体', 'Shape') }}</h3>
-              <label v-for="field in SHAPE_FIELDS" :key="field.key" class="tuner-field">
-                <span>{{ tr(field.zh, field.en) }}</span>
-                <output>{{ format(defaults[field.key], field) }}</output>
-                <input
-                  type="range"
-                  :data-field="field.key"
-                  :min="GLASS_LIMITS[field.key][0]"
-                  :max="field.max ?? GLASS_LIMITS[field.key][1]"
-                  :step="field.step"
-                  :value="defaults[field.key]"
-                  @input="setShape(field.key, inputNumber($event))"
-                >
-              </label>
-            </section>
+              <section class="tuner-section" data-section="profile">
+                <h3>{{ tr('截面', 'Cross-section') }} · {{ tr(variantOption.zh, variantOption.en) }}</h3>
+                <ProfileDiagram :material="material" :elevation="defaults.elevation" />
+                <label v-for="field in PROFILE_FIELDS" :key="field.key" class="tuner-field">
+                  <span>{{ tr(field.zh, field.en) }}</span>
+                  <output>{{ format(material[field.key], field) }}</output>
+                  <input
+                    type="range"
+                    :data-field="field.key"
+                    :min="GLASS_LIMITS[field.key][0]"
+                    :max="field.max ?? GLASS_LIMITS[field.key][1]"
+                    :step="field.step"
+                    :value="material[field.key]"
+                    @input="setMaterial(field.key, inputNumber($event))"
+                  >
+                </label>
+                <p class="tuner-hint">
+                  {{ tr('倒角宽高按半厚度的倍数计；曲线指数 1 是直线斜面，2 是椭圆弧，越大越方。小控件的厚度不超过短边的 30%。', 'Bevel width and height are multiples of the half thickness. Edge curve 1 is a straight chamfer, 2 an elliptical arc, higher values get squarer. Small controls cap thickness at 30% of their short side.') }}
+                </p>
+              </section>
+
+              <section class="tuner-section" data-section="shape">
+                <h3>{{ tr('形体', 'Shape') }}</h3>
+                <label v-for="field in SHAPE_FIELDS" :key="field.key" class="tuner-field">
+                  <span>{{ tr(field.zh, field.en) }}</span>
+                  <output>{{ format(defaults[field.key], field) }}</output>
+                  <input
+                    type="range"
+                    :data-field="field.key"
+                    :min="GLASS_LIMITS[field.key][0]"
+                    :max="field.max ?? GLASS_LIMITS[field.key][1]"
+                    :step="field.step"
+                    :value="defaults[field.key]"
+                    @input="setShape(field.key, inputNumber($event))"
+                  >
+                </label>
+              </section>
+
+              <section class="tuner-section" data-section="morph">
+                <h3>{{ tr('液体流动', 'Liquid flow') }}</h3>
+                <label v-for="field in MORPH_FIELDS" :key="field.key" class="tuner-field">
+                  <span>{{ tr(field.zh, field.en) }}</span>
+                  <output>{{ format(defaults[field.key], field) }}</output>
+                  <input
+                    type="range"
+                    :data-field="field.key"
+                    :min="GLASS_LIMITS[field.key][0]"
+                    :max="field.max ?? GLASS_LIMITS[field.key][1]"
+                    :step="field.step"
+                    :value="defaults[field.key]"
+                    @input="setShape(field.key, inputNumber($event))"
+                  >
+                </label>
+                <p class="tuner-hint">
+                  {{ tr('作用于声明了 data-glass-morph 的玻璃：分类标签切换，以及拖动右下角的圆形按钮。只对画布渲染有效。', 'Applies to glass with data-glass-morph: switching category tabs and dragging the round button. Canvas rendering only.') }}
+                </p>
+              </section>
+            </div>
+
+            <footer class="tuner-footer">
+              <button type="button" data-action="reset" @click="reset">
+                {{ tr('恢复默认', 'Reset') }}
+              </button>
+              <button type="button" data-action="copy" @click="copy">
+                {{ copied ? tr('已复制', 'Copied') : tr('复制参数', 'Copy JSON') }}
+              </button>
+            </footer>
+            <p class="tuner-note">
+              {{ tr('只影响没有用 data-glass-* 单独声明的属性。拖动圆形按钮可以移动面板。', 'Only affects properties without their own data-glass-* attribute. Drag the round button to move the panel.') }}
+            </p>
           </div>
-
-          <footer class="tuner-footer">
-            <button type="button" data-action="reset" @click="reset">
-              {{ tr('恢复默认', 'Reset') }}
-            </button>
-            <button type="button" data-action="copy" @click="copy">
-              {{ copied ? tr('已复制', 'Copied') : tr('复制参数', 'Copy JSON') }}
-            </button>
-          </footer>
-          <p class="tuner-note">
-            {{ tr('只影响没有用 data-glass-* 单独声明的属性。拖动圆形按钮可以移动面板。', 'Only affects properties without their own data-glass-* attribute. Drag the round button to move the panel.') }}
-          </p>
-        </div>
-      </section>
-    </div>
-    <div class="tuner-launcher-anchor" :style="{ left: `${position.x}px`, top: `${position.y}px`, width: `${buttonSize}px`, height: `${buttonSize}px` }">
-      <button
-        ref="launcher"
-        type="button"
-        data-liquid-glass
-        :data-glass-layer="visible ? PANEL_LAYER : 0"
-        data-glass-radius="999"
-        data-glass-fusion="40"
-        data-glass-variant="clear"
-        class="tuner-launcher"
-        :class="{ 'is-dragging': dragging }"
-        :aria-label="tr('玻璃调参', 'Glass tuning')"
-        :aria-expanded="opened"
-        :title="tr('拖动移动，点击调参；方向键也可以移动', 'Drag to move, click to tune; arrow keys also move')"
-        @pointerdown="startDrag"
-        @pointermove="moveDrag"
-        @pointerup="endDrag"
-        @pointercancel="endDrag"
-        @lostpointercapture="endDrag"
-        @keydown="moveWithKeyboard"
-        @click="toggle"
-      >
-        <AppIcon :name="opened ? 'close' : 'adjust'" :size="25" />
-      </button>
-    </div>
+        </section>
+      </div>
+    </Transition>
+    <!-- 按钮自己定位：拖动改变的是它相对定位基准的位置，data-glass-morph 才会让玻璃以液体流动跟随。同名的面板从它里面流出来。 -->
+    <button
+      ref="launcher"
+      type="button"
+      data-liquid-glass
+      :data-glass-layer="opened ? PANEL_LAYER : 0"
+      data-glass-radius="999"
+      data-glass-fusion="40"
+      data-glass-variant="clear"
+      data-glass-morph="tuner"
+      class="tuner-launcher"
+      :style="{ left: `${position.x}px`, top: `${position.y}px`, width: `${buttonSize}px`, height: `${buttonSize}px` }"
+      :class="{ 'is-dragging': dragging }"
+      :aria-label="tr('玻璃调参', 'Glass tuning')"
+      :aria-expanded="opened"
+      :title="tr('拖动移动，点击调参；方向键也可以移动', 'Drag to move, click to tune; arrow keys also move')"
+      @pointerdown="startDrag"
+      @pointermove="moveDrag"
+      @pointerup="endDrag"
+      @pointercancel="endDrag"
+      @lostpointercapture="endDrag"
+      @keydown="moveWithKeyboard"
+      @click="toggle"
+    >
+      <AppIcon :name="opened ? 'close' : 'adjust'" :size="25" />
+    </button>
   </div>
 </template>
 
 <style scoped>
 .tuner-root { position: fixed; inset: 0; z-index: 44; pointer-events: none; }
-.tuner-launcher-anchor, .tuner-panel-anchor { position: absolute; }
-.tuner-launcher { position: absolute; inset: 0; width: 100%; height: 100%; display: grid; place-items: center; border-radius: 50%; pointer-events: auto; touch-action: none; user-select: none; cursor: grab; color: var(--text); }
+.tuner-panel-anchor { position: absolute; }
+.tuner-pop-enter-active { transition: opacity 160ms ease, transform 320ms cubic-bezier(.3, 1.3, .5, 1); }
+.tuner-pop-leave-active { transition: opacity 140ms ease, transform 180ms ease-in; }
+.tuner-pop-enter-from, .tuner-pop-leave-to { opacity: 0; transform: scale(.2); }
+.tuner-launcher { position: absolute; display: grid; place-items: center; border-radius: 50%; pointer-events: auto; touch-action: none; user-select: none; cursor: grab; color: var(--text); }
 .tuner-launcher.is-dragging { cursor: grabbing; }
 .tuner-panel { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 28px; overflow: clip; pointer-events: auto; color: var(--text); }
 .tuner-content { display: flex; flex-direction: column; height: 100%; min-height: 0; }

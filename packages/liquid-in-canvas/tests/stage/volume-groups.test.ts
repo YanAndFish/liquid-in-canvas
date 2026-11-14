@@ -29,6 +29,7 @@ function surface(id: number, left: number, attributes: Record<string, string> = 
     paintOrder: 0,
     press: 0,
     options,
+    fusion: options.fusion,
   }
 }
 
@@ -127,6 +128,35 @@ describe('三维玻璃组', () => {
     expect(plans[0]!.bounds.right).toBeGreaterThan(210)
   })
 
+  it('外层与 HTML 里更靠后的玻璃融合后，嵌套玻璃仍画在外层所在组之后', () => {
+    const planner = new VolumePlanner()
+    const bar = {
+      ...surface(1, 0),
+      width: 300,
+      paintOrder: 0.1,
+    }
+    const tab = {
+      ...surface(2, 10),
+      width: 80,
+      host: 1,
+      paintOrder: 0.2,
+    }
+    const button = {
+      ...surface(3, 310),
+      paintOrder: 0.8,
+    }
+    const surfaces = [bar, tab, button]
+    planner.build(surfaces, surfaces.length, 1000, 600)
+    const plans = planner.plans.slice(0, planner.count)
+    const ids = plans.map(plan => plan.members.slice(0, plan.count).map(member => member.id))
+    expect(ids).toEqual([
+      [1, 3],
+      [2],
+    ])
+    expect(plans[1]!.order).toBeGreaterThan(plans[0]!.order)
+    expect(plans[1]!.order).toBeLessThan(glassVolumeRenderOrder(1, 0))
+  })
+
   it('uniform 按着色器的成员布局写入', () => {
     const planner = new VolumePlanner()
     planner.build([
@@ -142,5 +172,11 @@ describe('三维玻璃组', () => {
     // 白色染色乘染色比例，在线性空间中为 0.5。
     expect(data[member + 20]).toBeCloseTo(0.5)
     expect(data[member + 23]).toBe(1)
+    // 截面：半厚度 24 时倒角宽高都是 0.68 倍，三次超椭圆，上下对称。
+    expect(data[member + 8]).toBe(24)
+    expect(data[member + 24]).toBeCloseTo(16.32)
+    expect(data[member + 25]).toBeCloseTo(16.32)
+    expect(data[member + 26]).toBe(3)
+    expect(data[member + 27]).toBe(1)
   })
 })

@@ -96,6 +96,10 @@ await mountLiquidGlass({
 | `data-glass-radius` | 圆角，支持 CSS 顺序的一至四个值 | 28 |
 | `data-glass-blur` | 背景高斯模糊的标准差，0–80 | 18 / 8 |
 | `data-glass-refraction` | 三维实体的半厚度参考值，0–80，实际厚度受控件短边限制 | 24 / 20 |
+| `data-glass-bevel-width` | 边缘倒角的水平宽度，按半厚度的倍数，0.1–4，不超过短边的一半 | 0.68 |
+| `data-glass-bevel-height` | 边缘倒角的垂直高度，按半厚度的倍数，0.05–1；1 表示侧面没有竖直部分 | 0.68 |
+| `data-glass-bevel-curve` | 倒角曲线的超椭圆指数，1–8：1 是直线斜面，2 是椭圆弧，越大越接近直角 | 3 |
+| `data-glass-bottom-bevel` | 底面倒角相对顶面倒角的比例，0–1；0 表示底面是带直角边的平面 | 1 |
 | `data-glass-dispersion` | RGB 采样分离强度，0–1 | 0.3 / 0.4 |
 | `data-glass-lens` | 凸透镜强度，0–0.6。玻璃中间的背景放大约 1 / (1 − lens) 倍，长条形只沿短边放大 | 0.14 / 0.22 |
 | `data-glass-tint` | 十六进制染色值 | 随主题 |
@@ -108,6 +112,9 @@ await mountLiquidGlass({
 | `data-glass-elevation` | 玻璃底面到背景的距离 | 16 |
 | `data-glass-anchor` | 用于定位的祖先选择器 | `offsetParent` |
 | `data-glass-morph` | 液体迁移，见下文。空值表示自身位置或尺寸变化时流动过去，非空值同时是迁移的名字 | 关闭 |
+| `data-glass-morph-stretch` | 液体迁移的拉伸，0–2。0 表示整体平移，越大前缘与后缘拉得越开、拖尾越长 | 1 |
+| `data-glass-morph-bounce` | 液体迁移的回弹，0–1。0 表示前缘不越过目标 | 0.33 |
+| `data-glass-morph-wobble` | 液体迁移的晃动，0–1。到达时被压扁，随后在压扁与拉长之间振荡；0 表示不晃动 | 0.35 |
 
 长度单位都是 CSS 像素，缺省一栏写作 `regular / clear`。`data-glass-lens` 与后五项只对画布渲染有效；折射、透镜和色散在 `css` 回退下不起作用。
 
@@ -133,7 +140,10 @@ await mountLiquidGlass({
 - 嵌套玻璃只有体积：它的 HTML 已经包含在外层玻璃的快照里，文字由外层清晰地画在它上面。它画在外层体积之上，与外层同层，不与外层融合，只与同一外层里的其他嵌套玻璃融合。只支持一层嵌套。
 - 嵌套玻璃折射的是页面背景，不是外层玻璃本身（不同玻璃之间没有递归折射），所以它看起来像嵌在磨砂外层里的一块通透玻璃。
 - 切换激活项时，把 `data-liquid-glass` 连同同名的 `data-glass-morph` 从旧按钮移到新按钮（框架里按激活状态绑定属性即可）。画布渲染下，玻璃体积从旧位置流向新位置：朝运动方向的一端先到并略微越过目标，另一端被拖在后面，体积先被拉长变细再收拢。
-- 同一个元素的 `data-glass-morph` 为空值时，它自己的位置或尺寸变化（不含滚动和窗口缩放）也以同样的方式过渡。
+- 同一个元素的 `data-glass-morph` 为空值时，它自己的位置或尺寸变化（不含滚动和窗口缩放）也以同样的方式过渡，例如拖动一块玻璃：本体紧跟元素，后面拖出一团与它融合的液滴，方向就是拖动方向（包括斜向）；松手后本体越过落点再弹回，液滴甩过本体后收拢，晃动几下停下。拖尾需要非零的融合距离。位置按 `offsetLeft` / `offsetTop` 测量：拖动时要改变玻璃元素自己的 `left` / `top`（或布局位置），只移动外层容器或使用 `transform` 不会触发流动。
+- 同名玻璃仍在页面上时，新出现的玻璃从它里面流出来，例如面板从按钮里长出来：两者同名，面板一步出现在最终位置，玻璃从按钮的位置和尺寸流向面板，内容随玻璃展开显露。面板移除时，它的体积流回按钮并被吸收。
+- 用 `data-glass-morph` 过渡尺寸时，元素应一步切换到新尺寸，由玻璃负责过渡。逐帧改变元素尺寸会让画布每帧重建内容快照，文字和控件会闪烁。
+- `data-glass-morph-stretch`、`-bounce`、`-wobble` 调整流动的手感，缺省值来自全局默认参数里的 `morphStretch`、`morphBounce`、`morphWobble`。
 - 系统要求减少动态效果时直接到位；回退实现里激活项是一块直接切换的高亮。
 
 ## 全局默认参数
@@ -189,6 +199,7 @@ glass.stage?.getMetrics() // { dpr: 画布实际倍率, glassDpr: 玻璃实际�
 
 - `liquid-in-canvas/canvas`：`CanvasStage`，画布渲染器本身。需要自己管理画布时使用；`mountLiquidGlass` 在需要时动态加载它。
 - `CssGlassStage`：回退实现本身，`refraction` 选项控制是否使用 SVG 滤镜。
+- `glassProfile`、`glassProfileOutline`、`glassEdgeTilt`：由厚度与倒角参数算出玻璃的实际截面、截面轮廓线和边缘倾斜程度，渲染器和 SVG 滤镜使用同一套计算，可以用来绘制截面示意图。
 - `liquid-in-canvas/motion`：`advanceSpring`、`reducedMotionQuery`、`prefersReducedMotion`。玻璃按压使用的阻尼弹簧，页面自己的动画用同一套参数时手感一致。这个入口不引入画布渲染器。
 
 ## 范围

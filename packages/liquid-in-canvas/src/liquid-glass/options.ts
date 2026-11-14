@@ -13,6 +13,10 @@ export const GLASS_OPTION_ATTRS = [
   'data-glass-variant',
   'data-glass-blur',
   'data-glass-refraction',
+  'data-glass-bevel-width',
+  'data-glass-bevel-height',
+  'data-glass-bevel-curve',
+  'data-glass-bottom-bevel',
   'data-glass-dispersion',
   'data-glass-lens',
   'data-glass-tint',
@@ -22,6 +26,9 @@ export const GLASS_OPTION_ATTRS = [
   'data-glass-shadow-size',
   'data-glass-anchor',
   'data-glass-morph',
+  'data-glass-morph-stretch',
+  'data-glass-morph-bounce',
+  'data-glass-morph-wobble',
 ] as const
 
 /** HTML 元素声明的玻璃外观参数，长度均使用 CSS 像素。 */
@@ -38,6 +45,14 @@ export interface GlassOptions {
   blur: number
   /** 三维实体的半厚度参考值，实际厚度受控件短边限制。 */
   refraction: number
+  /** 倒角的水平宽度与半厚度之比。 */
+  bevelWidth: number
+  /** 倒角的垂直高度与半厚度之比，1 表示侧面没有竖直部分。 */
+  bevelHeight: number
+  /** 倒角曲线的超椭圆指数：1 是直线斜面，2 是椭圆弧，越大越接近直角。 */
+  bevelCurve: number
+  /** 底面倒角相对顶面倒角的比例，0 表示底面是带直角边的平面。 */
+  bottomBevel: number
   /** RGB 采样位置的分离强度。 */
   dispersion: number
   /** 凸透镜强度，0 表示平板。玻璃中间的背景被放大约 1 / (1 − lens) 倍。 */
@@ -61,6 +76,12 @@ export interface GlassOptions {
    * 非空时还作为名字：同名的玻璃消失、另一块同名玻璃出现时，体积从旧位置流向新位置。
    */
   morph: string | null
+  /** 液体迁移的拉伸，0–2。0 表示整体平移，越大前缘与后缘拉得越开。 */
+  morphStretch: number
+  /** 液体迁移的回弹，0–1。0 表示不越过目标。 */
+  morphBounce: number
+  /** 液体迁移的晃动，0–1。0 表示到达后不晃动。 */
+  morphWobble: number
 }
 
 function numberAttribute(
@@ -148,6 +169,10 @@ export function parseGlassOptions(
     radius: parseRadius(element.getAttribute('data-glass-radius'), defaults.radius),
     blur: numberAttribute(element, 'data-glass-blur', material.blur, GLASS_LIMITS.blur),
     refraction: numberAttribute(element, 'data-glass-refraction', material.refraction, GLASS_LIMITS.refraction),
+    bevelWidth: numberAttribute(element, 'data-glass-bevel-width', material.bevelWidth, GLASS_LIMITS.bevelWidth),
+    bevelHeight: numberAttribute(element, 'data-glass-bevel-height', material.bevelHeight, GLASS_LIMITS.bevelHeight),
+    bevelCurve: numberAttribute(element, 'data-glass-bevel-curve', material.bevelCurve, GLASS_LIMITS.bevelCurve),
+    bottomBevel: numberAttribute(element, 'data-glass-bottom-bevel', material.bottomBevel, GLASS_LIMITS.bottomBevel),
     dispersion: numberAttribute(element, 'data-glass-dispersion', material.dispersion, GLASS_LIMITS.dispersion),
     lens: numberAttribute(element, 'data-glass-lens', material.lens, GLASS_LIMITS.lens),
     tint: parseTint(element.getAttribute('data-glass-tint'), material.tint),
@@ -158,6 +183,9 @@ export function parseGlassOptions(
     variant,
     anchor: parseAnchor(element.getAttribute('data-glass-anchor')),
     morph: element.getAttribute('data-glass-morph')?.trim() ?? null,
+    morphStretch: numberAttribute(element, 'data-glass-morph-stretch', defaults.morphStretch, GLASS_LIMITS.morphStretch),
+    morphBounce: numberAttribute(element, 'data-glass-morph-bounce', defaults.morphBounce, GLASS_LIMITS.morphBounce),
+    morphWobble: numberAttribute(element, 'data-glass-morph-wobble', defaults.morphWobble, GLASS_LIMITS.morphWobble),
   }
 }
 
@@ -169,6 +197,10 @@ export function glassOptionsSignature(options: GlassOptions): string {
     radius: options.radius,
     blur: options.blur,
     refraction: options.refraction,
+    bevelWidth: options.bevelWidth,
+    bevelHeight: options.bevelHeight,
+    bevelCurve: options.bevelCurve,
+    bottomBevel: options.bottomBevel,
     dispersion: options.dispersion,
     lens: options.lens,
     tint: options.tint,
@@ -179,5 +211,8 @@ export function glassOptionsSignature(options: GlassOptions): string {
     variant: options.variant,
     anchor: options.anchor,
     morph: options.morph,
+    morphStretch: options.morphStretch,
+    morphBounce: options.morphBounce,
+    morphWobble: options.morphWobble,
   })
 }

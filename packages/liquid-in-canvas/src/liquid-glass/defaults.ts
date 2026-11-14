@@ -7,6 +7,14 @@ export interface GlassMaterial {
   blur: number
   /** 三维实体的半厚度参考值，实际厚度受控件短边限制。 */
   refraction: number
+  /** 倒角的水平宽度与半厚度之比。 */
+  bevelWidth: number
+  /** 倒角的垂直高度与半厚度之比，1 表示侧面没有竖直部分。 */
+  bevelHeight: number
+  /** 倒角曲线的超椭圆指数：1 是直线斜面，2 是椭圆弧，越大越接近直角。 */
+  bevelCurve: number
+  /** 底面倒角相对顶面倒角的比例，0 表示底面是带直角边的平面。 */
+  bottomBevel: number
   /** RGB 采样位置的分离强度。 */
   dispersion: number
   /** 凸透镜强度，0 表示平板。玻璃中间的背景被放大约 1 / (1 − lens) 倍，只对画布渲染有效。 */
@@ -31,6 +39,12 @@ export interface GlassDefaults {
   fusion: number
   /** 玻璃底面到背景平面的距离。 */
   elevation: number
+  /** 液体迁移的拉伸：前后缘的速度差，0 表示整体平移。 */
+  morphStretch: number
+  /** 液体迁移的回弹：前缘越过目标后弹回的程度，0 表示不越过。 */
+  morphBounce: number
+  /** 液体迁移的晃动：到达后在拉长与压扁之间振荡的程度，0 表示不晃动。 */
+  morphWobble: number
   /** 各材质在深浅主题下的外观。 */
   materials: Record<GlassVariant, Record<GlassTheme, GlassMaterial>>
 }
@@ -40,6 +54,9 @@ export interface GlassDefaultsPatch {
   radius?: number
   fusion?: number
   elevation?: number
+  morphStretch?: number
+  morphBounce?: number
+  morphWobble?: number
   materials?: {
     [V in GlassVariant]?: {
       [T in GlassTheme]?: Partial<GlassMaterial>
@@ -47,15 +64,22 @@ export interface GlassDefaultsPatch {
   }
 }
 
-type NumericKey = Exclude<keyof GlassMaterial, 'tint'> | 'radius' | 'fusion' | 'elevation'
+type NumericKey = Exclude<keyof GlassMaterial, 'tint'> | 'radius' | 'fusion' | 'elevation' | 'morphStretch' | 'morphBounce' | 'morphWobble'
 
 /** 各数值参数的取值范围，属性与默认值都会被限制在其中。 */
 export const GLASS_LIMITS: Readonly<Record<NumericKey, readonly [min: number, max: number]>> = {
   radius: [0, 2000],
   fusion: [0, 100],
   elevation: [0, 100],
+  morphStretch: [0, 2],
+  morphBounce: [0, 1],
+  morphWobble: [0, 1],
   blur: [0, 80],
   refraction: [0, 80],
+  bevelWidth: [0.1, 4],
+  bevelHeight: [0.05, 1],
+  bevelCurve: [1, 8],
+  bottomBevel: [0, 1],
   dispersion: [0, 1],
   lens: [0, 0.6],
   tintAlpha: [0, 1],
@@ -69,6 +93,10 @@ const THEMES: readonly GlassTheme[] = ['light', 'dark']
 const MATERIAL_NUMBERS = [
   'blur',
   'refraction',
+  'bevelWidth',
+  'bevelHeight',
+  'bevelCurve',
+  'bottomBevel',
   'dispersion',
   'lens',
   'tintAlpha',
@@ -76,18 +104,32 @@ const MATERIAL_NUMBERS = [
   'shadow',
   'shadowSize',
 ] as const
-const BASE_NUMBERS = ['radius', 'fusion', 'elevation'] as const
+const BASE_NUMBERS = [
+  'radius',
+  'fusion',
+  'elevation',
+  'morphStretch',
+  'morphBounce',
+  'morphWobble',
+] as const
 
 /** 库内置的默认参数。 */
 export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
   radius: 28,
   fusion: 32,
   elevation: 16,
+  morphStretch: 1,
+  morphBounce: 0.33,
+  morphWobble: 0.35,
   materials: {
     regular: {
       dark: {
         blur: 18,
         refraction: 24,
+        bevelWidth: 0.68,
+        bevelHeight: 0.68,
+        bevelCurve: 3,
+        bottomBevel: 1,
         dispersion: 0.3,
         lens: 0.14,
         tint: '#171b20',
@@ -99,6 +141,10 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
       light: {
         blur: 18,
         refraction: 24,
+        bevelWidth: 0.68,
+        bevelHeight: 0.68,
+        bevelCurve: 3,
+        bottomBevel: 1,
         dispersion: 0.3,
         lens: 0.14,
         tint: '#f6f6f8',
@@ -112,6 +158,10 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
       dark: {
         blur: 8,
         refraction: 20,
+        bevelWidth: 0.68,
+        bevelHeight: 0.68,
+        bevelCurve: 3,
+        bottomBevel: 1,
         dispersion: 0.4,
         lens: 0.22,
         tint: '#ffffff',
@@ -123,6 +173,10 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
       light: {
         blur: 8,
         refraction: 20,
+        bevelWidth: 0.68,
+        bevelHeight: 0.68,
+        bevelCurve: 3,
+        bottomBevel: 1,
         dispersion: 0.4,
         lens: 0.22,
         tint: '#f7f2e8',
@@ -183,6 +237,9 @@ function merge(previous: GlassDefaults, patch: GlassDefaultsPatch): GlassDefault
     radius: previous.radius,
     fusion: previous.fusion,
     elevation: previous.elevation,
+    morphStretch: previous.morphStretch,
+    morphBounce: previous.morphBounce,
+    morphWobble: previous.morphWobble,
     materials: {
       regular: { ...previous.materials.regular },
       clear: { ...previous.materials.clear },

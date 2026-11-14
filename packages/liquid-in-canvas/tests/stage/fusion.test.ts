@@ -32,6 +32,7 @@ function surface(id: number, left: number, layer = 0, fusion = 32): VolumeSurfac
     press: 0,
     layer,
     host: null,
+    fusion,
     options: {
       ...parseGlassOptions(document.createElement('div'), 'light'),
       layer,

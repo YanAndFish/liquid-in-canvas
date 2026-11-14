@@ -3,7 +3,7 @@ import type { SampledTexture, StageGpu } from '../gpu'
 import type { ContentPipelines } from './content-shader'
 import type { FlowRect } from './flow.hot'
 import type { VolumeSurface } from './fusion.hot'
-import type { ElementBox, GlassSurface, Rect } from './surface'
+import type { ElementBox, GlassGhost, GlassSurface, Rect } from './surface'
 import type { VolumeShading } from './VolumeGroups.hot'
 import { attr, GLASS_CLIP_ATTR, GLASS_FADE_ATTR, GLASS_MODAL_ATTR } from '../contract'
 import { glassContentRenderOrder } from '../render-order'
@@ -13,6 +13,7 @@ import { covers, PaintOrder } from './content-order.hot'
 import { createContentPipelines } from './content-shader'
 import { writeContent } from './content.hot'
 import { ContentBackdrop } from './ContentBackdrop.hot'
+import { rampedFusion } from './flow.hot'
 import { createElementBox, legacyShown, modalFactor } from './surface'
 import { REFLECTION_VARIANCE } from './volume-shader'
 import { VolumeGroups } from './VolumeGroups.hot'
@@ -21,6 +22,8 @@ import { VolumeGroups } from './VolumeGroups.hot'
 export interface GlassFrameHost {
   /** 当前登记的全部玻璃，外层玻璃排在它的嵌套玻璃之前。 */
   readonly surfaces: readonly GlassSurface[]
+  /** 正在流回同名玻璃的残影。每帧代码在残影结束时把它移出。 */
+  readonly ghosts: GlassGhost[]
   /** 本帧的页面快照。 */
   backdrop: () => SampledTexture | null
   /** 注销已经离开文档的玻璃。 */
@@ -67,6 +70,13 @@ function intersectsBox(rect: Rect, box: ElementBox): boolean {
     && rect.top < box.bottom
 }
 
+/** 残影最后缩成的尺寸。 */
+const GHOST_END = 2
+
+function centerDistance(a: Rect, b: Rect): number {
+  return Math.hypot(a.left + a.width / 2 - b.left - b.width / 2, a.top + a.height / 2 - b.top - b.height / 2)
+}
+
 function copyRect(target: FlowRect, source: Rect): void {
   target.left = source.left
   target.top = source.top
@@ -96,6 +106,8 @@ export class GlassFrame {
   private readonly visible: GlassSurface[] = []
   private visibleCount = 0
   private readonly volumeList: VolumeSurface[] = []
+  /** `volumeList` 的有效长度：可见玻璃的体积加上正在流动的拖尾。 */
+  private volumeCount = 0
   /** 本帧至少被一块上层玻璃覆盖的内容。 */
   private readonly occluded: GlassSurface[] = []
   private readonly shading: VolumeShading = {
@@ -110,6 +122,8 @@ export class GlassFrame {
   private readonly matrix: DOMMatrix
   private readonly geometry: ElementGeometryOptions
   private readonly body: FlowRect = { left: 0, top: 0, width: 0, height: 0 }
+  /** 残影本帧瞄准的目标矩形。 */
+  private readonly ghostPoint: FlowRect = { left: 0, top: 0, width: 0, height: 0 }
   private frameId = 0
 
   constructor(canvas: HTMLCanvasElement, root: HTMLElement, gpu: StageGpu, host: GlassFrameHost) {
@@ -173,12 +187,15 @@ export class GlassFrame {
     let visibleCount = 0
     for (let i = 0; i < surfaces.length; i++) {
       const surface = surfaces[i]!
+      // 交接只在同一批 DOM 变更里有意义：到下一帧还在页面上的玻璃并没有交出体积。
+      surface.handedOver = false
       if (this.measureSurface(surface, changed, viewWidth, viewHeight, modal, dimming)) {
         this.visible[visibleCount++] = surface
         maxBlur = Math.max(maxBlur, surface.options.blur)
       }
     }
     this.visibleCount = visibleCount
+    this.updateGhosts()
 
     const page = host.backdrop()
     if (!page)
@@ -195,7 +212,7 @@ export class GlassFrame {
     shading.pixelHeight = this.canvas.height
     shading.cssWidth = viewWidth
     shading.cssHeight = viewHeight
-    this.volumes.plan(this.volumeList, visibleCount, composed.view, shading, list)
+    this.volumes.plan(this.volumeList, this.volumeCount, composed.view, shading, list)
     return true
   }
 
@@ -219,6 +236,9 @@ export class GlassFrame {
       if (surface.flow)
         moving = surface.flow.advance(seconds) || moving
     }
+    const ghosts = this.host.ghosts
+    for (let i = 0; i < ghosts.length; i++)
+      moving = ghosts[i]!.flow.advance(seconds) || moving
     return moving
   }
 
@@ -307,6 +327,7 @@ export class GlassFrame {
         ? surface.host.options.layer
         : surface.options.layer
       volume.options = surface.options
+      volume.fusion = this.fusionOf(surface)
       volume.clip[0] = clip
         ? clip.left
         : -UNBOUNDED
@@ -319,12 +340,30 @@ export class GlassFrame {
       volume.brightness = brightness
       volume.paintOrder = 0
       volume.press = surface.press.value
+      if (surface.hasTail) {
+        const tail = surface.tail
+        tail.layer = volume.layer
+        tail.options = volume.options
+        tail.clip[0] = volume.clip[0]!
+        tail.clip[1] = volume.clip[1]!
+        tail.clip[2] = volume.clip[2]!
+        tail.clip[3] = volume.clip[3]!
+        tail.opacity = opacity
+        tail.brightness = brightness
+      }
       surface.contentOpacity = opacity * brightness
       surface.padding = Math.max(surface.options.shadowSize, 0) + 2
       surface.contentClip[0] = clip ? clip.left : 0
       surface.contentClip[1] = clip ? clip.top : 0
       surface.contentClip[2] = clip ? clip.right : viewWidth
       surface.contentClip[3] = clip ? clip.bottom : viewHeight
+      // 元素已经是新尺寸，体积还在过渡：内容只画在体积之内，随玻璃展开显露、收拢遮住。
+      if (surface.flow !== null && surface.flow.resizing) {
+        surface.contentClip[0] = Math.max(surface.contentClip[0]!, volume.left)
+        surface.contentClip[1] = Math.max(surface.contentClip[1]!, volume.top)
+        surface.contentClip[2] = Math.min(surface.contentClip[2]!, volume.left + volume.width)
+        surface.contentClip[3] = Math.min(surface.contentClip[3]!, volume.top + volume.height)
+      }
     }
 
     // 有完整快照时保留离屏部分；首次只有部分可见时也要上传，否则文字会一直为空。
@@ -341,6 +380,67 @@ export class GlassFrame {
     if (canUpload && !surface.paintPending && surface.settleFrames > 0)
       host.invalidate()
     return visible
+  }
+
+  /**
+   * 这块玻璃本帧的融合距离。从仍在页面上的同名玻璃里流出来时，两者之间按中心距离渐进；
+   * 流动结束后恢复为声明的融合距离。
+   */
+  private fusionOf(surface: GlassSurface): number {
+    const limit = surface.options.fusion
+    const partner = surface.partner
+    if (partner === null)
+      return limit
+    if (surface.flow === null || !surface.flow.active || !partner.hasVolume) {
+      surface.partner = null
+      return limit
+    }
+    return rampedFusion(limit, centerDistance(surface.volume, partner.volume))
+  }
+
+  /**
+   * 推进残影：每帧瞄准目标玻璃的中心并缩小到一点，层级、裁剪和透明度跟随目标，
+   * 融合距离随离目标中心的距离渐进。到达、静止或目标不可见时移除。
+   */
+  private updateGhosts(): void {
+    const ghosts = this.host.ghosts
+    let i = 0
+    while (i < ghosts.length) {
+      const ghost = ghosts[i]!
+      const target = ghost.target
+      const volume = ghost.volume
+      const goal = target.volume
+      let alive = target.hasVolume && target.element.isConnected && !this.host.reducedMotion()
+      if (alive) {
+        const point = this.ghostPoint
+        point.left = goal.left + goal.width / 2 - GHOST_END / 2
+        point.top = goal.top + goal.height / 2 - GHOST_END / 2
+        point.width = GHOST_END
+        point.height = GHOST_END
+        const options = target.options
+        ghost.flow.configure(options.morphStretch, options.morphBounce, options.morphWobble)
+        if (ghost.flow.retarget(point))
+          this.host.startAnimation()
+        ghost.flow.rect(volume)
+        alive = ghost.flow.active && volume.width * volume.height > GHOST_END * GHOST_END * 2
+      }
+      if (!alive) {
+        // 与最后一项交换后移出，不分配新数组。
+        ghosts[i] = ghosts[ghosts.length - 1]!
+        ghosts.pop()
+        continue
+      }
+      volume.layer = goal.layer
+      volume.host = goal.host
+      volume.clip[0] = goal.clip[0]!
+      volume.clip[1] = goal.clip[1]!
+      volume.clip[2] = goal.clip[2]!
+      volume.clip[3] = goal.clip[3]!
+      volume.opacity = goal.opacity
+      volume.brightness = goal.brightness
+      volume.fusion = rampedFusion(Math.min(volume.options.fusion, target.options.fusion), centerDistance(volume, goal))
+      i++
+    }
   }
 
   /** 按层级与 HTML 绘制顺序排列可见玻璃，并写入同层内的归一化顺序。 */
@@ -361,6 +461,22 @@ export class GlassFrame {
       volume.paintOrder = i / (count + 1)
       this.volumeList[i] = volume
     }
+    // 拖尾排在所有本体之后；分组时它按距离并入本体所在的组。
+    let total = count
+    for (let i = 0; i < count; i++) {
+      const surface = visible[i]!
+      if (!surface.hasTail)
+        continue
+      surface.tail.paintOrder = surface.volume.paintOrder
+      this.volumeList[total++] = surface.tail
+    }
+    const ghosts = this.host.ghosts
+    for (let i = 0; i < ghosts.length; i++) {
+      const ghost = ghosts[i]!
+      ghost.volume.paintOrder = ghost.target.volume.paintOrder
+      this.volumeList[total++] = ghost.volume
+    }
+    this.volumeCount = total
   }
 
   /** a 是否应排在 b 之前绘制。 */
@@ -512,6 +628,7 @@ export class GlassFrame {
   private flow(surface: GlassSurface): void {
     const volume = surface.volume
     const flow = surface.flow
+    surface.hasTail = false
     if (flow === null) {
       copyRect(volume, surface.rect)
       return
@@ -522,6 +639,8 @@ export class GlassFrame {
       copyRect(volume, surface.rect)
       return
     }
+    const options = surface.options
+    flow.configure(options.morphStretch, options.morphBounce, options.morphWobble)
     if (flow.retarget(surface.layout))
       this.host.startAnimation()
     if (!flow.active) {
@@ -534,5 +653,15 @@ export class GlassFrame {
     volume.top = surface.originY + body.top
     volume.width = body.width
     volume.height = body.height
+    // 没有融合距离时拖尾无法与本体相连，会成为单独的一团，因此不画。
+    if (options.fusion > 0 && flow.tail(body)) {
+      const tail = surface.tail
+      tail.left = surface.originX + body.left
+      tail.top = surface.originY + body.top
+      tail.width = body.width
+      tail.height = body.height
+      tail.fusion = flow.tailFusion(options.fusion)
+      surface.hasTail = true
+    }
   }
 }

@@ -3,7 +3,7 @@ import type { ElementTexture, SampledTexture, StageGpu } from '../gpu'
 import type { GlassTheme } from './defaults'
 import type { GlassFrameHost } from './glass-frame.hot'
 import type { GlassOptions } from './options'
-import type { GlassSurface, Rect } from './surface'
+import type { GlassGhost, GlassSurface, Rect } from './surface'
 import { attr, GLASS_ATTR } from '../contract'
 import { createElementTexture, disposeElementTexture } from '../gpu'
 import { reducedMotionQuery } from '../shared/motion'
@@ -77,6 +77,10 @@ function offsetPlacement(element: HTMLElement, base: { left: number, top: number
 export class LiquidGlassLayer implements GlassFrameHost {
   /** 当前登记的全部玻璃，外层玻璃排在它的嵌套玻璃之前。 */
   readonly surfaces: GlassSurface[] = []
+  /** 正在流回同名玻璃的残影。 */
+  readonly ghosts: GlassGhost[] = []
+  /** 下一个残影的编号，取负数以免与玻璃和拖尾的编号相同。 */
+  private nextGhostId = -1_000_000
   private readonly canvas: HTMLCanvasElement
   private readonly root: HTMLElement
   private readonly gpu: StageGpu
@@ -174,6 +178,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
     while (this.surfaces.length)
       this.unregister(this.surfaces[this.surfaces.length - 1]!)
     this.departed.clear()
+    this.ghosts.length = 0
     this.frame?.dispose()
     this.frame = null
   }
@@ -392,7 +397,23 @@ export class LiquidGlassLayer implements GlassFrameHost {
     }
     this.byElement.delete(surface.element)
     this.surfaces.splice(this.surfaces.indexOf(surface), 1)
-    if (surface.options.morph && surface.hasVolume && !surface.handedOver) {
+    for (const other of this.surfaces) {
+      if (other.partner === surface)
+        other.partner = null
+    }
+    for (let i = this.ghosts.length - 1; i >= 0; i--) {
+      if (this.ghosts[i]!.target === surface)
+        this.ghosts.splice(i, 1)
+    }
+    const remaining = surface.options.morph && surface.hasVolume && !surface.handedOver && !this.reducedMotion()
+      ? this.sameName(surface.options.morph)
+      : null
+    if (remaining) {
+      // 同名玻璃还在页面上：体积流回它并被吸收，例如收起的面板并回按钮。
+      this.ghosts.push(this.createGhost(surface, remaining))
+      this.startAnimation()
+    }
+    else if (surface.options.morph && surface.hasVolume && !surface.handedOver) {
       const volume = surface.volume
       this.departed.set(surface.options.morph, {
         rect: {
@@ -437,33 +458,95 @@ export class LiquidGlassLayer implements GlassFrameHost {
       return
     }
     const source = name && !this.reducedMotion()
-      ? this.handover(name)
+      ? this.handover(name, surface)
       : null
     if (!source) {
       surface.flow = new LiquidFlow(surface.layout)
       surface.snapFlow = true
       return
     }
+    const rect = source.rect
     surface.flow = new LiquidFlow({
-      left: source.left - surface.originX,
-      top: source.top - surface.originY,
-      width: source.width,
-      height: source.height,
+      left: rect.left - surface.originX,
+      top: rect.top - surface.originY,
+      width: rect.width,
+      height: rect.height,
     })
+    surface.partner = source.partner
     surface.snapFlow = false
     this.startAnimation()
   }
 
+  /** 页面上另一块可见的同名玻璃。 */
+  private sameName(name: string, except: GlassSurface | null = null): GlassSurface | null {
+    for (const other of this.surfaces) {
+      if (other !== except && other.options.morph === name && other.hasVolume)
+        return other
+    }
+    return null
+  }
+
+  /** 创建流回 `target` 的残影，从 `from` 当前的体积出发。 */
+  private createGhost(from: GlassSurface, target: GlassSurface): GlassGhost {
+    const source = from.volume
+    const rect = {
+      left: source.left,
+      top: source.top,
+      width: source.width,
+      height: source.height,
+    }
+    return {
+      name: from.options.morph!,
+      target,
+      flow: new LiquidFlow(rect),
+      volume: {
+        ...rect,
+        id: this.nextGhostId--,
+        layer: target.volume.layer,
+        options: from.options,
+        fusion: from.options.fusion,
+        clip: [...target.volume.clip],
+        opacity: target.volume.opacity,
+        brightness: target.volume.brightness,
+        paintOrder: target.volume.paintOrder,
+        press: 0,
+        host: target.volume.host,
+      },
+    }
+  }
+
   /** 取得同名玻璃最近的体积位置并标记为已交接。 */
-  private handover(name: string): Rect | null {
+  /**
+   * 新出现的具名玻璃从哪里流出来，依次检查：
+   * 同名的残影（收起后又马上展开，从残影当前的位置接手）、
+   * 刚消失的同名玻璃（属性从一个元素移到另一个元素）、
+   * 仍在页面上的同名玻璃（例如面板从按钮里长出来，按钮留在原处，记为 `partner`）。
+   */
+  private handover(name: string, surface: GlassSurface): { rect: Rect, partner: GlassSurface | null } | null {
+    for (let i = 0; i < this.ghosts.length; i++) {
+      const ghost = this.ghosts[i]!
+      if (ghost.name !== name)
+        continue
+      this.ghosts.splice(i, 1)
+      const volume = ghost.volume
+      return {
+        rect: {
+          left: volume.left,
+          top: volume.top,
+          width: volume.width,
+          height: volume.height,
+        },
+        partner: ghost.target,
+      }
+    }
     const departed = this.departed.get(name)
     this.departed.delete(name)
     if (departed && performance.now() - departed.time < HANDOVER_WINDOW)
-      return departed.rect
+      return { rect: departed.rect, partner: null }
     for (const other of this.surfaces) {
-      if (other.options.morph === name && other.hasVolume && !other.handedOver) {
+      if (other !== surface && other.options.morph === name && other.hasVolume && !other.handedOver) {
         other.handedOver = true
-        return other.volume
+        return { rect: other.volume, partner: other }
       }
     }
     return null

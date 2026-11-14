@@ -1,12 +1,17 @@
 import type { GlassOptions, GlassRadius } from '../liquid-glass/options'
+import { glassEdgeTilt, glassProfile } from '../liquid-glass/profile'
 
 /** 一块玻璃的边缘折射滤镜参数，长度使用 CSS 像素。 */
 export interface RefractionShape {
   width: number
   height: number
   radius: GlassRadius
-  /** 发生偏折的边缘宽度。 */
+  /** 发生偏折的边缘宽度，即顶面倒角的宽度。 */
   band: number
+  /** 顶面倒角的高度。 */
+  rise: number
+  /** 倒角曲线的超椭圆指数。 */
+  curve: number
   /** 轮廓处的最大取样偏移。 */
   offset: number
   /** 红、蓝通道偏移相对绿通道的增减比例，0 表示没有色散。 */
@@ -22,13 +27,9 @@ export interface RefractionShape {
  * 会把滚动拖到三十帧以下，导航条和按钮这样的尺寸（十万像素以内）则没有可见的影响。
  */
 const MAX_AREA = 120_000
-/** 偏折带宽度与实体半厚度之比。 */
-const BAND_PER_DEPTH = 1.1
 /** 轮廓处的最大偏移由实体半厚度和抬升高度两部分组成：光线在实体内偏折，离开后还要走过抬升的距离。 */
 const OFFSET_PER_DEPTH = 1.25
 const OFFSET_PER_ELEVATION = 0.5
-/** 偏移量从轮廓向内衰减的幂次，越大越集中在边缘。 */
-const PROFILE_POWER = 2.4
 /** 轮廓高光线的宽度。 */
 const RIM_WIDTH = 1.1
 
@@ -52,7 +53,7 @@ export function supportsSvgBackdropFilter(): boolean {
 /**
  * 由玻璃参数和元素尺寸得到折射滤镜的形状；不需要滤镜时返回 null。
  *
- * 厚度的取法与三维实体一致：受控件短边限制，偏折集中在倒角宽度内。
+ * 截面的取法与三维实体一致：厚度受控件短边限制，偏折集中在倒角宽度内。
  * 尺寸取整，使滚动或动画中的小数像素不会不断生成新的滤镜。
  */
 export function refractionShape(options: GlassOptions, width: number, height: number): RefractionShape | null {
@@ -61,13 +62,16 @@ export function refractionShape(options: GlassOptions, width: number, height: nu
   if (options.refraction <= 0 || w < 8 || h < 8 || w * h > MAX_AREA)
     return null
   const short = Math.min(w, h)
-  const depth = Math.max(2, Math.min(options.refraction, short * 0.3))
+  const profile = glassProfile(options, w, h)
+  const depth = profile.halfDepth
   const limit = short / 2
   return {
     width: w,
     height: h,
     radius: options.radius.map(value => Math.round(Math.min(value, limit))) as unknown as GlassRadius,
-    band: Math.round(Math.min(depth * BAND_PER_DEPTH, limit)),
+    band: Math.max(1, Math.round(profile.bevelWidth)),
+    rise: Math.round(profile.bevelHeight * 10) / 10,
+    curve: Math.round(profile.curve * 100) / 100,
     offset: Math.round(Math.min(depth * OFFSET_PER_DEPTH + options.elevation * OFFSET_PER_ELEVATION, short * 0.45) * 10) / 10,
     spread: Math.round(options.dispersion * 0.25 * 1000) / 1000,
     specular: Math.round(options.specular * 100) / 100,
@@ -75,7 +79,7 @@ export function refractionShape(options: GlassOptions, width: number, height: nu
 }
 
 export function refractionSignature(shape: RefractionShape): string {
-  return `${shape.width}x${shape.height}r${shape.radius.join(',')}b${shape.band}o${shape.offset}s${shape.spread}h${shape.specular}`
+  return `${shape.width}x${shape.height}r${shape.radius.join(',')}b${shape.band},${shape.rise},${shape.curve}o${shape.offset}s${shape.spread}h${shape.specular}`
 }
 
 /** 位移贴图上一个点的取值。 */
@@ -93,8 +97,8 @@ const LIGHT = [-0.6, -0.8] as const
 /**
  * 计算玻璃上一点的偏移与高光。坐标以元素左上角为原点。
  *
- * 用圆角矩形的有向距离得到到轮廓的深度和法线：偏移沿法线指向内部，在轮廓处最大，
- * 到偏折带内侧衰减为零，模拟凸起的倒角把光线折向内部。高光是贴着轮廓的一圈细线，
+ * 用圆角矩形的有向距离得到到轮廓的深度和法线：偏移沿法线指向内部，大小取倒角表面的倾斜程度，
+ * 在轮廓处最大，到倒角内侧衰减为零，模拟凸起的倒角把光线折向内部。高光是贴着轮廓的一圈细线，
  * 朝向光源的一侧最亮，背光一侧次之，再加一层很淡的内侧辉光。
  */
 export function refractionSample(shape: RefractionShape, px: number, py: number): RefractionSample {
@@ -140,7 +144,7 @@ export function refractionSample(shape: RefractionShape, px: number, py: number)
   }
   const depth = Math.max(0, -distance)
   const t = Math.min(1, depth / Math.max(shape.band, 1))
-  const amount = (1 - t) ** PROFILE_POWER
+  const amount = glassEdgeTilt(depth, shape.band, shape.rise, shape.curve)
   const facing = normalX * LIGHT[0] + normalY * LIGHT[1]
   const lit = Math.max(0, facing)
   const back = Math.max(0, -facing)

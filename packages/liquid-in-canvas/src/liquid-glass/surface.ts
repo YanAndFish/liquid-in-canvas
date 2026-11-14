@@ -40,8 +40,13 @@ export interface GlassSurface extends ContentSource {
   flow: LiquidFlow | null
   /** 下一帧直接把体积放到元素位置，不经过流动，例如窗口尺寸变化或首次测量。 */
   snapFlow: boolean
-  /** 体积已经交给另一块同名玻璃，注销时不再留下起点。 */
+  /** 体积已经交给另一块同名玻璃，注销时不再留下起点。每帧开始时清除：仍然在页面上就不算交出。 */
   handedOver: boolean
+  /**
+   * 这块玻璃从哪块仍在页面上的同名玻璃里流出来。流动期间两者之间的融合距离随中心距离渐进，
+   * 刚出现时不会让两块玻璃一起鼓起；流动结束后清空。
+   */
+  partner: GlassSurface | null
 
   /** 玻璃上 HTML 内容的快照；嵌套玻璃没有快照。 */
   content: ElementTexture | null
@@ -85,6 +90,26 @@ export interface GlassSurface extends ContentSource {
   /** 本帧参与绘制的体积，`hasVolume` 为 false 时不可见。 */
   readonly volume: VolumeSurface
   hasVolume: boolean
+  /**
+   * 液体流动的拖尾：本体后面一团与本体融合的较小体积，`hasTail` 为 false 时不绘制。
+   * 编号取负数，不会与任何玻璃的编号或外层编号相同。
+   */
+  readonly tail: VolumeSurface
+  hasTail: boolean
+}
+
+/**
+ * 一块具名玻璃移除时，如果页面上还有同名玻璃，它的体积不会立即消失，而是流回那块玻璃并被吸收。
+ * 残影只有体积，没有内容；流动结束或目标消失时移除。
+ */
+export interface GlassGhost {
+  /** 迁移的名字，同名玻璃再次出现时从残影当前的位置接手。 */
+  readonly name: string
+  /** 残影流向的玻璃。 */
+  readonly target: GlassSurface
+  readonly flow: LiquidFlow
+  /** 残影本帧的体积，编号为负数。 */
+  readonly volume: VolumeSurface
 }
 
 /** 注册时确定的字段。 */
@@ -108,6 +133,7 @@ export function createSurface(init: SurfaceInit): GlassSurface {
     flow: null,
     snapFlow: true,
     handedOver: false,
+    partner: null,
     sizeDirty: false,
     placed: false,
     placedLeft: 0,
@@ -137,6 +163,7 @@ export function createSurface(init: SurfaceInit): GlassSurface {
       height: 0,
       layer: init.options.layer,
       options: init.options,
+      fusion: init.options.fusion,
       clip: [0, 0, 0, 0],
       opacity: 1,
       brightness: 1,
@@ -145,6 +172,23 @@ export function createSurface(init: SurfaceInit): GlassSurface {
       host: init.host?.id ?? null,
     },
     hasVolume: false,
+    tail: {
+      id: -init.id - 1,
+      left: 0,
+      top: 0,
+      width: 0,
+      height: 0,
+      layer: init.options.layer,
+      options: init.options,
+      fusion: 0,
+      clip: [0, 0, 0, 0],
+      opacity: 1,
+      brightness: 1,
+      paintOrder: 0,
+      press: 0,
+      host: init.host?.id ?? null,
+    },
+    hasTail: false,
     padding: 0,
     contentClip: [0, 0, 0, 0],
     contentOpacity: 1,
