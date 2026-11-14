@@ -10,6 +10,7 @@ import { glassVolumeRenderOrder } from '../render-order'
 import { linearTint, srgbToLinear } from './color'
 import { GlassGroups, writePressedBox } from './fusion.hot'
 import { createVolumeBands, createVolumePlan } from './pools'
+import { profileBevelHeight, profileBevelWidth, profileHalfDepth } from './profile'
 import { bindVolumeTextures, createVolumePipelines, VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from './volume-shader'
 
 /** 体积着色的分辨率设置。 */
@@ -56,9 +57,12 @@ export interface VolumeBand {
   cover: CoverBuilder
 }
 
+/** 嵌套玻璃的组排在外层所在组之后的间隔，远小于同层两块玻璃之间的顺序差。 */
+const NESTED_ORDER_STEP = 0.0001
+
 /** 三维实体的半厚度：`refraction` 受控件短边限制。 */
 export function volumeHalfDepth(surface: VolumeSurface): number {
-  return Math.max(2, Math.min(surface.options.refraction, surface.width * 0.3, surface.height * 0.3))
+  return profileHalfDepth(surface.options.refraction, surface.width, surface.height)
 }
 
 /** 算出一组的包围矩形、绘制顺序与求交范围。 */
@@ -78,14 +82,14 @@ function planGroup(plan: VolumeGroupPlan, group: GlassGroup, cssWidth: number, c
     const options = member.options
     shadowAlpha = Math.max(shadowAlpha, options.shadow * member.opacity)
     shadowSize = Math.max(shadowSize, options.shadowSize)
-    fusion = Math.max(fusion, options.fusion)
+    fusion = Math.max(fusion, member.fusion)
     paintOrder = Math.max(paintOrder, member.paintOrder)
-    const padding = Math.max(options.fusion, options.shadowSize) + 3
+    const padding = Math.max(member.fusion, options.shadowSize) + 3
     left = Math.min(left, member.left - padding)
     top = Math.min(top, member.top - padding)
     right = Math.max(right, member.left + member.width + padding)
     bottom = Math.max(bottom, member.top + member.height + padding)
-    highest = Math.max(highest, options.elevation + volumeHalfDepth(member) * 2 + options.fusion)
+    highest = Math.max(highest, options.elevation + volumeHalfDepth(member) * 2 + member.fusion)
   }
   plan.members = members
   plan.count = group.count
@@ -116,6 +120,29 @@ export class VolumePlanner {
     for (let i = 0; i < groups.count; i++)
       planGroup(this.plans[i] ?? this.grow(i), groups.groups[i]!, cssWidth, cssHeight)
     this.count = groups.count
+    for (let i = 0; i < this.count; i++)
+      this.followHost(this.plans[i]!)
+  }
+
+  /**
+   * 嵌套玻璃紧跟在外层所在的组之后绘制。
+   *
+   * 组的顺序取成员中最靠后的 HTML 绘制顺序。外层与 HTML 里更靠后的玻璃（例如拖到旁边的悬浮按钮）
+   * 融合后，外层所在的组会排到嵌套玻璃之后，把嵌套玻璃整个盖住。
+   */
+  private followHost(plan: VolumeGroupPlan): void {
+    const host = plan.members[0]!.host
+    if (host === null)
+      return
+    for (let i = 0; i < this.count; i++) {
+      const other = this.plans[i]!
+      for (let j = 0; j < other.count; j++) {
+        if (other.members[j]!.id === host) {
+          plan.order = Math.max(plan.order, other.order + NESTED_ORDER_STEP)
+          return
+        }
+      }
+    }
   }
 
   private grow(index: number): VolumeGroupPlan {
@@ -146,9 +173,10 @@ export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGr
     data[offset + 5] = radius[1]
     data[offset + 6] = radius[2]
     data[offset + 7] = radius[3]
-    data[offset + 8] = volumeHalfDepth(member)
+    const halfDepth = volumeHalfDepth(member)
+    data[offset + 8] = halfDepth
     data[offset + 9] = options.elevation
-    data[offset + 10] = options.fusion
+    data[offset + 10] = member.fusion
     data[offset + 11] = options.lens
     data[offset + 12] = clip[0]!
     data[offset + 13] = clip[1]!
@@ -163,6 +191,11 @@ export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGr
     data[offset + 21] = tint[1] * brightness * options.tintAlpha
     data[offset + 22] = tint[2] * brightness * options.tintAlpha
     data[offset + 23] = member.opacity
+    // 倒角宽度在着色器里再按按压后的尺寸限制。
+    data[offset + 24] = profileBevelWidth(halfDepth, options.bevelWidth)
+    data[offset + 25] = profileBevelHeight(halfDepth, options.bevelHeight)
+    data[offset + 26] = options.bevelCurve
+    data[offset + 27] = options.bottomBevel
     offset += VOLUME_MEMBER_FLOATS
   }
 }

@@ -29,6 +29,10 @@ describe('parseGlassOptions', () => {
       radius: [28, 28, 28, 28],
       blur: 18,
       refraction: 24,
+      bevelWidth: 0.68,
+      bevelHeight: 0.68,
+      bevelCurve: 3,
+      bottomBevel: 1,
       dispersion: 0.3,
       lens: 0.14,
       tint: '#171b20',
@@ -39,6 +43,9 @@ describe('parseGlassOptions', () => {
       variant: 'regular',
       anchor: null,
       morph: null,
+      morphStretch: 1,
+      morphBounce: 0.33,
+      morphWobble: 0.35,
     })
   })
 
@@ -50,6 +57,10 @@ describe('parseGlassOptions', () => {
       radius: [28, 28, 28, 28],
       blur: 18,
       refraction: 24,
+      bevelWidth: 0.68,
+      bevelHeight: 0.68,
+      bevelCurve: 3,
+      bottomBevel: 1,
       dispersion: 0.3,
       lens: 0.14,
       tint: '#f6f6f8',
@@ -60,6 +71,9 @@ describe('parseGlassOptions', () => {
       variant: 'regular',
       anchor: null,
       morph: null,
+      morphStretch: 1,
+      morphBounce: 0.33,
+      morphWobble: 0.35,
     })
   })
 
@@ -88,6 +102,10 @@ describe('parseGlassOptions', () => {
       radius: [28, 28, 28, 28],
       blur: 8,
       refraction: 20,
+      bevelWidth: 0.68,
+      bevelHeight: 0.68,
+      bevelCurve: 3,
+      bottomBevel: 1,
       dispersion: 0.4,
       lens: 0.22,
       tint: '#ffffff',
@@ -98,6 +116,9 @@ describe('parseGlassOptions', () => {
       variant: 'clear',
       anchor: null,
       morph: null,
+      morphStretch: 1,
+      morphBounce: 0.33,
+      morphWobble: 0.35,
     })
   })
 
@@ -127,6 +148,10 @@ describe('parseGlassOptions', () => {
       radius: [28, 28, 28, 28],
       blur: 40,
       refraction: 20,
+      bevelWidth: 0.68,
+      bevelHeight: 0.68,
+      bevelCurve: 3,
+      bottomBevel: 1,
       dispersion: 1,
       lens: 0.5,
       tint: '#aabbcc',
@@ -137,6 +162,9 @@ describe('parseGlassOptions', () => {
       variant: 'clear',
       anchor: null,
       morph: 'tab',
+      morphStretch: 1,
+      morphBounce: 0.33,
+      morphWobble: 0.35,
     })
   })
 
@@ -147,6 +175,18 @@ describe('parseGlassOptions', () => {
     }), 'light')
     expect(options.lens).toBe(0.6)
     expect(options.morph).toBe('')
+  })
+
+  it('reads and clamps the liquid flow tuning', () => {
+    const options = parseGlassOptions(makeElement({
+      'data-glass-morph': '',
+      'data-glass-morph-stretch': '1.6',
+      'data-glass-morph-bounce': '3',
+      'data-glass-morph-wobble': '-1',
+    }), 'light')
+    expect(options.morphStretch).toBe(1.6)
+    expect(options.morphBounce).toBe(1)
+    expect(options.morphWobble).toBe(0)
   })
 
   it('falls back on invalid numbers and clamps valid ones', () => {
@@ -163,11 +203,31 @@ describe('parseGlassOptions', () => {
     expect(options).toMatchObject({
       blur: 18,
       refraction: 24,
+      bevelWidth: 0.68,
+      bevelHeight: 0.68,
+      bevelCurve: 3,
+      bottomBevel: 1,
       dispersion: 0.3,
       tintAlpha: 0.28,
       specular: 2,
       shadow: 0,
       shadowSize: 100,
+    })
+  })
+
+  it('reads and clamps the cross-section attributes', () => {
+    const options = parseGlassOptions(makeElement({
+      'data-glass-bevel-width': '1.5',
+      'data-glass-bevel-height': '2',
+      'data-glass-bevel-curve': '0',
+      'data-glass-bottom-bevel': '0.25',
+    }), 'dark')
+
+    expect(options).toMatchObject({
+      bevelWidth: 1.5,
+      bevelHeight: 1,
+      bevelCurve: 1,
+      bottomBevel: 0.25,
     })
   })
 

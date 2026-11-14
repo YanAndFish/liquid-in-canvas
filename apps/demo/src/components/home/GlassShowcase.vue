@@ -3,7 +3,7 @@ import { reducedMotionQuery } from 'liquid-in-canvas/motion'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useLocale } from '@/composables/useLocale'
-import { useSpring } from '@/composables/useSpring'
+import { useRenderer } from '@/composables/useRenderer'
 import { activeGlass } from './active-glass'
 
 const { t } = useLocale()
@@ -15,12 +15,17 @@ const scene = ref(0)
 const variant = ref<'clear' | 'regular'>('clear')
 const playing = ref(false)
 const requestedPlayback = ref(true)
-const progress = useSpring(() => settings.value ? 1 : 0)
-const panelStyle = computed(() => ({
-  width: `calc(52px + (min(292px, 100vw - 56px) - 52px) * ${progress.value})`,
-  height: `${52 + 192 * progress.value}px`,
-}))
-const optionsVisible = computed(() => settings.value && progress.value > 0.75)
+const renderer = useRenderer()
+/**
+ * 面板一步切换到展开或收起的尺寸，玻璃的过渡交给 `data-glass-morph`：画布渲染下体积以液体流动、
+ * 回弹到新形状，内容随玻璃展开显露。逐帧改变元素尺寸会让画布每帧重建内容快照，按钮与文字随之闪烁。
+ * 回退实现没有液体流动，用 CSS 过渡尺寸。
+ */
+const panelStyle = computed(() => settings.value
+  ? { width: 'min(292px, calc(100vw - 56px))', height: '244px' }
+  : { width: '52px', height: '52px' })
+const eased = computed(() => renderer?.mode.value !== 'canvas')
+const optionsVisible = settings
 /** 展示区的玻璃只指定材质和压在影像上的深色染色，其余光学参数取全局默认值，可在调参面板中调整。 */
 const surface = computed(() => ({
   'data-glass-variant': variant.value,
@@ -132,10 +137,10 @@ onBeforeUnmount(() => {
 
     <div class="scene-settings" @keydown.esc.stop.prevent="closeSettings">
       <div
-        class="scene-settings-surface" data-liquid-glass data-glass-radius="26"
+        class="scene-settings-surface" :class="{ 'is-eased': eased }" data-liquid-glass data-glass-radius="26" data-glass-morph=""
         v-bind="surface" :style="panelStyle"
-        :data-glass-blur="3 + progress * 22"
-        :data-glass-tint-alpha="0.12 + progress * 0.22"
+        :data-glass-blur="settings ? 25 : 3"
+        :data-glass-tint-alpha="settings ? 0.34 : 0.12"
       >
         <button
           ref="settingsButton" type="button" class="scene-settings-toggle"
@@ -212,6 +217,7 @@ onBeforeUnmount(() => {
 .showcase-action-anchor > p { margin-top: 18px; text-align: center; font-size: 11px; color: #ffffffb8; letter-spacing: .08em; }
 .scene-settings { position: absolute; top: 28px; right: 28px; width: 292px; height: 244px; pointer-events: none; z-index: 2; }
 .scene-settings-surface { position: absolute; right: 0; top: 0; overflow: clip; pointer-events: auto; border-radius: 26px; }
+.scene-settings-surface.is-eased { transition: width 380ms cubic-bezier(.3, 1.35, .5, 1), height 380ms cubic-bezier(.3, 1.35, .5, 1); }
 .scene-settings-toggle { position: absolute; right: 0; top: 0; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; }
 .scene-settings-content { padding: 24px; opacity: 0; width: min(292px, calc(100vw - 56px)); transition: opacity 120ms ease; }
 .scene-settings-content.is-visible { opacity: 1; }

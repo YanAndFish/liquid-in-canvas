@@ -5,7 +5,7 @@ import { BLUR_SIGMAS } from './gaussian'
 /** 体积组 uniform 中矩形与目标尺寸之后、成员之前的浮点数个数：`params` 与 `shadow`。 */
 export const VOLUME_GROUP_FLOATS = 8
 /** 每个成员占用的浮点数个数，对应着色器里的 `Member`。 */
-export const VOLUME_MEMBER_FLOATS = 24
+export const VOLUME_MEMBER_FLOATS = 28
 /** 体积着色器取样的纹理数量：背景加各级模糊。 */
 export const VOLUME_TEXTURES = 1 + BLUR_SIGMAS.length
 
@@ -89,6 +89,8 @@ struct Member {
   appearance: vec4f,
   // 已乘染色比例的线性染色，以及不透明度。
   color: vec4f,
+  // 顶面倒角的宽度与高度、倒角曲线的超椭圆指数、底面倒角比例。
+  profile: vec4f,
 }`)}
 @group(1) @binding(0) var source: texture_2d<f32>;
 ${BLUR_SIGMAS.map((_, i) => `@group(1) @binding(${i + 1}) var blur${i}: texture_2d<f32>;`).join('\n')}
@@ -101,14 +103,25 @@ fn glass_outline(xy: vec2f, b: vec4f, radii: vec4f) -> f32 {
   return length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - radius;
 }
 
-// 圆角实体。倒角截面是三次超椭圆，在平面接合处曲率趋于零，折射压缩不会在固定内圈突然开始。
+// 圆角实体。截面是一块平板，边缘按超椭圆弧倒角；指数大于 2 时曲率在平面接合处趋于零，
+// 折射压缩不会在固定内圈突然开始。顶面和底面的倒角分别取值，底面按比例缩小。
+//
+// 倒角在宽高各自归一化的坐标里求超椭圆距离，再乘较短的一边，得到不超过真实距离的下界；
+// 指数小于 2 时超椭圆范数的梯度可能大于 1，再按 2^(1/p - 1/2) 缩小。
+// 截面不超出平板，平板的距离同样是下界，两者取大，平面部分仍是精确距离，求交不会变慢。
 fn glass_solid(p: vec3f, m: Member) -> f32 {
   let planar = glass_outline(p.xy, m.box, m.radius);
-  let bevel = min(m.depth.x * 0.68, min(m.box.z, m.box.w) * 0.5);
-  let cross = vec2f(planar + bevel, abs(p.z - m.depth.y - m.depth.x) - m.depth.x + bevel);
-  let positive = max(cross, vec2f(0.0));
-  let rounded = pow(positive.x * positive.x * positive.x + positive.y * positive.y * positive.y, 1.0 / 3.0);
-  let solid = rounded + min(max(cross.x, cross.y), 0.0) - bevel;
+  let center = m.depth.y + m.depth.x;
+  let height = p.z - center;
+  let scale = select(m.profile.w, 1.0, height > 0.0);
+  let bevel = max(vec2f(min(m.profile.x, min(m.box.z, m.box.w)), m.profile.y) * scale, vec2f(0.5));
+  let unit = vec2f(planar + bevel.x, abs(height) - m.depth.x + bevel.y) / bevel;
+  let positive = max(unit, vec2f(0.0));
+  let power = m.profile.z;
+  let rounded = pow(pow(positive.x, power) + pow(positive.y, power), 1.0 / power);
+  let lipschitz = min(1.0, exp2(0.5 - 1.0 / power));
+  let curved = (rounded + min(max(unit.x, unit.y), 0.0) - 1.0) * min(bevel.x, bevel.y) * lipschitz;
+  let solid = max(curved, max(planar, abs(height) - m.depth.x));
   let clipped = max(max(m.clip.x - p.x, p.x - m.clip.z), max(m.clip.y - p.y, p.y - m.clip.w));
   return max(solid, clipped);
 }
@@ -140,7 +153,7 @@ ${each(count, i => `  {
     let m = u.members[${i}];
     let planar = glass_outline(xy, m.box, m.radius);
     let clipped = max(max(m.clip.x - xy.x, xy.x - m.clip.z), max(m.clip.y - xy.y, xy.y - m.clip.w));
-    let bevel = min(m.depth.x * 0.68, min(m.box.z, m.box.w) * 0.5);
+    let bevel = max(min(m.profile.x, min(m.box.z, m.box.w)), 0.5);
     if (planar + bevel < -0.5 && clipped < -1.0) {
       inside += 1;
       top = m.depth.y + m.depth.x * 2.0;

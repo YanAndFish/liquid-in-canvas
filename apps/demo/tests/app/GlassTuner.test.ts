@@ -24,12 +24,6 @@ vi.mock('@/composables/useTheme', async () => {
     }),
   }
 })
-vi.mock('@/composables/useSpring', async () => {
-  const { computed } = await import('vue')
-  return {
-    useSpring: (target: () => number) => computed(target),
-  }
-})
 
 /** 创建不接触 GPU 的渲染控制器，记录面板发出的调用。 */
 function createRenderer(canvasSupported = true, svgSupported = true): RendererController {
@@ -90,7 +84,7 @@ describe('调参面板', () => {
     const launcher = wrapper.get('.tuner-launcher')
     launcher.element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
     await nextTick()
-    expect(wrapper.get('[role="dialog"]').attributes('aria-hidden')).toBe('false')
+    expect(wrapper.get('[role="dialog"]').attributes('inert')).toBeUndefined()
     await wrapper.get('input[data-field="blur"]').trigger('keydown', { key: 'Escape' })
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     expect(document.activeElement).toBe(launcher.element)
@@ -142,7 +136,7 @@ describe('调参面板', () => {
     launcher.element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
     await nextTick()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
-    expect(wrapper.get('.tuner-launcher-anchor').attributes('style')).toContain('left: 732px')
+    expect(wrapper.get('.tuner-launcher').attributes('style')).toContain('left: 732px')
   })
 
   it('购物袋打开时关闭并隐藏面板', async () => {

@@ -29,6 +29,8 @@ export type {
   GlassVariant,
 } from './liquid-glass/defaults'
 export type { GlassOptions, GlassRadius } from './liquid-glass/options'
+export { glassEdgeTilt, glassProfile, glassProfileOutline } from './liquid-glass/profile'
+export type { GlassProfile, GlassProfileOptions } from './liquid-glass/profile'
 export { mountLiquidGlass, StageUnsupportedError } from './mount'
 export type { GlassRenderMode, LiquidGlassMount, MountLiquidGlassOptions } from './mount'
 export { DEFAULT_STAGE_RESOLUTION } from './resolution'
