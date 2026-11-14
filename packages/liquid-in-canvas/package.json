@@ -1,0 +1,51 @@
+{
+  "name": "liquid-in-canvas",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Liquid glass for live HTML, rendered with HTML-in-Canvas and WebGPU.",
+  "keywords": [
+    "liquid-glass",
+    "html-in-canvas",
+    "webgpu"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./canvas": "./src/canvas.ts",
+    "./motion": "./src/motion.ts"
+  },
+  "types": "./src/index.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./canvas": {
+        "types": "./dist/canvas.d.ts",
+        "import": "./dist/canvas.js"
+      },
+      "./motion": {
+        "types": "./dist/motion.d.ts",
+        "import": "./dist/motion.js"
+      }
+    },
+    "types": "./dist/index.d.ts"
+  },
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm build"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  }
+}

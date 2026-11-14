@@ -160,6 +160,8 @@ t=673  app.scrollLeft = 0
 
 ## 7. WebGPU 和 three.js
 
+> 2026-11-13 起渲染器直接使用 WebGPU，不再依赖 three.js，结构见 [架构](ARCHITECTURE.md) 的“GPU 结构”一节。下文记录的是当时的做法；7.2 之后关于上下文配置、sRGB 与上传顺序的结论仍然适用。
+
 ### 7.1 three.js HTMLTexture 在 Chrome 157 不可用
 
 three.js r187 的 WebGPU `HTMLTexture` 路径检查的是 `copyElementImageToTexture`。Chrome 157 已经改用 `drawElementImageToTexture`，旧的 `copyElementImageToTexture` 不存在。结果是不会报错，也不会上传纹理，画面保持空白。
@@ -495,6 +497,8 @@ OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面�
 - 页面切换的旧页被绝对定位并裁剪，旧页中如果有 fixed 元素需要单独评估。
 
 ## 16. 文件索引
+
+> 下表记录的是撰写本文时的路径。拆分为 monorepo 之后，`src/stage/` 下的文件位于 `packages/liquid-in-canvas/src/`，其余 `src/` 与 `tests/` 位于 `apps/demo/`，当前结构见 [架构](ARCHITECTURE.md)。
 
 | 路径 | 作用 |
 | --- | --- |

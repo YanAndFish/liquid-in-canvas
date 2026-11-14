@@ -1,0 +1,36 @@
+## base round 1
+dpr2 gpu
+[{"gpuMean":4.82,"gpuP50":4.26,"gpuP95":8.06,"canvas":3.3,"blur":1.36,"backdrop":0.16,"draw":2.7,"paintMean":16.7,"paintP95":17.2,"paints":481,"errors":[],"bad":[]},{"gpuMean":4.74,"gpuP50":4.06,"gpuP95":8.13,"canvas":3.22,"blur":1.36,"backdrop":0.16,"draw":2.7,"paintMean":16.7,"paintP95":17.7,"paints":481,"errors":[],"bad":[]}]
+mobile gpu
+[{"gpuMean":5.78,"gpuP50":5.24,"gpuP95":10.16,"canvas":2.61,"blur":0.77,"backdrop":2.4,"draw":1.39,"paintMean":16.7,"paintP95":17.4,"paints":481,"errors":[],"bad":[]},{"gpuMean":5.89,"gpuP50":5.37,"gpuP95":10.16,"canvas":2.72,"blur":0.76,"backdrop":2.42,"draw":1.57,"paintMean":16.7,"paintP95":17.2,"paints":481,"errors":[],"bad":[]}]
+dpr3 paint (maxPixelRatio=3, maxGlassPixelRatio=3, adaptive=0)
+[{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.94,"paintMean":21.8,"paintP95":29.6,"paints":368,"errors":[],"bad":[]},{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.88,"paintMean":21.8,"paintP95":29.3,"paints":367,"errors":[],"bad":[]}]
+mobile paint
+[{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.59,"paintMean":16.7,"paintP95":18.8,"paints":481,"errors":[],"bad":[]},{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.63,"paintMean":16.7,"paintP95":18.8,"paints":481,"errors":[],"bad":[]}]
+## new round 1
+dpr2 gpu
+[{"gpuMean":4.73,"gpuP50":4.46,"gpuP95":7.27,"canvas":4.08,"blur":9.39,"backdrop":0.18,"draw":2.4,"paintMean":16.7,"paintP95":17.6,"paints":481,"errors":[],"bad":[]},{"gpuMean":4.68,"gpuP50":4.39,"gpuP95":7.41,"canvas":4.01,"blur":9.26,"backdrop":0.21,"draw":2.4,"paintMean":16.7,"paintP95":17.8,"paints":481,"errors":[],"bad":[]}]
+mobile gpu
+[{"gpuMean":3.44,"gpuP50":3.21,"gpuP95":5.9,"canvas":2.85,"blur":3.41,"backdrop":2.7,"draw":1.3,"paintMean":16.7,"paintP95":17.4,"paints":481,"errors":[],"bad":[]},{"gpuMean":3.42,"gpuP50":3.08,"gpuP95":5.77,"canvas":2.88,"blur":3.53,"backdrop":2.71,"draw":1.25,"paintMean":16.7,"paintP95":17.1,"paints":481,"errors":[],"bad":[]}]
+dpr3 paint (maxPixelRatio=3, maxGlassPixelRatio=3, adaptive=0)
+[{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.17,"paintMean":20.6,"paintP95":28.2,"paints":389,"errors":[],"bad":[]},{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":5.79,"paintMean":21.5,"paintP95":33.8,"paints":373,"errors":[],"bad":[]}]
+mobile paint
+[{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.26,"paintMean":16.7,"paintP95":17.3,"paints":481,"errors":[],"bad":[]},{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.2,"paintMean":16.7,"paintP95":17.3,"paints":480,"errors":[],"bad":[]}]
+## base round 2
+dpr2 gpu
+[{"gpuMean":5.08,"gpuP50":4.52,"gpuP95":8.39,"canvas":3.5,"blur":1.41,"backdrop":0.18,"draw":2.74,"paintMean":16.7,"paintP95":18.7,"paints":481,"errors":[],"bad":[]},{"gpuMean":5.06,"gpuP50":4.52,"gpuP95":8.45,"canvas":3.42,"blur":1.47,"backdrop":0.17,"draw":2.71,"paintMean":16.7,"paintP95":18.7,"paints":480,"errors":[],"bad":[]}]
+mobile gpu
+[{"gpuMean":5.88,"gpuP50":5.31,"gpuP95":9.5,"canvas":2.67,"blur":0.75,"backdrop":2.45,"draw":1.66,"paintMean":16.7,"paintP95":18.8,"paints":480,"errors":[],"bad":[]},{"gpuMean":5.8,"gpuP50":5.31,"gpuP95":9.44,"canvas":2.64,"blur":0.76,"backdrop":2.4,"draw":1.6,"paintMean":16.7,"paintP95":18.8,"paints":481,"errors":[],"bad":[]}]
+dpr3 paint (maxPixelRatio=3, maxGlassPixelRatio=3, adaptive=0)
+[{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.94,"paintMean":21.6,"paintP95":30.1,"paints":372,"errors":[],"bad":[]},{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.91,"paintMean":21.8,"paintP95":29.4,"paints":368,"errors":[],"bad":[]}]
+mobile paint
+[{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.64,"paintMean":16.7,"paintP95":19,"paints":481,"errors":[],"bad":[]},{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.68,"paintMean":16.7,"paintP95":18.8,"paints":481,"errors":[],"bad":[]}]
+## new round 2
+dpr2 gpu
+[{"gpuMean":4.83,"gpuP50":4.52,"gpuP95":7.41,"canvas":4.05,"blur":10.16,"backdrop":0.23,"draw":2.37,"paintMean":16.7,"paintP95":18,"paints":481,"errors":[],"bad":[]},{"gpuMean":4.66,"gpuP50":4.26,"gpuP95":7.54,"canvas":3.95,"blur":9.94,"backdrop":0.21,"draw":2.42,"paintMean":16.7,"paintP95":17.9,"paints":481,"errors":[],"bad":[]}]
+mobile gpu
+[{"gpuMean":3.48,"gpuP50":3.21,"gpuP95":5.96,"canvas":2.91,"blur":3.55,"backdrop":2.75,"draw":1.29,"paintMean":16.7,"paintP95":18,"paints":481,"errors":[],"bad":[]},{"gpuMean":3.5,"gpuP50":3.15,"gpuP95":5.9,"canvas":2.91,"blur":3.5,"backdrop":2.74,"draw":1.3,"paintMean":16.7,"paintP95":17.2,"paints":481,"errors":[],"bad":[]}]
+dpr3 paint (maxPixelRatio=3, maxGlassPixelRatio=3, adaptive=0)
+[{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.12,"paintMean":20.6,"paintP95":27.7,"paints":388,"errors":[],"bad":[]},{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":4.42,"paintMean":21.5,"paintP95":33.9,"paints":372,"errors":[],"bad":[]}]
+mobile paint
+[{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.27,"paintMean":16.7,"paintP95":17.2,"paints":481,"errors":[],"bad":[]},{"gpuMean":null,"gpuP50":null,"gpuP95":null,"canvas":0,"blur":0,"backdrop":0,"draw":1.23,"paintMean":16.7,"paintP95":18.9,"paints":480,"errors":[],"bad":[]}]
