@@ -230,6 +230,9 @@ function keyOf(key: ProfileKey): number {
  *
  * `rowOf()` 在每帧写 uniform 时调用：参数已有对应行时只是一次 Map 查询，
  * 出现新参数时追踪一行并写入纹理，容量不够时换一张更大的纹理（`generation` 加一）。
+ *
+ * 扩容可能发生在一帧的中途：同一帧里已经排进绘制列表的组仍绑定着旧纹理，
+ * 旧纹理要等这一帧提交之后才能释放，否则提交时会因为使用已销毁的纹理而校验失败。
  */
 export class ProfileTable {
   /** 纹理被重新创建时加一，绑定需要随之重建。 */
@@ -237,6 +240,8 @@ export class ProfileTable {
   private readonly gpu: StageGpu | null
   private readonly rows = new Map<number, number>()
   private readonly encoded: Uint16Array[] = []
+  /** 被换下、但可能仍被本帧绑定引用的纹理，下一帧开始时由 `release()` 释放。 */
+  private readonly retired: GPUTexture[] = []
   private texture: GPUTexture | null = null
   private textureView: GPUTextureView | null = null
   private capacity = 0
@@ -280,7 +285,15 @@ export class ProfileTable {
     return this.add(id, key)
   }
 
+  /** 释放之前各帧换下的纹理。在一帧开始排绘制之前调用，那时它们所在的帧都已提交。 */
+  release(): void {
+    for (let i = 0; i < this.retired.length; i++)
+      this.retired[i]!.destroy()
+    this.retired.length = 0
+  }
+
   dispose(): void {
+    this.release()
     this.texture?.destroy()
     this.texture = null
     this.textureView = null
@@ -302,7 +315,8 @@ export class ProfileTable {
     this.generation++
     if (!this.gpu)
       return
-    this.texture?.destroy()
+    if (this.texture)
+      this.retired.push(this.texture)
     this.texture = this.gpu.device.createTexture({
       size: { width: LUT_SAMPLES, height: capacity * LUT_ROWS_PER_PROFILE },
       format: 'rgba16float',

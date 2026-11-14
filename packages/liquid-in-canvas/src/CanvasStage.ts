@@ -85,7 +85,9 @@ export class CanvasStage {
         this.fail(new Error(`WebGPU device lost: ${info.message}`))
     })
     device.addEventListener('uncapturederror', (event) => {
-      this.fail((event as GPUUncapturedErrorEvent).error)
+      // GPUError 不是 Error 的子类，包一层，接入方拿到的 onFault 原因才有可读的消息。
+      const error = (event as GPUUncapturedErrorEvent).error
+      this.fail(new Error(`WebGPU ${error.constructor.name}: ${error.message}`, { cause: error }))
     })
 
     this.observer = new ResizeObserver(entries => this.observe(entries))
