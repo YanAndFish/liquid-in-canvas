@@ -55,10 +55,11 @@ Publishing must use `pnpm publish`: the library's `exports` point at `src/` for 
 - `liquid-in-canvas/vue` / `liquid-in-canvas/react` are type-only (`src/vue.d.ts`, `src/react.d.ts`, copied to `dist` by the build): they add `LiquidGlassAttributes` (`src/attributes.ts`) to the framework's native element attributes. When adding a `data-*` hook or glass option, also add it to `LiquidGlassAttributes`; `tests/types/attributes.test.ts` fails typecheck if the two drift.
 
 `mountLiquidGlass({ root, mode })` picks one of three implementations that all read the same `data-glass-*` attributes, the same global defaults (`liquid-glass/defaults.ts`, `setGlassDefaults()`), and the same theme source (`liquid-glass/theme.ts`):
+
 - `canvas` — `CanvasStage`: moves the root into a `<canvas content="drawable">`, full effects (refraction, lens, dispersion, fusion, occlusion, press deformation, liquid morph).
 - `svg` — `CssGlassStage` + SVG displacement filter (`css/refraction.ts`), Chromium only.
 - `css` — `CssGlassStage`, plain `backdrop-filter`.
-`auto` tries canvas → svg → css and falls back on init/runtime faults via `onFault`.
+  `auto` tries canvas → svg → css and falls back on init/runtime faults via `onFault`.
 
 ### DOM contract
 
@@ -99,3 +100,4 @@ Files named `*.hot.ts` contain code that runs every frame during scroll/animatio
 
 - Conventional commits (`feat:`, `fix(scope):`, `perf(rendering):`, `refactor(stage):`).
 - Large panels should sit on their own glass layer to avoid fusing with controls beneath (fusion cost scales with group members per pixel).
+- Always use Simplified Chinese in the conversation.

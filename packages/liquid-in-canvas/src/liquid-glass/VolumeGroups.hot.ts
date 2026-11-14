@@ -346,6 +346,8 @@ export class VolumeGroups {
 
   /** 按层级与邻近关系分组，并为每组分配背景级别。 */
   group(surfaces: readonly VolumeSurface[], count: number, cssWidth: number, cssHeight: number): void {
+    // 上一帧扩容换下的查找表纹理已随那一帧提交，可以释放。
+    this.profiles?.release()
     this.planner.build(surfaces, count, cssWidth, cssHeight)
   }
 

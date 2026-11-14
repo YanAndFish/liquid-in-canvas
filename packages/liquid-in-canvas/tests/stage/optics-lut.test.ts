@@ -123,4 +123,60 @@ describe('剖面光学', () => {
     }, list)
     expect(fake.pipelines.map(pipeline => String(pipeline.label))).toContain('volume-profile:0:1')
   })
+
+  it('一帧中途扩容时，本帧已绑定的旧纹理在下一帧开始前不释放', () => {
+    // 17 块互不融合的玻璃各用不同的倒角曲线：第 17 行超出初始容量 16，在本帧中途扩容。
+    const count = 17
+    const surfaces = Array.from({ length: count }, (_, i) => {
+      const element = document.createElement('div')
+      element.setAttribute('data-glass-bevel-curve', String(1 + i * 0.25))
+      const options = parseGlassOptions(element, 'light')
+      return {
+        id: i + 1,
+        left: 0,
+        top: i * 200,
+        width: 120,
+        height: 48,
+        layer: 0,
+        host: null,
+        clip: [-1e5, -1e5, 1e5, 1e5],
+        opacity: 1,
+        brightness: 1,
+        paintOrder: i,
+        press: 0,
+        materialize: 1,
+        options,
+        fusion: options.fusion,
+      }
+    })
+    const fake = createFakeGpu()
+    const blur = {
+      views: [{}, {}, {}, {}, {}],
+      generation: 0,
+    } as never
+    const groups = new VolumeGroups(fake.gpu, [blur])
+    groups.setOptics('profile')
+    const shading = {
+      scale: 1,
+      pixelWidth: 2000,
+      pixelHeight: 8000,
+      cssWidth: 1000,
+      cssHeight: 4000,
+      split: Infinity,
+    }
+    const createTexture = fake.device.createTexture as unknown as { mock: { results: { value: { height: number, destroy: { mock: { calls: unknown[] } } } }[] } }
+    const lutTextures = () => createTexture.mock.results.map(result => result.value).filter(texture => texture.height % LUT_ROWS_PER_PROFILE === 0 && texture.height >= 16 * LUT_ROWS_PER_PROFILE)
+
+    fake.gpu.frame.begin()
+    groups.plan(surfaces, count, {} as GPUTextureView, shading, new DrawList())
+    const textures = lutTextures()
+    expect(textures.map(texture => texture.height)).toEqual([16 * LUT_ROWS_PER_PROFILE, 32 * LUT_ROWS_PER_PROFILE])
+    // 本帧提交之前，前面几组仍绑定着旧纹理。
+    expect(textures[0]!.destroy.mock.calls).toHaveLength(0)
+
+    fake.gpu.frame.begin()
+    groups.plan(surfaces, count, {} as GPUTextureView, shading, new DrawList())
+    expect(textures[0]!.destroy.mock.calls).toHaveLength(1)
+    expect(textures[1]!.destroy.mock.calls).toHaveLength(0)
+  })
 })
