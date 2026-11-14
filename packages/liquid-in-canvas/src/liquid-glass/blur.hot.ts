@@ -1,9 +1,30 @@
 import type { FrameEncoder } from '../frame.hot'
 import type { PipelineTable, StageGpu } from '../gpu'
 import type { BlurLevel, BlurPass } from './blur-shader'
+import type { CoverRect } from './cover.hot'
 import { CLEAR_BLACK, HEADER_FLOATS } from '../frame'
 import { blurViews, createBlurLevels, createBlurPasses, createBlurPipeline } from './blur-shader'
-import { incrementalSigma } from './gaussian'
+import { BLUR_SIGMAS, incrementalSigma } from './gaussian'
+
+/** 卷积核覆盖的标准差倍数，与 `gaussianKernel()` 一致。 */
+const KERNEL_REACH = 3
+
+/**
+ * 只卷积一部分区域时，背景需要在区域之外画好的宽度：
+ * 每一级都要读取上一级在核半径之内的结果，各级的核半径依次累加。
+ */
+export function blurReach(maxVariance: number): number {
+  let reach = 0
+  let previous = 0
+  for (let i = 0; i < BLUR_SIGMAS.length; i++) {
+    if (previous * previous >= maxVariance)
+      break
+    const sigma = BLUR_SIGMAS[i]!
+    reach += incrementalSigma(previous, sigma) * KERNEL_REACH
+    previous = sigma
+  }
+  return reach
+}
 
 /** 逐级卷积页面背景，生成与设备像素密度无关的高斯模糊纹理。 */
 export class BackdropBlur {
@@ -31,15 +52,19 @@ export class BackdropBlur {
    * 使用 CSS 视口尺寸计算采样间距，安排本帧要生成的各级模糊。
    *
    * `source` 是只取样背景的绑定。`maxVariance` 是本帧玻璃会取样的最大方差；
-   * 上一层已经覆盖它时，后面的层不再生成。
+   * 上一层已经覆盖它时，后面的层不再生成。`region` 不为空时只保证这个范围（CSS 像素）内的结果正确，
+   * 每一级只卷积它向外扩展剩余核半径之后的范围，范围之外清成黑色。
    */
-  plan(source: GPUBindGroup, width: number, height: number, maxVariance: number): void {
+  plan(source: GPUBindGroup, width: number, height: number, maxVariance: number, region: CoverRect | null = null): void {
     this.passCount = 0
     if (this.disposed || width < 1 || height < 1)
       return
     const pipeline = this.pipeline.get(0)
     let input = source
     let previousSigma = 0
+    let remaining = region
+      ? blurReach(maxVariance)
+      : 0
     for (let i = 0; i < this.levels.length; i++) {
       const level = this.levels[i]!
       // 取样在相邻两层之间插值，上一层已覆盖所需方差时后面的层不会被读取。
@@ -55,8 +80,11 @@ export class BackdropBlur {
         this.views[i] = level.vertical.view
       }
       const sigma = incrementalSigma(previousSigma, level.sigma)
-      this.pass(pipeline, input, sigma / width, 0)
-      this.pass(pipeline, level.horizontal.group, 0, sigma / height)
+      const kernel = sigma * KERNEL_REACH
+      remaining = Math.max(0, remaining - kernel)
+      // 横向结果还要被纵向卷积读取，纵向多留一个核半径。
+      this.pass(pipeline, input, sigma / width, 0, region, remaining, remaining + kernel, width, height)
+      this.pass(pipeline, level.horizontal.group, 0, sigma / height, region, remaining, remaining, width, height)
       input = level.vertical.group
       previousSigma = level.sigma
     }
@@ -83,10 +111,36 @@ export class BackdropBlur {
     }
   }
 
-  /** 沿指定方向安排下一遍卷积，偏移量使用归一化纹理坐标。 */
-  private pass(pipeline: GPURenderPipeline, source: GPUBindGroup, x: number, y: number): void {
+  /**
+   * 沿指定方向安排下一遍卷积，偏移量使用归一化纹理坐标。
+   * 有 `region` 时只画它向外扩展 `padX`、`padY` 之后的范围。
+   */
+  private pass(
+    pipeline: GPURenderPipeline,
+    source: GPUBindGroup,
+    x: number,
+    y: number,
+    region: CoverRect | null,
+    padX: number,
+    padY: number,
+    width: number,
+    height: number,
+  ): void {
     const pass = this.passes[this.passCount++]!
-    const start = this.frame.full(HEADER_FLOATS + 4, pass.target.width, pass.target.height)
+    const target = pass.target
+    const start = region
+      ? this.frame.rect(
+          HEADER_FLOATS + 4,
+          Math.max(0, region.left - padX),
+          Math.max(0, region.top - padY),
+          Math.min(width, region.right + padX),
+          Math.min(height, region.bottom + padY),
+          width,
+          height,
+          target.width,
+          target.height,
+        )
+      : this.frame.full(HEADER_FLOATS + 4, target.width, target.height)
     const data = this.frame.data
     data[start + 8] = x
     data[start + 9] = y

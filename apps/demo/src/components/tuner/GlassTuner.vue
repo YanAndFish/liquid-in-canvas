@@ -52,6 +52,20 @@ const MATERIAL_FIELDS: readonly Field<MaterialNumber>[] = [
     step: 0.01,
   },
   {
+    key: 'saturation',
+    zh: '饱和度',
+    en: 'Saturation',
+    step: 0.05,
+    unit: '×',
+  },
+  {
+    key: 'brightness',
+    zh: '亮度',
+    en: 'Brightness',
+    step: 0.01,
+    unit: '×',
+  },
+  {
     key: 'tintAlpha',
     zh: '染色浓度',
     en: 'Tint amount',
@@ -461,6 +475,14 @@ onBeforeUnmount(() => {
                       @change="renderer.setResolution({ adaptive: ($event.target as HTMLInputElement).checked })"
                     >
                     <span>{{ tr('帧率不足时自动降低玻璃着色倍率', 'Lower the glass shading ratio when frames drop') }}</span>
+                  </label>
+                  <label class="tuner-check">
+                    <input
+                      type="checkbox" data-field="optics"
+                      :checked="renderer.optics.value === 'profile'"
+                      @change="renderer.setOptics(($event.target as HTMLInputElement).checked ? 'profile' : 'raymarch')"
+                    >
+                    <span>{{ tr('剖面光学：按截面查表折射，开销更低；融合连接处是近似', 'Profile optics: refraction looked up along the cross-section, cheaper; fused joints are approximate') }}</span>
                   </label>
                   <p v-if="ratios" class="tuner-hint" data-role="ratios">
                     {{ tr('当前画布', 'Canvas now') }} {{ ratios.canvas.toFixed(2) }}× · {{ tr('玻璃着色', 'glass shading') }} {{ ratios.glass.toFixed(2) }}×

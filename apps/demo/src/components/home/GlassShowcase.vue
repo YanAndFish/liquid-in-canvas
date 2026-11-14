@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { LiquidGlassAttributes } from 'liquid-in-canvas'
 import { reducedMotionQuery } from 'liquid-in-canvas/motion'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -27,7 +28,7 @@ const panelStyle = computed(() => settings.value
 const eased = computed(() => renderer?.mode.value !== 'canvas')
 const optionsVisible = settings
 /** 展示区的玻璃只指定材质和压在影像上的深色染色，其余光学参数取全局默认值，可在调参面板中调整。 */
-const surface = computed(() => ({
+const surface = computed((): LiquidGlassAttributes => ({
   'data-glass-variant': variant.value,
   'data-glass-tint': '#131b20',
   'data-glass-tint-alpha': variant.value === 'clear'

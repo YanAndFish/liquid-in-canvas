@@ -1,4 +1,4 @@
-import type { GlassDefaultsPatch } from 'liquid-in-canvas'
+import type { GlassDefaultsPatch, GlassOptics } from 'liquid-in-canvas'
 import { setGlassDefaults } from 'liquid-in-canvas'
 
 /**
@@ -19,4 +19,11 @@ export function applyGlassQuery(query: URLSearchParams): void {
     }
     setGlassDefaults(patch)
   }
+}
+
+/** `?optics=profile` 切换到剖面光学，用于和三维求交比对画面与开销。 */
+export function applyStageQuery(stage: { setOptics: (optics: GlassOptics) => void }, query: URLSearchParams): void {
+  const optics = query.get('optics')
+  if (optics === 'profile' || optics === 'raymarch')
+    stage.setOptics(optics)
 }

@@ -1,4 +1,4 @@
-import type { GlassRenderMode, StageMetrics, StageResolution } from 'liquid-in-canvas'
+import type { GlassOptics, GlassRenderMode, StageMetrics, StageResolution } from 'liquid-in-canvas'
 import type { InjectionKey, Ref } from 'vue'
 import { inject } from 'vue'
 
@@ -16,10 +16,13 @@ export interface RendererController {
   error: Readonly<Ref<string>>
   /** 画布渲染的分辨率限制。 */
   resolution: Readonly<Ref<StageResolution>>
+  /** 画布渲染的光路计算方式。 */
+  optics: Readonly<Ref<GlassOptics>>
   /** 画布当前的尺寸与实际倍率；回退实现下为 null。 */
   metrics: () => StageMetrics | null
   setMode: (mode: GlassRenderMode) => Promise<void>
   setResolution: (resolution: Partial<StageResolution>) => void
+  setOptics: (optics: GlassOptics) => void
 }
 
 export const RENDERER_KEY: InjectionKey<RendererController> = Symbol('renderer')

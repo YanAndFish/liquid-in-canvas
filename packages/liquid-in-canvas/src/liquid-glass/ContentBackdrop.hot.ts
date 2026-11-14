@@ -35,7 +35,7 @@ export class ContentBackdrop {
 
   /**
    * 安排本帧的合成，返回玻璃应当取样的背景；没有重叠时直接返回页面快照。
-   * `sources` 的前 `count` 项按从下到上的顺序排列，每一项至少被一块上层玻璃覆盖。
+   * `sources` 的前 `count` 项按从下到上的顺序排列，每一项至少有一块上层玻璃要求把被覆盖的部分写进背景（`backdropOccluderCount > 0`）。
    */
   plan(page: SampledTexture, sources: readonly ContentSource[], count: number, cssWidth: number, cssHeight: number): BackdropSource {
     this.list.reset()
@@ -50,8 +50,8 @@ export class ContentBackdrop {
       const source = sources[i]!
       if (!source.content)
         continue
-      const uniform = writeContent(frame, source, cssWidth, cssHeight, width, height)
-      this.list.push(i, this.occluded.get(source.occluderCount), uniform, source.content.group)
+      const uniform = writeContent(frame, source, source.backdropOccluders, source.backdropOccluderCount, cssWidth, cssHeight, width, height)
+      this.list.push(i, this.occluded.get(source.backdropOccluderCount), uniform, source.content.group)
     }
     return this.target
   }

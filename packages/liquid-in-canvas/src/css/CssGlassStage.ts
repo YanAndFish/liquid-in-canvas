@@ -44,6 +44,8 @@ interface CssSurface {
 const STYLE_ID = 'liquid-in-canvas-css'
 const PROPERTIES = [
   '--lg-blur',
+  '--lg-saturation',
+  '--lg-brightness',
   '--lg-tint',
   '--lg-radius',
   '--lg-shadow',
@@ -54,14 +56,14 @@ const PROPERTIES = [
  * 具体数值通过自定义属性逐个元素写入，样式表本身不随参数变化。
  */
 const STYLE = `[${GLASS_ATTR}][${GLASS_CSS_ATTR}] {
-  -webkit-backdrop-filter: blur(var(--lg-blur, 0px));
-  backdrop-filter: blur(var(--lg-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--lg-blur, 0px)) saturate(var(--lg-saturation, 1)) brightness(var(--lg-brightness, 1));
+  backdrop-filter: blur(var(--lg-blur, 0px)) saturate(var(--lg-saturation, 1)) brightness(var(--lg-brightness, 1));
   background-color: var(--lg-tint, transparent);
   border-radius: var(--lg-radius, 0px);
   box-shadow: var(--lg-shadow, none);
 }
 [${GLASS_ATTR}][${GLASS_CSS_ATTR}="svg"] {
-  backdrop-filter: blur(var(--lg-blur, 0px)) var(${FILTER_PROPERTY});
+  backdrop-filter: blur(var(--lg-blur, 0px)) saturate(var(--lg-saturation, 1)) brightness(var(--lg-brightness, 1)) var(${FILTER_PROPERTY});
 }
 @media (prefers-reduced-transparency: reduce) {
   [${GLASS_ATTR}][${GLASS_CSS_ATTR}] {
@@ -93,6 +95,8 @@ export function cssGlassProperties(options: GlassOptions, highlight = true): Rec
     shadows.push(`0 4px ${Math.round(options.shadowSize * 0.75)}px rgba(0, 0, 0, ${Math.round(options.shadow * 600) / 1000})`)
   return {
     '--lg-blur': `${options.blur}px`,
+    '--lg-saturation': String(options.saturation),
+    '--lg-brightness': String(options.brightness),
     '--lg-tint': rgba(options.tint, options.tintAlpha),
     '--lg-radius': options.radius.map(value => `${value}px`).join(' '),
     '--lg-shadow': shadows.join(', ') || 'none',

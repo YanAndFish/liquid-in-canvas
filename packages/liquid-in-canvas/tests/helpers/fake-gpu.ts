@@ -35,6 +35,7 @@ export function createFakeDevice() {
     createCommandEncoder: vi.fn(() => ({})),
     queue: {
       writeBuffer: vi.fn(),
+      writeTexture: vi.fn(),
       submit: vi.fn(),
       drawElementImageToTexture: vi.fn(({ source }: { source: Element }) => {
         uploads.push(source)

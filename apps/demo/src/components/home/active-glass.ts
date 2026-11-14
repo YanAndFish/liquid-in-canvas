@@ -1,3 +1,5 @@
+import type { LiquidGlassAttributes } from 'liquid-in-canvas'
+
 /**
  * 标签组里激活项的玻璃属性。
  *
@@ -5,7 +7,7 @@
  * 同一组按钮共用 `data-glass-morph` 的名字，切换时玻璃属性从旧按钮移到新按钮，
  * 画布渲染下体积从旧位置以液体流动的方式到达新位置；回退实现下是一块直接切换的高亮。
  */
-export function activeGlass(group: string, active: boolean): Record<string, string> {
+export function activeGlass(group: string, active: boolean): LiquidGlassAttributes {
   if (!active)
     return {}
   return {

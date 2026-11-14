@@ -1,6 +1,6 @@
 import { CanvasStage } from 'liquid-in-canvas/canvas'
 import { getStageScroller } from '../../src/shared/scroll'
-import { applyGlassQuery } from '../query'
+import { applyGlassQuery, applyStageQuery } from '../query'
 
 /** 一遍绘制的 GPU 时间，由舞台的计时器读回。 */
 interface PassTiming {
@@ -29,6 +29,8 @@ interface ObservedStage {
   } | null
   /** 修改分辨率限制。 */
   setResolution: CanvasStage['setResolution']
+  /** 切换光路计算方式。 */
+  setOptics: CanvasStage['setOptics']
 }
 
 /** 将 GPU 时间对应到绘制目标。 */
@@ -80,6 +82,7 @@ prototype.draw = function (event) {
     configured.add(this)
     if (Object.keys(resolutionOverride).length)
       this.setResolution(resolutionOverride)
+    applyStageQuery(this, query)
   }
   const gpu = this.gpu
   if (!adapterInfo && gpu) {

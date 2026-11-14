@@ -94,18 +94,20 @@ await mountLiquidGlass({
 | --- | --- | --- |
 | `data-glass-variant` | `regular` 或 `clear`，决定下面各项的默认值 | `regular` |
 | `data-glass-radius` | 圆角，支持 CSS 顺序的一至四个值 | 28 |
-| `data-glass-blur` | 背景高斯模糊的标准差，0–80 | 18 / 8 |
-| `data-glass-refraction` | 三维实体的半厚度参考值，0–80，实际厚度受控件短边限制 | 24 / 20 |
-| `data-glass-bevel-width` | 边缘倒角的水平宽度，按半厚度的倍数，0.1–4，不超过短边的一半 | 0.68 |
-| `data-glass-bevel-height` | 边缘倒角的垂直高度，按半厚度的倍数，0.05–1；1 表示侧面没有竖直部分 | 0.68 |
+| `data-glass-blur` | 背景高斯模糊的标准差，0–80 | 18 / 2 |
+| `data-glass-refraction` | 三维实体的半厚度上限，0–80。实际厚度为短边的 0.3 倍，不超过这个值 | 80 |
+| `data-glass-bevel-width` | 边缘倒角的水平宽度，按半厚度的倍数，0.1–4，不超过短边的一半 | 0.45 |
+| `data-glass-bevel-height` | 边缘倒角的垂直高度，按半厚度的倍数，0.05–1；1 表示侧面没有竖直部分 | 1 |
 | `data-glass-bevel-curve` | 倒角曲线的超椭圆指数，1–8：1 是直线斜面，2 是椭圆弧，越大越接近直角 | 3 |
 | `data-glass-bottom-bevel` | 底面倒角相对顶面倒角的比例，0–1；0 表示底面是带直角边的平面 | 1 |
 | `data-glass-dispersion` | RGB 采样分离强度，0–1 | 0.3 / 0.4 |
-| `data-glass-lens` | 凸透镜强度，0–0.6。玻璃中间的背景放大约 1 / (1 − lens) 倍，长条形只沿短边放大 | 0.14 / 0.22 |
+| `data-glass-lens` | 凸透镜强度，0–0.6。玻璃中间的背景放大约 1 / (1 − lens) 倍，长条形只沿短边放大 | 0.04 / 0.12 |
+| `data-glass-saturation` | 透射背景的饱和度倍数，0–3 | 1.3 / 1.15 |
+| `data-glass-brightness` | 透射背景的亮度倍数，0.5–1.5 | 浅色 1.06、深色 1 / 1 |
 | `data-glass-tint` | 十六进制染色值 | 随主题 |
 | `data-glass-tint-alpha` | 染色比例，0–1 | 随主题 |
 | `data-glass-specular` | 轮廓高光强度，0–2 | 0.7 / 0.9 |
-| `data-glass-shadow` | 外侧阴影强度，0–1 | 0.32 / 0.26 |
+| `data-glass-shadow` | 外侧阴影强度，0–1。画布渲染按背景亮度调整：暗背景与照片上更淡 | 0.16 / 0.12 |
 | `data-glass-shadow-size` | 阴影范围，0–100 | 32 / 28 |
 | `data-glass-layer` | 玻璃层级，值越大越靠前，只有同层玻璃会融合 | 0 |
 | `data-glass-fusion` | 融合距离，0 表示关闭 | 32 |
@@ -115,6 +117,7 @@ await mountLiquidGlass({
 | `data-glass-morph-stretch` | 液体迁移的拉伸，0–2。0 表示整体平移，越大前缘与后缘拉得越开、拖尾越长 | 1 |
 | `data-glass-morph-bounce` | 液体迁移的回弹，0–1。0 表示前缘不越过目标 | 0.33 |
 | `data-glass-morph-wobble` | 液体迁移的晃动，0–1。到达时被压扁，随后在压扁与拉长之间振荡；0 表示不晃动 | 0.35 |
+| `data-glass-materialize` | 生效与移除的过渡。出现（注册或由隐藏变为显示）时光线先弯折、再成为磨砂并略微越过；从 DOM 移除或隐藏时在原处退去。`none` 关闭 | 开启 |
 
 长度单位都是 CSS 像素，缺省一栏写作 `regular / clear`。`data-glass-lens` 与后五项只对画布渲染有效；折射、透镜和色散在 `css` 回退下不起作用。
 
@@ -124,6 +127,32 @@ await mountLiquidGlass({
 - `data-glass-modal` 与 `data-glass-scrim`：模态层根节点和其中的遮罩。打开时模态层外的玻璃按遮罩透明度压暗。
 - `data-glass-fade`：页面切换容器，其 `opacity` 作用到内部玻璃。
 - `data-stage-overlay`：单独上传的透明前景层，用于需要插在玻璃之间的内容（例如跨越多块玻璃的过渡动画）。属性值是一个玻璃层级：`data-stage-overlay="5"` 盖住低于第 5 层的玻璃，被第 5 层及更高层的玻璃盖住；不写值时位于所有玻璃之上。需要在开始绘制前存在，一个页面一个。
+
+### TypeScript 类型
+
+`LiquidGlassAttributes` 列出上面所有属性和它们接受的写法：数值属性接受数字或数字字符串，`data-glass-variant` 只接受 `regular` / `clear`，`data-glass-tint` 要以 `#` 开头，只看是否存在的属性（`data-liquid-glass` 等）接受空字符串或模板里不写值。只有类型，没有运行时代码。
+
+在 Vue 模板或 React JSX 里检查原生元素上的这些属性，把对应入口加进 tsconfig：
+
+```jsonc
+{
+  "compilerOptions": {
+    "types": ["liquid-in-canvas/vue"] // React 用 "liquid-in-canvas/react"
+  }
+}
+```
+
+也可以在任意 `.d.ts` 里写 `/// <reference types="liquid-in-canvas/vue" />`。之后 `<div data-glass-variant="frosted">` 会报错，补全会列出全部属性。这两个入口分别扩展 `vue` 的 `HTMLAttributes` 与 `@types/react` 的 `HTMLAttributes`，它们是可选的 peer 依赖。
+
+把属性收在对象里再 `v-bind` / 展开时，给对象标上这个类型：
+
+```ts
+import type { LiquidGlassAttributes } from 'liquid-in-canvas'
+
+const pill: LiquidGlassAttributes = { 'data-liquid-glass': '', 'data-glass-variant': 'clear', 'data-glass-blur': 1 }
+```
+
+不要绑定 `false` 来去掉属性：框架会把它渲染成字符串 `"false"`，属性仍然存在，玻璃仍然生效。用 `undefined` 或 `null`。
 
 ## 嵌套玻璃与液体迁移
 
@@ -193,6 +222,8 @@ glass.stage?.getMetrics() // { dpr: 画布实际倍率, glassDpr: 玻璃实际�
 
 - `adaptive` 只调整玻璃着色倍率（每级 ×0.75，最低到一半），不改变画布尺寸，文字不会因此变糊。
 - 整页快照、页面绘制和模糊的开销与画布像素数成正比，不受玻璃着色倍率影响。画布很大时（例如 5K 屏幕上的全屏窗口）要靠 `maxPixelRatio` 或 `maxPixels` 降低画布分辨率，这是用文字清晰度换帧率，由你决定。画布倍率不会低于 1。
+- `optics` 选择光路计算方式（`mountLiquidGlass`、`CanvasStage` 的选项，或 `stage.setOptics()`）：`profile`（缺省）按到轮廓的距离查预先沿截面追踪的光路；`raymarch` 在三维距离场里逐步求交。单块玻璃上两者结果一致，`profile` 在融合连接处与小圆角拐角是近似，GPU 开销约为 `raymarch` 的三分之一。
+- 上层玻璃盖在下层玻璃上时，上层取样一张画好下层玻璃的背景（最多三级），只在需要的范围内额外合成与模糊；互不交叠时没有额外开销。
 - 同层玻璃靠近或重叠时会并入同一个融合组，组内每个像素都要对所有成员求距离。大面积的面板请用 `data-glass-layer` 放到单独的层，避免和它下方的控件融合。
 
 ## 其他导出
@@ -200,8 +231,9 @@ glass.stage?.getMetrics() // { dpr: 画布实际倍率, glassDpr: 玻璃实际�
 - `liquid-in-canvas/canvas`：`CanvasStage`，画布渲染器本身。需要自己管理画布时使用；`mountLiquidGlass` 在需要时动态加载它。
 - `CssGlassStage`：回退实现本身，`refraction` 选项控制是否使用 SVG 滤镜。
 - `glassProfile`、`glassProfileOutline`、`glassEdgeTilt`：由厚度与倒角参数算出玻璃的实际截面、截面轮廓线和边缘倾斜程度，渲染器和 SVG 滤镜使用同一套计算，可以用来绘制截面示意图。
+- `liquid-in-canvas/vue`、`liquid-in-canvas/react`：只有类型，见上文 TypeScript 类型。
 - `liquid-in-canvas/motion`：`advanceSpring`、`reducedMotionQuery`、`prefersReducedMotion`。玻璃按压使用的阻尼弹簧，页面自己的动画用同一套参数时手感一致。这个入口不引入画布渲染器。
 
 ## 范围
 
-这是对 Apple Liquid Glass 视觉行为的 Web 近似，不是原生材质。同层融合用三维平滑距离场近似表面张力；背景语义适配、设备姿态光照和不同玻璃层间的递归折射没有实现。设计说明见仓库的 `docs/`。
+这是对 Apple Liquid Glass 视觉行为的 Web 近似，不是原生材质。同层融合用平滑距离场近似表面张力；不同层的玻璃按背景分级相互折射，超过三级的玻璃共用最高一级的背景。背景语义适配与设备姿态光照没有实现。设计说明见仓库的 `docs/`。

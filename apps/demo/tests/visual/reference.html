@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>官方画面对照</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; font-family: system-ui, sans-serif; }
+    canvas { display: block; }
+    canvas, #app { width: 100vw; height: 100vh; }
+    #app { position: relative; overflow: clip; background: #808080; color: #1d1d1f; }
+    .scene { position: absolute; inset: 0; overflow: clip; }
+    .scene[hidden] { display: none; }
+    .fill { position: absolute; }
+    .glass { position: absolute; display: flex; align-items: center; justify-content: center; }
+    .glass svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* 两色胶囊：上浅下深，分界线由脚本定位。 */
+    #capsule .light { inset: 0; background: #eef1f4; }
+    #capsule .dark { left: 0; right: 0; bottom: 0; background: #262c36; }
+
+    /* 工具条：细网格。 */
+    #toolbar {
+      background-color: #f4f4f2;
+      background-image:
+        linear-gradient(#c9ccd1 1px, transparent 1px),
+        linear-gradient(90deg, #c9ccd1 1px, transparent 1px);
+      background-size: 12px 12px;
+    }
+    #toolbar .glass { gap: 44px; color: #1d1d1f; }
+
+    /* 圆形通透玻璃：斜向明暗分界线，暗色半平面由脚本旋转定位。 */
+    #disc .light { inset: 0; background: #f2f2f0; }
+    #disc .dark { width: 6000px; height: 3000px; background: #1b1d22; transform-origin: 3000px 0; transform: rotate(-45deg); }
+
+    /* 照片上的三颗圆形按钮。 */
+    #buttons .photo { inset: 0; background: url(/media/liquid-glass-flower-poster.jpg) center / cover; }
+    #buttons .glass { color: #ffffff; }
+    #buttons .glass svg { width: 30px; height: 30px; fill: currentColor; stroke: none; }
+
+    #panel {
+      position: fixed; right: 16px; top: 16px; z-index: 1; width: 280px; max-height: calc(100vh - 32px); overflow: auto;
+      padding: 14px 16px; border-radius: 14px; background: rgb(255 255 255 / 0.92); color: #1d1d1f;
+      box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); font-size: 13px; display: grid; gap: 10px;
+    }
+    #panel[hidden] { display: none; }
+    #panel h1 { margin: 0; font-size: 15px; }
+    #panel label { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; }
+    #panel label input[type=range] { grid-column: 1 / -1; width: 100%; }
+    #panel output { font-variant-numeric: tabular-nums; color: #6e6e73; }
+    #panel output.set { color: #0071e3; font-weight: 600; }
+    #panel .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+    #panel code { display: block; padding: 6px 8px; border-radius: 8px; background: #f2f2f4; font-size: 12px; word-break: break-all; }
+  </style>
+</head>
+<body>
+<canvas id="stage" content="drawable"><div id="app" drawable>
+  <section id="capsule" class="scene" hidden>
+    <div class="fill light"></div>
+    <div class="fill dark"></div>
+    <div class="glass" data-liquid-glass data-reference-glass></div>
+  </section>
+
+  <section id="toolbar" class="scene" hidden>
+    <div class="glass" data-liquid-glass data-reference-glass>
+      <svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" /></svg>
+      <svg viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6" /></svg>
+      <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="19" cy="12" r="1.2" /></svg>
+    </div>
+  </section>
+
+  <section id="disc" class="scene" hidden>
+    <div class="fill light"></div>
+    <div class="fill dark"></div>
+    <div class="glass" data-liquid-glass data-reference-glass></div>
+  </section>
+
+  <section id="buttons" class="scene" hidden>
+    <div class="fill photo"></div>
+    <div class="glass" data-liquid-glass data-reference-glass>
+      <svg viewBox="0 0 24 24"><path d="M11 6v12l-8-6Zm10 0v12l-8-6Z" /></svg>
+    </div>
+    <div class="glass" data-liquid-glass data-reference-glass>
+      <svg viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5Z" /></svg>
+    </div>
+    <div class="glass" data-liquid-glass data-reference-glass>
+      <svg viewBox="0 0 24 24"><path d="M3 6v12l8-6Zm10 0v12l8-6Z" /></svg>
+    </div>
+  </section>
+</div></canvas>
+
+<form id="panel" autocomplete="off">
+  <h1>官方画面对照</h1>
+  <label>场景
+    <select id="scene">
+      <option value="capsule">两色分界上的胶囊</option>
+      <option value="toolbar">网格上的工具条</option>
+      <option value="disc">斜向分界上的圆形玻璃</option>
+      <option value="buttons">照片上的三颗按钮</option>
+    </select>
+  </label>
+  <label>材质
+    <select id="variant">
+      <option value="clear">clear</option>
+      <option value="regular">regular</option>
+    </select>
+  </label>
+  <div id="sliders"></div>
+  <div class="row">
+    <button id="reset" type="button">恢复默认参数</button>
+    <span>H 键隐藏面板</span>
+  </div>
+  <div>玻璃轮廓（CSS 像素，x,y,宽,高 圆角）<code id="outline"></code></div>
+  <div>分界线（CSS 像素）<code id="boundary"></code></div>
+</form>
+
+<script type="module" src="./reference.ts"></script>
+</body>
+</html>

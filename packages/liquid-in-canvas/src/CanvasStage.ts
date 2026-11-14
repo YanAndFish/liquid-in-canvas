@@ -1,6 +1,6 @@
 import type { ElementTexture } from './gpu'
 import type { GlassTheme } from './liquid-glass/defaults'
-import type { StageMetrics, StageResolution } from './types'
+import type { GlassOptics, StageMetrics, StageResolution } from './types'
 import { AdaptiveScale } from './adaptive.hot'
 import { CanvasOverlay } from './CanvasOverlay.hot'
 import { attr, STAGE_OVERLAY_ATTR } from './contract'
@@ -18,6 +18,8 @@ export interface CanvasStageOptions {
   resolution?: Partial<StageResolution>
   /** 固定玻璃主题；缺省时读取 `<html data-theme>`，再退回系统配色。 */
   theme?: GlassTheme
+  /** 光路计算方式，缺省为 `profile`，见 `GlassOptics`。 */
+  optics?: GlassOptics
 }
 
 function sameSize(a: StageMetrics, b: StageMetrics): boolean {
@@ -44,6 +46,7 @@ export class CanvasStage {
   private resolution: StageResolution
   private readonly adaptive = new AdaptiveScale()
   private theme: GlassTheme | null
+  private optics: GlassOptics
   private cssSize = { width: 0, height: 0 }
   private playingVideos = new Set<HTMLVideoElement>()
   private videoFrame: number | null = null
@@ -59,6 +62,7 @@ export class CanvasStage {
       ...options.resolution,
     }
     this.theme = options.theme ?? null
+    this.optics = options.optics ?? 'profile'
   }
 
   async init(): Promise<StageMetrics> {
@@ -118,6 +122,18 @@ export class CanvasStage {
     this.invalidate()
   }
 
+  /** 当前的光路计算方式。 */
+  getOptics(): GlassOptics {
+    return this.optics
+  }
+
+  /** 切换光路计算方式，下一帧生效。 */
+  setOptics(optics: GlassOptics): void {
+    this.optics = optics
+    this.glass?.setOptics(optics)
+    this.invalidate()
+  }
+
   /** 固定玻璃主题，传入 null 恢复跟随页面。 */
   setTheme(theme: GlassTheme | null): void {
     this.theme = theme
@@ -153,6 +169,7 @@ export class CanvasStage {
         gpu,
         getBackdrop: () => this.page,
         theme: this.theme,
+        optics: this.optics,
         onInvalidate: () => this.invalidate(),
         onFault: cause => this.fail(cause),
       })

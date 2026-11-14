@@ -9,7 +9,7 @@ tools/eslint-plugin-hot     热路径规则：*.hot.ts 里每帧执行的函数�
 docs                        设计记录、视觉依据与性能记录
 ```
 
-库不认识任何 Vue 组件，没有运行时依赖：画布渲染器直接使用 WebGPU。演示商店只从 `liquid-in-canvas` 和 `liquid-in-canvas/motion` 两个入口引入，不引用库的内部文件；性能测量页和画面检查页另外从 `liquid-in-canvas/canvas` 直接使用 `CanvasStage`。
+库不认识任何 Vue 组件，没有运行时依赖：画布渲染器直接使用 WebGPU。演示商店只从 `liquid-in-canvas` 和 `liquid-in-canvas/motion` 两个入口引入，tsconfig 用 `liquid-in-canvas/vue` 检查模板里的 `data-*` 属性，不引用库的内部文件；性能测量页和画面检查页另外从 `liquid-in-canvas/canvas` 直接使用 `CanvasStage`。
 
 主入口不静态引入画布渲染器。`mountLiquidGlass()` 确认浏览器支持画布渲染后才动态加载 `CanvasStage`，只能使用回退实现的浏览器不会下载它（演示的生产构建里这一块压缩后 66 kB、gzip 23 kB；基于 three.js 时是 854 kB、gzip 232 kB）。
 
@@ -26,6 +26,8 @@ src/adaptive.hot.ts     玻璃着色倍率的自适应缩放
 src/css/                回退实现：backdrop-filter，加上可选的 SVG 位移滤镜
 src/liquid-glass/       三维距离场、同层融合、内容遮挡、多级模糊、液体迁移、默认参数与属性解析
 src/contract.ts         页面与舞台之间的 DOM 约定
+src/attributes.ts       这些属性与 data-glass-* 的类型（只有类型）
+src/vue.d.ts, react.d.ts  liquid-in-canvas/vue、/react 入口：把属性类型加进框架的原生元素属性
 src/render-order.ts     页面、各层玻璃与前景的绘制顺序
 src/gpu.ts              WebGPU 设备与 sRGB 画布、管线表、元素纹理与离屏目标、逐遍计时
 src/frame.hot.ts        每帧的 uniform、绘制列表、编码与元素上传
@@ -70,9 +72,10 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 2. **玻璃表面**（`LiquidGlassLayer.sync`）：测量每块 `[data-liquid-glass]`，按需上传其 HTML 内容。
 3. **内容遮挡**（`content-order.ts`、`ContentBackdrop`）：按层级、层叠上下文与 DOM 顺序排序；被上层玻璃覆盖的下层文字写进背景的副本，参与模糊。
 4. **多级模糊**（`blur.ts`）：对合成背景逐级做高斯卷积，σ 为 2/6/16/40/80 CSS 像素；本帧用不到的层不生成。
-5. **三维体积**（`VolumeGroups`、`volume-shader.ts`）：同层邻近玻璃合成一个距离场，按 RGB 三条光路折射取样，再叠加凸透镜偏移。
-6. **前景**（`CanvasOverlay`）：`[data-stage-overlay]` 单独上传，画在低层玻璃之上。
-7. **画布遍**：页面快照、前景、体积与玻璃内容按绘制顺序画进画布。
+5. **背景分级**（`stack.hot.ts`、`StackBackdrops`）：盖在其他玻璃上的组取样更高一级的背景，其中已经画好它看到的下层玻璃与内容，并在需要的范围内单独模糊；互不交叠时不生成。
+6. **三维体积**（`VolumeGroups`、`volume-shader.ts` 或 `volume-profile-shader.ts`）：同层邻近玻璃合成一个距离场，按 RGB 三条光路折射取样，再叠加凸透镜偏移。
+7. **前景**（`CanvasOverlay`）：`[data-stage-overlay]` 单独上传，画在低层玻璃之上。
+8. **画布遍**：页面快照、前景、体积与玻璃内容按绘制顺序画进画布。
 
 ### GPU 结构
 
@@ -82,7 +85,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 - **uniform**：一帧内所有绘制项的 uniform 先写进同一块内存，提交前一次 `writeBuffer`，绘制时用动态偏移切换。没有逐对象的缓冲和绑定组。
 - **绑定**：第 0 组是 uniform 与取样器，全帧共用；第 1 组是这次绘制取样的纹理，按纹理视图缓存。
 - **管线**：按键缓存。体积着色器按成员数量生成，内容着色器按遮挡数量生成；滚动中成员或遮挡变化只会取用已有的管线。启动时在后台编译常见数量（体积 1–4 名成员、遮挡 0–2 块），第一次出现更大的数量时同步编译。
-- **命令**：一帧只有一个命令缓冲，依次是背景合成、模糊、低分辨率体积和画布遍。
+- **命令**：一帧只有一个命令缓冲，依次是背景合成、模糊、各级上层背景及其模糊、低分辨率体积和画布遍。
 - **颜色**：HTML 快照是 `rgba8unorm-srgb`，取样时由硬件解码；离屏目标是线性 `rgba16float`；画布配置为 8 位格式，以 sRGB 视图写入，混合在线性空间进行，写入时编码，不需要额外的颜色转换遍。
 - **出错**：设备丢失或出现校验错误时舞台停止绘制并调用 `onFault`，`mountLiquidGlass` 据此改用回退实现。
 - **计时**：设备支持 `timestamp-query` 时，测量页可以打开逐遍计时（`StageGpu.timing`），平时不写时间戳。
@@ -113,6 +116,15 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 - **DOM 读取每帧每个元素只读一次**：定位基准、裁剪区域、淡入淡出容器的矩形与透明度按帧编号缓存（`ElementBox`）；可见性用返回布尔值的 `checkVisibility()`；快照尺寸只在元素或画布尺寸变化后重新读取。DOM 接口返回的对象由 Blink 的堆管理，只能等老生代 GC 回收，规则检查不到，这是它们单独处理的原因。
 
 数据见[性能记录](performance/2026-11-13-webgpu/README.md#追加热路径不再分配)。
+
+### 光路：三维求交与剖面查表
+
+`CanvasStage` 的 `optics` 选项选择光路计算方式，缺省 `profile`。
+
+- `raymarch`（`volume-shader.ts`）：在三维距离场里逐步求交（入射最多 64 步、每条出射光路最多 64 步，法线用有限差分），融合连接处与拐角都按三维实体折射。
+- `profile`（`volume-profile-shader.ts`、`optics-lut.ts`）：实体是“平面距离 → 截面高度”的旋转体，正交入射的光线留在 (平面距离梯度, z) 平面内。冷路径对每种截面参数（倒角宽高比、曲线指数、底面倒角、色散）沿截面追踪 128 个位置，写成 `rgba16float` 查找表的一行：三条光路的横向位移与出射斜率、有效度、法线。片元只算二维平滑合并距离与解析梯度，再查表；没有逐步求交。单块玻璃上与 `raymarch` 一致（逐条照搬求交、法线与出射），融合连接处与小圆角拐角是近似。
+
+两条路径读取同样的 uniform 与纹理，查找表多绑定在最后。桌面 @2 的滚动测量里每帧 GPU 时间约为 `raymarch` 的三分之一，见 [性能记录](performance/2026-11-14-stack-optics/README.md)。
 
 ### 凸透镜
 
@@ -173,11 +185,11 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 
 ## DOM 约定
 
-舞台只通过以下钩子认识页面。修改时同步 `packages/liquid-in-canvas/src/contract.ts`。
+舞台只通过以下钩子认识页面。修改时同步 `packages/liquid-in-canvas/src/contract.ts` 与 `src/attributes.ts` 里的类型。
 
 | 钩子 | 舞台行为 |
 | --- | --- |
-| `[data-liquid-glass]` + `data-glass-*` | 注册为玻璃表面，参数见包的 README；嵌套在另一块玻璃里时只绘制体积 |
+| `[data-liquid-glass]` + `data-glass-*` | 注册为玻璃表面，参数见包的 README；嵌套在另一块玻璃里时只绘制体积。`data-glass-materialize="none"` 关闭生效与移除的过渡 |
 | `[data-glass-clip]` | 限制后代玻璃与阴影的绘制范围 |
 | `[data-glass-modal]` | 模态层根节点，内部玻璃不被压暗 |
 | `[data-glass-scrim]` | 背景色 alpha × 模态层 opacity 决定压暗强度 |
@@ -220,7 +232,7 @@ src/shared                  偏好存储与滚动容器
 - `packages/liquid-in-canvas/tests`：Vitest + jsdom，覆盖属性解析、默认参数、分辨率、融合分组（含嵌套玻璃）、内容顺序、不重叠覆盖、液体迁移的弹簧与交接、回退实现（含折射滤镜的贴图取值）和不支持时的挂载行为。管线缓存、uniform 布局、绘制列表与玻璃图层的每帧逻辑用记录调用的假设备（`tests/helpers/fake-gpu.ts`）驱动真实代码检查。
 - `tools/eslint-plugin-hot/tests`：热路径规则的正反用例。
 - `apps/demo/tests`：领域逻辑与视图。
-- `apps/demo/tests/visual/*.html`：在支持的浏览器中人工检查玻璃边缘与内容遮挡。
+- `apps/demo/tests/visual/*.html`：在支持的浏览器中人工检查玻璃边缘与内容遮挡；`glass-stack.html` 检查多层叠放、生效与移除；`reference.html` 复刻参考画面的几何条件，配合 `docs/performance/2026-11-14-visual/tools/profile_fit.py` 测量折射剖面。`?optics=profile` 切换光路。
 - `apps/demo/tests/perf/`：独立构建入口，通过替换 `CanvasStage.prototype.draw` 记录帧时间，`?gpu` 时打开逐遍计时，结果保存在 `docs/performance/`。`?lens=0` 关闭透镜，用于和没有透镜的旧版本逐像素比对（`docs/performance/2026-11-13-webgpu/tools/`）。
 
 jsdom 不绘制 WebGPU，测试通过不能证明着色器的画面。画面需要在支持这些 API 的浏览器中检查。

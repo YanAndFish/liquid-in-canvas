@@ -1,4 +1,4 @@
-import type { StageGpu } from '../gpu'
+import type { PipelineTable, StageGpu } from '../gpu'
 /**
  * 热路径对象池的冷路径：创建池里的对象、扩容类型化数组。
  *
@@ -7,10 +7,14 @@ import type { StageGpu } from '../gpu'
 import type { StackRecord } from './content-order.hot'
 import type { CoverRect } from './cover.hot'
 import type { GlassGroup } from './fusion.hot'
+import type { StackLevel } from './stack.hot'
 import type { VolumeBand, VolumeGroupPlan } from './VolumeGroups.hot'
 import { DrawList } from '../frame.hot'
 import { RenderTarget } from '../gpu'
 import { CoverBuilder } from './cover.hot'
+import { ProfileTable } from './optics-lut'
+import { MAX_STACK_LEVELS } from './stack.hot'
+import { createVolumePipelines } from './volume-shader'
 
 /** 创建一个空的玻璃分组。 */
 export function createGroup(): GlassGroup {
@@ -36,12 +40,31 @@ export function createVolumePlan(): VolumeGroupPlan {
     members: [],
     count: 0,
     bounds: createCoverRect(),
+    body: createCoverRect(),
+    valid: createCoverRect(),
     order: 0,
+    layer: 0,
+    variance: 0,
+    margin: 0,
+    level: 0,
+    viewerOrders: Array.from<number>({ length: MAX_STACK_LEVELS }).fill(Infinity),
+    contentSeen: Array.from<boolean>({ length: MAX_STACK_LEVELS }).fill(false),
+    seenRegions: Array.from({ length: MAX_STACK_LEVELS }, createCoverRect),
+    contentRegions: Array.from({ length: MAX_STACK_LEVELS }, createCoverRect),
     ceiling: 0,
     reach: 0,
     shadowAlpha: 0,
     shadowSize: 0,
   }
+}
+
+/** 创建各级背景的范围记录。 */
+export function createStackLevels(): StackLevel[] {
+  return Array.from({ length: MAX_STACK_LEVELS }, (_, index) => ({
+    used: index === 0,
+    region: createCoverRect(),
+    variance: 0,
+  }))
 }
 
 /** 低分辨率体积的两段离屏目标：前景层之下与之上。 */
@@ -77,4 +100,12 @@ export function growFloat64(count: number): Float64Array<ArrayBuffer> {
 /** 扩容到至少 `count` 项，原有内容不保留。 */
 export function growInt32(count: number): Int32Array<ArrayBuffer> {
   return new Int32Array(Math.max(32, count * 2))
+}
+
+/** 剖面光学的管线与查找表，第一次切换到剖面光学时创建。 */
+export function createProfileTable(gpu: StageGpu): { pipelines: PipelineTable[], table: ProfileTable } {
+  return {
+    pipelines: createVolumePipelines(gpu, true),
+    table: new ProfileTable(gpu),
+  }
 }
