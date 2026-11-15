@@ -51,6 +51,8 @@ function setup() {
     generation: 0,
   } as unknown as BackdropBlur
   const groups = new VolumeGroups(fake.gpu, [blur])
+  // 这里检查逐帧求交的混合光路；折射场缓存见 field-cache.test.ts。
+  groups.setFieldCache(false)
   const list = new DrawList()
   /** 画一帧，返回每个绘制项的管线标签与 uniform 起始下标（浮点数）。 */
   const frame = (surfaces: VolumeSurface[], shading = SHADING) => {

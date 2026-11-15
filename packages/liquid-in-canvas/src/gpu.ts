@@ -84,7 +84,7 @@ export function wgslFloat(value: number): string {
 
 /** 一遍绘制的计时结果。 */
 export interface PassTiming {
-  /** 这一遍的用途：`backdrop`、`blur`、`band` 或 `canvas`。 */
+  /** 这一遍的用途：`backdrop`、`blur`、`stack`、`field`、`band` 或 `canvas`。 */
   label: string
   /** 绘制目标的像素尺寸。 */
   target: [number, number]
@@ -196,6 +196,8 @@ export interface PipelineSpec {
   textures: number
   format: GPUTextureFormat
   blend?: GPUBlendState
+  /** 同时写入的颜色目标数量，格式与混合都相同；缺省为 1。 */
+  targets?: number
 }
 
 /** 绘制目标的格式位置：画布或离屏目标。管线表按它取用对应格式的管线。 */
@@ -429,9 +431,7 @@ export class StageGpu {
       fragment: {
         module,
         entryPoint: spec.entry,
-        targets: [
-          { format: spec.format, blend: spec.blend },
-        ],
+        targets: Array.from({ length: spec.targets ?? 1 }, () => ({ format: spec.format, blend: spec.blend })),
       },
       primitive: { topology: 'triangle-strip' },
     }

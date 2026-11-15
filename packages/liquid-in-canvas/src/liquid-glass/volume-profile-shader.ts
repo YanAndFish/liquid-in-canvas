@@ -86,16 +86,9 @@ fn glass_lookup(field: Field, xy: vec2f, screen_uv: vec2f) -> vec4f {
 `
 }
 
-/**
- * 生成指定成员数量的剖面光学体积着色器。
- *
- * 与 `createVolumeShader()` 读取同样的 uniform、取样同样的背景与模糊，外观和单块玻璃上的结果一致。
- * 区别在于光路：二维平滑合并距离场给出到轮廓的距离与外法向，再按距离查 `optics-lut.ts` 预先追踪的
- * 截面光路，没有逐步求交与有限差分法线。每个像素的开销与成员数量成正比，与倒角和融合区域无关。
- * 比体积着色器多取样一张查找表，绑定在所有模糊之后。
- */
-export function createProfileVolumeShader(count: number): string {
-  return /* wgsl */`${volumeCommon(count)}${profileOptics()}
+/** 二维平滑合并后的距离场与外观（`glass_field`），剖面光学与混合光路切换时的交叉淡化共用。 */
+export function profileField(count: number): string {
+  return /* wgsl */`
 // 平滑合并后的距离场与外观。外观、截面尺寸与距离用同一个合并权重；查找表的行取权重占优的成员。
 fn glass_field(xy: vec2f) -> Field {
   let first = outline_gradient(xy, u.members[0].box, u.members[0].radius);
@@ -131,7 +124,20 @@ ${each(count, i => `  {
   f.gradient = normalize(f.gradient + vec2f(0.0, 0.00001));
   return f;
 }
+`
+}
 
+/**
+ * 生成指定成员数量的剖面光学体积着色器。
+ *
+ * 与 `createVolumeShader()` 读取同样的 uniform、取样同样的背景与模糊，外观和单块玻璃上的结果一致。
+ * 区别在于光路：二维平滑合并距离场给出到轮廓的距离与外法向，再按距离查 `optics-lut.ts` 预先追踪的
+ * 截面光路，没有逐步求交与有限差分法线。每个像素的开销与成员数量成正比，与倒角和融合区域无关。
+ * 比体积着色器多取样一张查找表，绑定在所有模糊之后。
+ */
+export function createProfileVolumeShader(count: number): string {
+  return /* wgsl */`${volumeCommon(count)}${profileOptics()}
+${profileField(count)}
 // 只求平滑合并后的距离，用于阴影。
 fn glass_projection(xy: vec2f) -> f32 {
   var distance = glass_outline(xy, u.members[0].box, u.members[0].radius);

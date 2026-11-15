@@ -3,6 +3,8 @@ import type { PipelineTable, RenderTarget, StageGpu } from '../gpu'
 import type { GlassOptics } from '../types'
 import type { BackdropBlur } from './blur.hot'
 import type { CoverBuilder, CoverRect } from './cover.hot'
+import type { FieldEntry } from './field-cache'
+import type { FieldCache } from './field-cache.hot'
 import type { GlassGroup, NumberSink, VolumeSurface } from './fusion.hot'
 import type { ProfileTable } from './optics-lut'
 import type { StackGroup, StackLevel } from './stack.hot'
@@ -11,12 +13,13 @@ import { CLEAR_TRANSPARENT, HEADER_FLOATS } from '../frame'
 import { SLOT_CANVAS, SLOT_TARGET } from '../gpu'
 import { glassVolumeRenderOrder } from '../render-order'
 import { linearTint, srgbToLinear } from './color'
+import { bindFieldTextures } from './field-cache'
 import { GlassGroups, writePressedBox } from './fusion.hot'
-import { createProfileTable, createStackLevels, createVolumeBands, createVolumePlan, growInt32 } from './pools'
+import { createFieldCache, createProfileTable, createStackLevels, createVolumeBands, createVolumePlan, growInt32 } from './pools'
 import { profileBevelHeight, profileBevelWidth, profileHalfDepth } from './profile'
 import { assignStackLevels, MAX_STACK_LEVELS, stackMargin } from './stack.hot'
-import { HYBRID_REACH_PAD, HYBRID_REACH_SCALE } from './volume-hybrid-shader'
-import { bindVolumeTextures, createVolumePipelines, VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from './volume-shader'
+import { HYBRID_CLIP_PAD, hybridLateral } from './volume-hybrid-shader'
+import { bindVolumeTextures, createFieldBakePipelines, createVolumePipelines, VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from './volume-shader'
 
 /** 体积着色的分辨率设置。 */
 export interface VolumeShading {
@@ -221,9 +224,6 @@ export class VolumePlanner {
   }
 }
 
-/** 裁剪范围与玻璃之间除光线横向位移外再留出的距离：阴影取样的偏移与边缘的过渡带。 */
-const CLIP_CUT_PAD = 6
-
 /**
  * 把一组体积的参数写入 uniform，`start` 指向矩形与目标尺寸之后的位置。
  * 传入 `profiles` 时同时写入每名成员的剖面查找表行号（剖面光学与混合光路）。
@@ -292,7 +292,7 @@ export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGr
       const row = profiles.rowOf(bevelWidth / halfDepth, data[offset + 25]! / halfDepth, options.bevelCurve, options.bottomBevel, options.dispersion)
       data[offset + 28] = row
       // 与混合着色器的查表条件一致，横向位移取这一行的最大值。
-      const pad = profiles.reachOf(row) * halfDepth * HYBRID_REACH_SCALE + HYBRID_REACH_PAD + halfDepth + CLIP_CUT_PAD
+      const pad = hybridLateral(profiles.reachOf(row), halfDepth) + halfDepth + HYBRID_CLIP_PAD
       const x = data[offset]!
       const y = data[offset + 1]!
       const halfWidth = data[offset + 2]!
@@ -322,8 +322,17 @@ export class VolumeGroups {
   private readonly profilePipelines: PipelineTable[]
   /** 混合光路的管线：逐像素在查表与求交之间选择，用于多名成员的组与被裁剪切开的组。 */
   private readonly hybridPipelines: PipelineTable[]
+  /** 读取折射场缓存的混合管线：几何静止的组求交一次之后用它。 */
+  private readonly fieldPipelines: PipelineTable[]
+  /** 写入折射场缓存的管线。 */
+  private readonly bakePipelines: PipelineTable
   /** 剖面光学与混合光路的查找表，第一次切换到这两种光路时创建。 */
   private profiles: ProfileTable | null = null
+  /** 混合光路的折射场缓存，第一次以混合光路绘制时创建；关闭缓存或换成别的光路时为 null。 */
+  private fields: FieldCache | null = null
+  /** 已经创建的缓存对象，关闭后保留，再打开时复用。 */
+  private fieldStore: FieldCache | null = null
+  private fieldCache = true
   private optics: GlassOptics = 'raymarch'
   /** `split` 之下与之上的两段。 */
   private readonly bands: VolumeBand[]
@@ -343,12 +352,22 @@ export class VolumeGroups {
     this.pipelines = createVolumePipelines(gpu)
     this.profilePipelines = createVolumePipelines(gpu, 'profile')
     this.hybridPipelines = createVolumePipelines(gpu, 'hybrid')
+    this.fieldPipelines = createVolumePipelines(gpu, 'field')
+    this.bakePipelines = createFieldBakePipelines(gpu)
     this.bands = createVolumeBands(gpu)
   }
 
   /** 本帧的分组与背景分级，`group()` 之后有效。 */
   get groups(): VolumePlanner {
     return this.planner
+  }
+
+  /**
+   * 折射场缓存是否还在过渡：有组在等待静止后求交，或求交结果正在淡入淡出。
+   * 为 true 时即使页面没有变化也要再画一帧，否则停下之后画面会停在查表的近似上。
+   */
+  get settling(): boolean {
+    return this.fields !== null && this.fields.settling
   }
 
   /** 在后台编译常见成员数量的管线，第一次出现融合时不必等待着色器编译。 */
@@ -364,6 +383,14 @@ export class VolumeGroups {
       const pipelines = this.table(true)
       pipelines[SLOT_CANVAS]!.warm(count)
       pipelines[SLOT_TARGET]!.warm(count)
+      // 打开缓存时，融合的组运动中用剖面管线，静止后用写入与读取缓存的管线。
+      if (optics === 'hybrid' && this.fieldCache) {
+        this.profilePipelines[SLOT_CANVAS]!.warm(count)
+        this.profilePipelines[SLOT_TARGET]!.warm(count)
+        this.fieldPipelines[SLOT_CANVAS]!.warm(count)
+        this.fieldPipelines[SLOT_TARGET]!.warm(count)
+        this.bakePipelines.warm(count)
+      }
     }
   }
 
@@ -374,12 +401,28 @@ export class VolumeGroups {
     this.optics = optics
     if (optics !== 'raymarch' && !this.profiles)
       this.profiles = createProfileTable(this.gpu)
+    this.selectFields()
   }
 
-  /** 按层级与邻近关系分组，并为每组分配背景级别。 */
-  group(surfaces: readonly VolumeSurface[], count: number, cssWidth: number, cssHeight: number): void {
+  /**
+   * 打开或关闭混合光路的折射场缓存，缺省打开。关闭后融合的组与被裁剪切开的玻璃每帧逐步求交，
+   * 运动时也不改用查表。
+   */
+  setFieldCache(enabled: boolean): void {
+    if (enabled === this.fieldCache)
+      return
+    this.fieldCache = enabled
+    this.selectFields()
+  }
+
+  /**
+   * 按层级与邻近关系分组，并为每组分配背景级别。`now` 是当前时间（毫秒），
+   * 折射场缓存用它判断几何静止了多久。
+   */
+  group(surfaces: readonly VolumeSurface[], count: number, cssWidth: number, cssHeight: number, now = performance.now()): void {
     // 上一帧扩容换下的查找表纹理已随那一帧提交，可以释放。
     this.profiles?.release()
+    this.fields?.begin(now)
     this.planner.build(surfaces, count, cssWidth, cssHeight)
   }
 
@@ -389,8 +432,8 @@ export class VolumeGroups {
   }
 
   /** 分组、设置第 0 级背景并安排绘制，等同于依次调用 `group()`、`setSource()` 与 `draw()`。 */
-  plan(surfaces: readonly VolumeSurface[], count: number, source: GPUTextureView, shading: VolumeShading, canvas: DrawList): void {
-    this.group(surfaces, count, shading.cssWidth, shading.cssHeight)
+  plan(surfaces: readonly VolumeSurface[], count: number, source: GPUTextureView, shading: VolumeShading, canvas: DrawList, now = performance.now()): void {
+    this.group(surfaces, count, shading.cssWidth, shading.cssHeight, now)
     this.setSource(0, source)
     this.draw(shading, canvas)
   }
@@ -415,7 +458,7 @@ export class VolumeGroups {
     if (shading.scale >= 1) {
       for (let i = 0; i < planner.count; i++) {
         const bounds = planner.plans[i]!.bounds
-        this.push(canvas, SLOT_CANVAS, planner.plans[i]!, bounds.left, bounds.top, bounds.right, bounds.bottom, shading.cssWidth, shading.cssHeight, shading.pixelWidth, shading.pixelHeight)
+        this.push(canvas, SLOT_CANVAS, planner.plans[i]!, bounds.left, bounds.top, bounds.right, bounds.bottom, shading.cssWidth, shading.cssHeight, shading.pixelWidth, shading.pixelHeight, true)
       }
       return
     }
@@ -446,7 +489,7 @@ export class VolumeGroups {
           ? 1
           : 0) === index) {
           const bounds = plan.bounds
-          this.push(band.list, SLOT_TARGET, plan, bounds.left, bounds.top, bounds.right, bounds.bottom, shading.cssWidth, shading.cssHeight, width, height)
+          this.push(band.list, SLOT_TARGET, plan, bounds.left, bounds.top, bounds.right, bounds.bottom, shading.cssWidth, shading.cssHeight, width, height, true)
         }
       }
       // 离屏目标里各组已经相互混合，重叠的包围矩形要先换成互不重叠的矩形，否则重叠处的阴影会叠加两遍。
@@ -479,11 +522,15 @@ export class VolumeGroups {
     const bottom = Math.min(bounds.bottom, limit.bottom)
     if (right <= left || bottom <= top)
       return
-    this.push(list, SLOT_TARGET, plan, left, top, right, bottom, cssWidth, cssHeight, targetWidth, targetHeight)
+    this.push(list, SLOT_TARGET, plan, left, top, right, bottom, cssWidth, cssHeight, targetWidth, targetHeight, false)
   }
 
-  /** 编码低分辨率的离屏绘制。目标清成全透明，体积按普通混合叠加后得到预乘颜色。 */
+  /**
+   * 编码折射场缓存的写入与低分辨率的离屏绘制。离屏目标清成全透明，体积按普通混合叠加后得到预乘颜色。
+   * 本帧写入的缓存只被本帧的主绘制读取（画布遍或下面的离屏遍），所以排在各级背景之后也没有问题。
+   */
   encode(encoder: GPUCommandEncoder): void {
+    this.fields?.encode(encoder)
     for (let i = 0; i < this.bands.length; i++) {
       const band = this.bands[i]!
       if (band.list.count > 0)
@@ -496,6 +543,20 @@ export class VolumeGroups {
     for (const band of this.bands)
       band.target.dispose()
     this.profiles?.dispose()
+    this.fieldStore?.dispose()
+    this.fields = null
+    this.fieldStore = null
+  }
+
+  /** 按当前光路与开关决定是否使用折射场缓存；不再使用时放弃已有的缓存。 */
+  private selectFields(): void {
+    if (this.optics === 'hybrid' && this.fieldCache) {
+      this.fieldStore ??= createFieldCache(this.gpu)
+      this.fields = this.fieldStore
+      return
+    }
+    this.fields?.reset()
+    this.fields = null
   }
 
   /**
@@ -511,7 +572,12 @@ export class VolumeGroups {
       : this.profilePipelines
   }
 
-  /** 写入一组体积的 uniform，按这一组的情况选管线，把绘制项加入 `list`。只绘制给定矩形（CSS 像素）。 */
+  /**
+   * 写入一组体积的 uniform，按这一组的情况选管线，把绘制项加入 `list`。只绘制给定矩形（CSS 像素）。
+   *
+   * `primary` 表示这是这一组在画面里的主绘制（画布或低分辨率的离屏目标），折射场缓存按它的分辨率写入；
+   * 画进上层背景的那一次只读取已有的缓存。
+   */
   private push(
     list: DrawList,
     slot: number,
@@ -524,6 +590,7 @@ export class VolumeGroups {
     cssHeight: number,
     targetWidth: number,
     targetHeight: number,
+    primary: boolean,
   ): void {
     const start = this.frame.rect(
       HEADER_FLOATS + VOLUME_GROUP_FLOATS + plan.count * VOLUME_MEMBER_FLOATS,
@@ -537,10 +604,77 @@ export class VolumeGroups {
       targetHeight,
     )
     // 三维求交不读查找表，其余两种光路都要写行号。
-    const cut = writeVolumeGroup(this.frame.data, start + HEADER_FLOATS, plan, this.optics === 'raymarch'
+    const profiles = this.optics === 'raymarch'
       ? null
-      : this.profiles)
-    list.push(plan.order, this.table(plan.count > 1 || cut)[slot]!.get(plan.count), start * 4, this.textureGroup(plan.level))
+      : this.profiles
+    const group = start + HEADER_FLOATS
+    const cut = writeVolumeGroup(this.frame.data, group, plan, profiles)
+    const traced = plan.count > 1 || cut
+    let pipelines = this.table(traced)
+    let textures: GPUBindGroup | null = null
+    const fields = this.fields
+    if (fields !== null && profiles !== null && traced) {
+      const entry = fields.track(plan, this.frame.data, group, profiles)
+      if (entry !== null) {
+        if (primary && fields.prepare(entry, this.frame.data, group, plan.count, profiles, targetWidth / cssWidth))
+          this.bake(fields, entry, plan, start)
+        if (entry.live || entry.fade > 0) {
+          // 静止的组读缓存；刚开始运动的组把上一次的求交结果淡出。
+          const data = this.frame.data
+          data[group + 12] = entry.anchorX + entry.originX
+          data[group + 13] = entry.anchorY + entry.originY
+          data[group + 14] = entry.ratio
+          data[group + 15] = entry.fade
+          pipelines = this.fieldPipelines
+          textures = this.fieldGroup(fields, entry, plan.level)
+        }
+        else {
+          // 运动中的组查表：连接处是近似，停下之后再求交。
+          pipelines = this.profilePipelines
+        }
+      }
+    }
+    list.push(plan.order, pipelines[slot]!.get(plan.count), start * 4, textures ?? this.textureGroup(plan.level))
+  }
+
+  /**
+   * 安排把一组的折射场写进缓存：复制这一组刚写好的 uniform，把成员与裁剪的位置换成相对缓存左上角的坐标，
+   * 目标换成缓存纹理。`source` 是这一组的 uniform 在本帧数据里的起始下标。
+   */
+  private bake(fields: FieldCache, entry: FieldEntry, plan: VolumeGroupPlan, source: number): void {
+    const target = entry.textures!
+    const floats = HEADER_FLOATS + VOLUME_GROUP_FLOATS + plan.count * VOLUME_MEMBER_FLOATS
+    const cssWidth = target.width / entry.ratio
+    const cssHeight = target.height / entry.ratio
+    const start = this.frame.rect(floats, 0, 0, cssWidth, cssHeight, cssWidth, cssHeight, target.width, target.height)
+    // 分配可能换了一块更大的数组，原来的内容保留在同样的下标上。
+    const data = this.frame.data
+    data.copyWithin(start + HEADER_FLOATS, source + HEADER_FLOATS, source + floats)
+    const x = entry.anchorX + entry.originX
+    const y = entry.anchorY + entry.originY
+    let member = start + HEADER_FLOATS + VOLUME_GROUP_FLOATS
+    for (let i = 0; i < plan.count; i++) {
+      data[member] = data[member]! - x
+      data[member + 1] = data[member + 1]! - y
+      data[member + 12] = data[member + 12]! - x
+      data[member + 13] = data[member + 13]! - y
+      data[member + 14] = data[member + 14]! - x
+      data[member + 15] = data[member + 15]! - y
+      member += VOLUME_MEMBER_FLOATS
+    }
+    fields.list.push(0, this.bakePipelines.get(plan.count), start * 4, this.textureGroup(plan.level))
+  }
+
+  /** 读取一组折射场缓存的纹理绑定：背景、各级模糊、查找表与折射场，按条目缓存。 */
+  private fieldGroup(fields: FieldCache, entry: FieldEntry, level: number): GPUBindGroup {
+    const source = this.sources[level] ?? this.sources[0]!
+    const blur = this.blurs[level] ?? this.blurs[0]!
+    const profiles = this.profiles!
+    const generation = blur.generation * 65536 + profiles.generation
+    const bound = entry.bound
+    if (bound.source === source && bound.generation === generation && bound.version === entry.version)
+      return bound.group
+    return bindFieldTextures(this.gpu, entry, source, blur.views, generation, profiles.view, fields.texturesOf(entry))
   }
 
   private textureGroup(level: number): GPUBindGroup {

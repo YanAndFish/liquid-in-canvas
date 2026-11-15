@@ -183,6 +183,11 @@ export class GlassFrame {
     this.volumes.setOptics(optics)
   }
 
+  /** 打开或关闭混合光路的折射场缓存。 */
+  setFieldCache(enabled: boolean): void {
+    this.volumes.setFieldCache(enabled)
+  }
+
   /**
    * 设置玻璃体积的着色比例，下一次 `sync()` 生效。
    *
@@ -268,6 +273,9 @@ export class GlassFrame {
     shading.cssWidth = viewWidth
     shading.cssHeight = viewHeight
     volumes.draw(shading, list)
+    // 折射场缓存在等待静止或正在淡化：页面没有变化也要再画一帧，画面才会从查表的近似走到求交的结果。
+    if (volumes.settling)
+      host.invalidate()
     return true
   }
 
