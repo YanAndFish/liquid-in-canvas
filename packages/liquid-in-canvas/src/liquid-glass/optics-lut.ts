@@ -13,8 +13,8 @@ import { TEXTURE_USAGE } from '../gpu'
 
 /** 每行的采样数。 */
 export const LUT_SAMPLES = 128
-/** 每行在纹理里占的纹素行数：位移、斜率、有效度各一行。 */
-export const LUT_ROWS_PER_PROFILE = 3
+/** 每行在纹理里占的纹素行数：位移、斜率、有效度、玻璃内的横向范围各一行。 */
+export const LUT_ROWS_PER_PROFILE = 4
 /** 纹理按这个行数扩容。 */
 const LUT_CAPACITY_STEP = 16
 /** 中间那条光路的折射率，与体积着色器一致。 */
@@ -56,6 +56,8 @@ export interface ProfileSample {
   normal: [number, number]
   /** 入射求交是否命中。 */
   hit: number
+  /** 三条光路在玻璃内离开入射位置的最大横向距离（含全内反射途中），供混合光路判断其余成员是否够远。 */
+  reach: number
 }
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -133,6 +135,7 @@ export function traceProfile(key: ProfileKey): ProfileSample[] {
       valid: [1, 1, 1],
       normal: [0, 1],
       hit,
+      reach: 0,
     }
     samples.push(sample)
     if (!hit)
@@ -146,6 +149,7 @@ export function traceProfile(key: ProfileKey): ProfileSample[] {
       let bounced = false
       let done = false
       for (let step = 0; step < 64; step++) {
+        sample.reach = Math.max(sample.reach, Math.abs(pu - u0) / hd)
         const d = field(pu, pz)
         if (d > -0.025) {
           const [ou, oz] = normal(pu, pz)
@@ -174,6 +178,7 @@ export function traceProfile(key: ProfileKey): ProfileSample[] {
           pz += dz * step
         }
       }
+      sample.reach = Math.max(sample.reach, Math.abs(pu - u0) / hd)
       if (!done) {
         sample.shift[c] = (pu - u0) / hd
         sample.slope[c] = 0
@@ -200,15 +205,20 @@ export function toHalf(value: number): number {
   return sign | (exponent << 10) | (mantissa >>> 13)
 }
 
-/** 把一行的追踪结果编成三行半精度纹素：位移、斜率、有效度；第四个分量依次是法线的两个分量与命中。 */
+/**
+ * 把一行的追踪结果编成四行半精度纹素：位移、斜率、有效度，第四个分量依次是法线的两个分量与命中；
+ * 最后一行的第一个分量是玻璃内的横向范围，取相邻三个样本的最大值，线性插值后仍不低于两侧样本。
+ */
 export function encodeProfile(samples: readonly ProfileSample[]): Uint16Array {
   const data = new Uint16Array(LUT_SAMPLES * 4 * LUT_ROWS_PER_PROFILE)
   const row = LUT_SAMPLES * 4
   samples.forEach((sample, i) => {
+    const reach = Math.max(samples[i - 1]?.reach ?? 0, sample.reach, samples[i + 1]?.reach ?? 0)
     const values = [
       [...sample.shift, sample.normal[0]],
       [...sample.slope, sample.normal[1]],
       [...sample.valid, sample.hit],
+      [reach, 0, 0, 0],
     ]
     values.forEach((texel, r) => {
       texel.forEach((value, c) => {
@@ -240,6 +250,8 @@ export class ProfileTable {
   private readonly gpu: StageGpu | null
   private readonly rows = new Map<number, number>()
   private readonly encoded: Uint16Array[] = []
+  /** 每行里光线在玻璃内的最大横向位移，与半厚度之比。 */
+  private readonly reaches: number[] = []
   /** 被换下、但可能仍被本帧绑定引用的纹理，下一帧开始时由 `release()` 释放。 */
   private readonly retired: GPUTexture[] = []
   private texture: GPUTexture | null = null
@@ -285,6 +297,14 @@ export class ProfileTable {
     return this.add(id, key)
   }
 
+  /**
+   * 第 `row` 行的光线在玻璃内离开入射位置的最大横向距离，与半厚度之比。
+   * 混合光路据此判断一个像素的光路是否可能碰到其余成员或裁剪边。
+   */
+  reachOf(row: number): number {
+    return this.reaches[row]!
+  }
+
   /** 释放之前各帧换下的纹理。在一帧开始排绘制之前调用，那时它们所在的帧都已提交。 */
   release(): void {
     for (let i = 0; i < this.retired.length; i++)
@@ -301,7 +321,9 @@ export class ProfileTable {
 
   private add(id: number, key: ProfileKey): number {
     const row = this.encoded.length
-    this.encoded.push(encodeProfile(traceProfile({ ...key })))
+    const samples = traceProfile({ ...key })
+    this.encoded.push(encodeProfile(samples))
+    this.reaches.push(samples.reduce((reach, sample) => Math.max(reach, sample.reach), 0))
     this.rows.set(id, row)
     if (row + 1 > this.capacity)
       this.grow(this.capacity + LUT_CAPACITY_STEP)

@@ -199,14 +199,17 @@ describe('渲染方式开关', () => {
     expect(renderer.setResolution).toHaveBeenCalledWith({ maxPixelRatio: 1.5 })
   })
 
-  it('切换三维求交与剖面光学', async () => {
+  it('在剖面、混合与三维求交之间切换光路', async () => {
     const renderer = createRenderer()
     wrapper = mountTuner(renderer)
     await wrapper.get('.tuner-launcher').trigger('click')
-    const checkbox = wrapper.get('[data-section="renderer"] input[data-field="optics"]')
-    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
-    await checkbox.setValue(false)
-    expect(renderer.setOptics).toHaveBeenCalledWith('raymarch')
+    const pressed = () => wrapper!.findAll('[data-field="optics"] button').filter(button => button.attributes('aria-pressed') === 'true').map(button => button.attributes('data-optics'))
+    expect(pressed()).toEqual(['profile'])
+    await wrapper.get('[data-optics="hybrid"]').trigger('click')
+    expect(renderer.setOptics).toHaveBeenCalledWith('hybrid')
+    expect(pressed()).toEqual(['hybrid'])
+    expect(wrapper.get('[data-role="optics"]').text()).toContain('混合光路')
+    await wrapper.get('[data-optics="raymarch"]').trigger('click')
     expect(renderer.optics.value).toBe('raymarch')
   })
 

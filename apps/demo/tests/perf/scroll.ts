@@ -61,6 +61,10 @@ const resolutionOverride = {
     ? { adaptive: query.get('adaptive') !== '0' }
     : {}),
 }
+/** `?hold=600` 在八秒里停在给定的滚动位置，用于测量某个画面持续重绘时的开销（需要视频或动画保持重绘）。 */
+const hold = query.has('hold')
+  ? Number(query.get('hold'))
+  : null
 const configured = new WeakSet<object>()
 const errors: string[] = []
 let active = false
@@ -157,7 +161,7 @@ output.id = 'scroll-result'
 panel.append(button, output)
 document.body.append(panel)
 
-/** 暂停视频，在相同八秒路径中向下滚动 2200 像素，再回到顶部。 */
+/** 暂停视频，在相同八秒路径中向下滚动 2200 像素，再回到顶部；带 `?hold` 时停在给定位置。 */
 button.onclick = () => {
   const scroller = getStageScroller()
   if (active || !scroller)
@@ -193,7 +197,7 @@ button.onclick = () => {
         ...(durations.length < 30
           ? ['绘制次数不足']
           : []),
-        ...(Math.max(...positions) < distance * 0.95
+        ...(hold === null && Math.max(...positions) < distance * 0.95
           ? ['没有经过规定的滚动范围']
           : []),
       ]
@@ -205,6 +209,7 @@ button.onclick = () => {
         elapsed,
         viewport: [innerWidth, innerHeight, devicePixelRatio],
         distance,
+        hold,
         maxScroll: Math.max(...positions),
         draw: distribution(durations),
         paintInterval: distribution(intervals(paints)),
@@ -219,7 +224,7 @@ button.onclick = () => {
       return
     }
     const fraction = elapsed / 8000
-    scroller.scrollTo({ top: distance * (1 - Math.abs(fraction * 2 - 1)), behavior: 'instant' })
+    scroller.scrollTo({ top: hold ?? distance * (1 - Math.abs(fraction * 2 - 1)), behavior: 'instant' })
     positions.push(scroller.scrollTop)
     frames.push(time)
     requestAnimationFrame(frame)

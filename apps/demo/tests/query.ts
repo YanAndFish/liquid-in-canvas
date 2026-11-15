@@ -21,9 +21,9 @@ export function applyGlassQuery(query: URLSearchParams): void {
   }
 }
 
-/** `?optics=profile` 切换到剖面光学，用于和三维求交比对画面与开销。 */
+/** `?optics=profile`、`?optics=raymarch`、`?optics=hybrid` 切换光路，用于比对画面与开销。 */
 export function applyStageQuery(stage: { setOptics: (optics: GlassOptics) => void }, query: URLSearchParams): void {
   const optics = query.get('optics')
-  if (optics === 'profile' || optics === 'raymarch')
+  if (optics === 'profile' || optics === 'raymarch' || optics === 'hybrid')
     stage.setOptics(optics)
 }

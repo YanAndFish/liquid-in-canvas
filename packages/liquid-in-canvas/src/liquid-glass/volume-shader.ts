@@ -1,6 +1,7 @@
 import type { StageGpu } from '../gpu'
 import { BLEND_NORMAL, PipelineTable, shaderPrelude, SLOT_CANVAS, SLOT_TARGET, wgslFloat } from '../gpu'
 import { BLUR_SIGMAS } from './gaussian'
+import { createHybridVolumeShader } from './volume-hybrid-shader'
 import { createProfileVolumeShader } from './volume-profile-shader'
 
 /** 体积组 uniform 中矩形与目标尺寸之后、成员之前的浮点数个数：`params`、`shadow` 与 `valid`。 */
@@ -14,7 +15,7 @@ export const VOLUME_TEXTURES = 1 + BLUR_SIGMAS.length
 export const REFLECTION_VARIANCE = 64
 
 /** 依次对每个成员展开一段代码。 */
-function each(count: number, body: (i: number) => string, from = 0): string {
+export function each(count: number, body: (i: number) => string, from = 0): string {
   return Array.from({ length: count - from }, (_, j) => body(j + from)).join('\n')
 }
 
@@ -55,7 +56,7 @@ ${levels.join('\n')}
  */
 export function volumeCommon(count: number): string {
   return /* wgsl */`${shaderPrelude(`
-  // 求交起点的高度、平顶捷径要求的最小间距、染色与高光的亮度比例。
+  // 求交起点的高度、平顶捷径要求的最小间距、染色与高光的亮度比例、混合光路要求的最小间距。
   params: vec4f,
   // 阴影的不透明度与延伸范围。
   shadow: vec4f,
@@ -77,7 +78,7 @@ struct Member {
   color: vec4f,
   // 顶面倒角的宽度与高度、倒角曲线的超椭圆指数、底面倒角比例。
   profile: vec4f,
-  // 剖面查找表的行号（只用于剖面光学）、透射背景的饱和度与亮度倍数，最后一项保留。
+  // 剖面查找表的行号（剖面光学与混合光路）、透射背景的饱和度与亮度倍数，最后一项保留。
   extra: vec4f,
 }`)}
 @group(1) @binding(0) var source: texture_2d<f32>;
@@ -105,6 +106,10 @@ fn glass_lens(xy: vec2f, m: Member) -> vec2f {
   return -m.depth.w * reach * sign(local) * vec2f(slope.x * dome.y, slope.y * dome.x);
 }
 
+// 到裁剪范围边缘的有向距离，范围之内为负。
+fn glass_clip(xy: vec2f, clip: vec4f) -> f32 {
+  return max(max(clip.x - xy.x, xy.x - clip.z), max(clip.y - xy.y, xy.y - clip.w));
+}
 
 // 透射背景的饱和度与亮度：按线性亮度保持明暗，再整体提亮。
 fn glass_tone(color: vec3f, tone: vec2f) -> vec3f {
@@ -121,13 +126,21 @@ fn shadow_strength(at: vec2f, variance: f32) -> f32 {
 ${blurSampler('sample_blur', ['at'])}${blurSampler('sample_blur_rgb', ['red', 'green', 'blue'])}`
 }
 
+/** 各成员的裁剪范围合成的覆盖率，写进 `clip_coverage`。 */
+export function clipCoverage(count: number): string {
+  return /* wgsl */`  var clip_coverage = 0.0;
+${each(count, i => `  {
+    let outside = glass_clip(xy, u.members[${i}].clip);
+    clip_coverage = max(clip_coverage, 1.0 - smoothstep(-0.5, 0.5, outside));
+  }`)}`
+}
+
 /**
- * 生成指定成员数量的体积着色器：圆角实体的距离场、平滑合并、光线求交与着色。
+ * 三维求交：圆角实体的距离场、平滑合并、光线求交与着色。体积着色器与混合光路共用。
  *
- * 着色器只取决于成员数量，成员的位置与外观逐帧写入 uniform。
  * 坐标使用视口的 CSS 像素，z 轴垂直于屏幕指向观察者，背景平面在 z = 0。
  */
-export function createVolumeShader(count: number): string {
+export function raymarchOptics(count: number): string {
   /** 按成员顺序做平滑合并；`extra` 在每一步用同一个权重混合附带的值。 */
   const fuse = (first: string, other: (i: number) => string, extra: (i: number) => string = () => ''): string => `
   var distance = ${first};
@@ -142,17 +155,15 @@ ${extra(i)}
   }`, 1)}`
   const solid = (i: number, p: string): string => `glass_solid(${p}, u.members[${i}])`
 
-  return /* wgsl */`${volumeCommon(count)}
-// 圆角实体。截面是一块平板，边缘按超椭圆弧倒角；指数大于 2 时曲率在平面接合处趋于零，
+  return /* wgsl */`
+// 圆角实体的截面，planar 是到轮廓的平面距离，height 是相对实体中面的高度。
+// 截面是一块平板，边缘按超椭圆弧倒角；指数大于 2 时曲率在平面接合处趋于零，
 // 折射压缩不会在固定内圈突然开始。顶面和底面的倒角分别取值，底面按比例缩小。
 //
 // 倒角在宽高各自归一化的坐标里求超椭圆距离，再乘较短的一边，得到不超过真实距离的下界；
 // 指数小于 2 时超椭圆范数的梯度可能大于 1，再按 2^(1/p - 1/2) 缩小。
 // 截面不超出平板，平板的距离同样是下界，两者取大，平面部分仍是精确距离，求交不会变慢。
-fn glass_solid(p: vec3f, m: Member) -> f32 {
-  let planar = glass_outline(p.xy, m.box, m.radius);
-  let center = m.depth.y + m.depth.x;
-  let height = p.z - center;
+fn glass_section(planar: f32, height: f32, m: Member) -> f32 {
   let scale = select(m.profile.w, 1.0, height > 0.0);
   let bevel = max(vec2f(min(m.profile.x, min(m.box.z, m.box.w)), m.profile.y) * scale, vec2f(0.5));
   let unit = vec2f(planar + bevel.x, abs(height) - m.depth.x + bevel.y) / bevel;
@@ -161,34 +172,13 @@ fn glass_solid(p: vec3f, m: Member) -> f32 {
   let rounded = pow(pow(positive.x, power) + pow(positive.y, power), 1.0 / power);
   let lipschitz = min(1.0, exp2(0.5 - 1.0 / power));
   let curved = (rounded + min(max(unit.x, unit.y), 0.0) - 1.0) * min(bevel.x, bevel.y) * lipschitz;
-  let solid = max(curved, max(planar, abs(height) - m.depth.x));
-  let clipped = max(max(m.clip.x - p.x, p.x - m.clip.z), max(m.clip.y - p.y, p.y - m.clip.w));
-  return max(solid, clipped);
+  return max(curved, max(planar, abs(height) - m.depth.x));
 }
 
-// 判断像素是否落在某个成员的平顶区域，且其余成员远到不参与平滑合并。
-//
-// 平顶区域内实体退化为等厚平板：法线垂直于屏幕，三条光路都沿直线穿过，出射位置就是像素本身。
-// 满足条件时返回平板顶面高度，着色器据此跳过求交；否则返回 -1。
-// params.y 是其余成员必须保持的最小距离，取所有平滑合并半径之和的上界，保证与逐步求交的结果一致。
-fn glass_slab(xy: vec2f) -> f32 {
-  var top = -1.0;
-  var inside = 0;
-  var away = 0;
-${each(count, i => `  {
-    let m = u.members[${i}];
-    let planar = glass_outline(xy, m.box, m.radius);
-    let clipped = max(max(m.clip.x - xy.x, xy.x - m.clip.z), max(m.clip.y - xy.y, xy.y - m.clip.w));
-    let bevel = max(min(m.profile.x, min(m.box.z, m.box.w)), 0.5);
-    if (planar + bevel < -0.5 && clipped < -1.0) {
-      inside += 1;
-      top = m.depth.y + m.depth.x * 2.0;
-    } else if (max(planar, clipped) >= u.params.y) {
-      away += 1;
-    }
-  }`)}
-  if (inside == 1 && away == ${count - 1}) { return top; }
-  return -1.0;
+// 圆角实体：截面再按裁剪范围切开。
+fn glass_solid(p: vec3f, m: Member) -> f32 {
+  let planar = glass_outline(p.xy, m.box, m.radius);
+  return max(glass_section(planar, p.z - (m.depth.y + m.depth.x), m), glass_clip(p.xy, m.clip));
 }
 
 // 所有成员平滑合并后的距离。
@@ -281,6 +271,80 @@ fn glass_material(p: vec3f) -> Material {
   return material;
 }
 
+// 逐步求交并着色：返回颜色与融合后的不透明度；光线没有碰到实体时不透明度为 -1。
+fn glass_trace(xy: vec2f, screen_uv: vec2f) -> vec4f {
+  let viewport = u.screen.zw;
+  let entry = glass_entry(xy);
+  if (entry.w <= 0.5) { return vec4f(0.0, 0.0, 0.0, -1.0); }
+  let normal = glass_normal(entry.xyz);
+  let material = glass_material(entry.xyz);
+  let spread = material.optics.y * 0.055;
+  let green = glass_exit(entry.xyz, normal, 1.45);
+  var red = green;
+  var blue = green;
+  // 没有色散时三条光路重合，只追踪一次。
+  if (spread > 0.00001) {
+    red = glass_exit(entry.xyz, normal, 1.45 - spread);
+    blue = glass_exit(entry.xyz, normal, 1.45 + spread);
+  }
+  let red_uv = clamp((red.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
+  let green_uv = clamp((green.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
+  let blue_uv = clamp((blue.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
+  let transmitted = glass_tone(sample_blur_rgb(red_uv, green_uv, blue_uv, material.optics.x), material.tone);
+  // 反射方向由三维法线决定；有限距离的页面环境近似用柔化采样表示表面粗糙度。
+  let reflection = reflect(vec3f(0.0, 0.0, -1.0), normal);
+  let environment_uv = clamp(screen_uv + reflection.xy * 48.0 / viewport, u.valid.xy, u.valid.zw);
+  let environment = sample_blur(environment_uv, material.optics.x + ${wgslFloat(REFLECTION_VARIANCE)});
+  let fresnel = 0.034 + pow(1.0 - clamp(normal.z, 0.0, 1.0), 5.0) * 0.966;
+  let tinted = mix(transmitted, material.color, material.optics.z);
+  let valid = vec3f(red.w, green.w, blue.w);
+  var refracted = tinted;
+  // 求交次数耗尽或光线朝向屏幕外时，使用本地柔化背景，避免连接处出现远处亮色碎边。
+  if (min(valid.x, min(valid.y, valid.z)) < 1.0) {
+    let local_environment = glass_tone(sample_blur(screen_uv, material.optics.x), material.tone);
+    refracted = mix(mix(local_environment, material.color, material.optics.z), tinted, valid);
+  }
+  let reflected = mix(refracted, environment, clamp(fresnel * material.optics.w, 0.0, 1.0));
+  let light = pow(max(dot(normal, normalize(vec3f(-0.45, -0.6, 0.66))), 0.0), 32.0);
+  let edge = pow(1.0 - clamp(normal.z, 0.0, 1.0), 3.0);
+  let highlight = (light * 0.035 * edge + edge * 0.035) * material.optics.w;
+  return vec4f(reflected + vec3f(highlight * u.params.z), material.colored.a);
+}
+`
+}
+
+/**
+ * 生成指定成员数量的体积着色器：圆角实体的距离场、平滑合并、光线求交与着色。
+ *
+ * 着色器只取决于成员数量，成员的位置与外观逐帧写入 uniform。
+ */
+export function createVolumeShader(count: number): string {
+  return /* wgsl */`${volumeCommon(count)}${raymarchOptics(count)}
+// 判断像素是否落在某个成员的平顶区域，且其余成员远到不参与平滑合并。
+//
+// 平顶区域内实体退化为等厚平板：法线垂直于屏幕，三条光路都沿直线穿过，出射位置就是像素本身。
+// 满足条件时返回平板顶面高度，着色器据此跳过求交；否则返回 -1。
+// params.y 是其余成员必须保持的最小距离，取所有平滑合并半径之和的上界，保证与逐步求交的结果一致。
+fn glass_slab(xy: vec2f) -> f32 {
+  var top = -1.0;
+  var inside = 0;
+  var away = 0;
+${each(count, i => `  {
+    let m = u.members[${i}];
+    let planar = glass_outline(xy, m.box, m.radius);
+    let clipped = glass_clip(xy, m.clip);
+    let bevel = max(min(m.profile.x, min(m.box.z, m.box.w)), 0.5);
+    if (planar + bevel < -0.5 && clipped < -1.0) {
+      inside += 1;
+      top = m.depth.y + m.depth.x * 2.0;
+    } else if (max(planar, clipped) >= u.params.y) {
+      away += 1;
+    }
+  }`)}
+  if (inside == 1 && away == ${count - 1}) { return top; }
+  return -1.0;
+}
+
 @fragment
 fn volume(in: VertexOutput) -> @location(0) vec4f {
   let viewport = u.screen.zw;
@@ -307,50 +371,13 @@ fn volume(in: VertexOutput) -> @location(0) vec4f {
       let reflected = mix(mix(transmitted, material.color, material.optics.z), environment, clamp(material.optics.w * 0.034, 0.0, 1.0));
       result = vec4f(reflected, material.colored.a * coverage);
     } else {
-      let entry = glass_entry(xy);
-      if (entry.w > 0.5) {
-        let normal = glass_normal(entry.xyz);
-        let material = glass_material(entry.xyz);
-        let spread = material.optics.y * 0.055;
-        let green = glass_exit(entry.xyz, normal, 1.45);
-        var red = green;
-        var blue = green;
-        // 没有色散时三条光路重合，只追踪一次。
-        if (spread > 0.00001) {
-          red = glass_exit(entry.xyz, normal, 1.45 - spread);
-          blue = glass_exit(entry.xyz, normal, 1.45 + spread);
-        }
-        let red_uv = clamp((red.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
-        let green_uv = clamp((green.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
-        let blue_uv = clamp((blue.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
-        let transmitted = glass_tone(sample_blur_rgb(red_uv, green_uv, blue_uv, material.optics.x), material.tone);
-        // 反射方向由三维法线决定；有限距离的页面环境近似用柔化采样表示表面粗糙度。
-        let reflection = reflect(vec3f(0.0, 0.0, -1.0), normal);
-        let environment_uv = clamp(screen_uv + reflection.xy * 48.0 / viewport, u.valid.xy, u.valid.zw);
-        let environment = sample_blur(environment_uv, material.optics.x + ${wgslFloat(REFLECTION_VARIANCE)});
-        let fresnel = 0.034 + pow(1.0 - clamp(normal.z, 0.0, 1.0), 5.0) * 0.966;
-        let tinted = mix(transmitted, material.color, material.optics.z);
-        let valid = vec3f(red.w, green.w, blue.w);
-        var refracted = tinted;
-        // 求交次数耗尽或光线朝向屏幕外时，使用本地柔化背景，避免连接处出现远处亮色碎边。
-        if (min(valid.x, min(valid.y, valid.z)) < 1.0) {
-          let local_environment = glass_tone(sample_blur(screen_uv, material.optics.x), material.tone);
-          refracted = mix(mix(local_environment, material.color, material.optics.z), tinted, valid);
-        }
-        let reflected = mix(refracted, environment, clamp(fresnel * material.optics.w, 0.0, 1.0));
-        let light = pow(max(dot(normal, normalize(vec3f(-0.45, -0.6, 0.66))), 0.0), 32.0);
-        let edge = pow(1.0 - clamp(normal.z, 0.0, 1.0), 3.0);
-        let highlight = (light * 0.035 * edge + edge * 0.035) * material.optics.w;
-        result = vec4f(reflected + vec3f(highlight * u.params.z), material.colored.a * coverage);
+      let traced = glass_trace(xy, screen_uv);
+      if (traced.a >= 0.0) {
+        result = vec4f(traced.rgb, traced.a * coverage);
       }
     }
   }
-  var clip_coverage = 0.0;
-${each(count, i => `  {
-    let clip = u.members[${i}].clip;
-    let outside = max(max(clip.x - xy.x, xy.x - clip.z), max(clip.y - xy.y, xy.y - clip.w));
-    clip_coverage = max(clip_coverage, 1.0 - smoothstep(-0.5, 0.5, outside));
-  }`)}
+${clipCoverage(count)}
   return vec4f(result.rgb, result.a * clip_coverage);
 }
 `
@@ -375,22 +402,33 @@ export function bindVolumeTextures(gpu: StageGpu, source: GPUTextureView, blurs:
   }
 }
 
+/** 体积管线的种类：三维求交、剖面查表，或混合光路里逐像素在两者之间选择的着色器。 */
+export type VolumePipelineKind = 'raymarch' | 'profile' | 'hybrid'
+
+/** 生成一种管线在给定成员数量下的着色器。 */
+function volumeShaderOf(kind: VolumePipelineKind, count: number): string {
+  if (kind === 'profile')
+    return createProfileVolumeShader(count)
+  if (kind === 'hybrid')
+    return createHybridVolumeShader(count)
+  return createVolumeShader(count)
+}
+
 /**
  * 体积管线表，下标是格式位置（画布、离屏目标），表内按成员数量取用。
  * 着色器只取决于成员数量，同一数量的两张表共用一个着色器模块。
- * `profile` 为 true 时生成剖面光学的管线，见 `volume-profile-shader.ts`。
+ * 剖面查表与混合光路多取样一张查找表，见 `volume-profile-shader.ts` 与 `volume-hybrid-shader.ts`。
  */
-export function createVolumePipelines(gpu: StageGpu, profile = false): PipelineTable[] {
-  return [SLOT_CANVAS, SLOT_TARGET].map(slot => new PipelineTable(gpu, profile
-    ? `volume-profile:${slot}`
-    : `volume:${slot}`, count => ({
-    code: profile
-      ? createProfileVolumeShader(count)
-      : createVolumeShader(count),
+export function createVolumePipelines(gpu: StageGpu, kind: VolumePipelineKind = 'raymarch'): PipelineTable[] {
+  const prefix = kind === 'raymarch'
+    ? 'volume'
+    : `volume-${kind}`
+  return [SLOT_CANVAS, SLOT_TARGET].map(slot => new PipelineTable(gpu, `${prefix}:${slot}`, count => ({
+    code: volumeShaderOf(kind, count),
     entry: 'volume',
-    textures: profile
-      ? VOLUME_TEXTURES + 1
-      : VOLUME_TEXTURES,
+    textures: kind === 'raymarch'
+      ? VOLUME_TEXTURES
+      : VOLUME_TEXTURES + 1,
     format: gpu.formatOf(slot),
     blend: BLEND_NORMAL,
   })))

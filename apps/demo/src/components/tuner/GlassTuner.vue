@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GlassMaterial, GlassRenderMode, GlassVariant } from 'liquid-in-canvas'
+import type { GlassMaterial, GlassOptics, GlassRenderMode, GlassVariant } from 'liquid-in-canvas'
 import { DEFAULT_STAGE_RESOLUTION, GLASS_LIMITS, resetGlassDefaults, setGlassDefaults } from 'liquid-in-canvas'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useGlassDefaults } from '@/composables/useGlassDefaults'
@@ -180,6 +180,29 @@ const MODES: readonly { id: GlassRenderMode, zh: string, en: string }[] = [
   { id: 'svg', zh: 'SVG 滤镜', en: 'SVG filter' },
   { id: 'css', zh: '纯 CSS', en: 'CSS only' },
 ]
+const OPTICS: readonly { id: GlassOptics, zh: string, en: string, hintZh: string, hintEn: string }[] = [
+  {
+    id: 'profile',
+    zh: '剖面',
+    en: 'Profile',
+    hintZh: '剖面光学：按截面查表折射，开销最低；融合连接处是近似。',
+    hintEn: 'Profile optics: refraction looked up along the cross-section, cheapest; fused joints are approximate.',
+  },
+  {
+    id: 'hybrid',
+    zh: '混合',
+    en: 'Hybrid',
+    hintZh: '混合光路：融合连接处与裁剪边附近逐步求交，其余像素查表。',
+    hintEn: 'Hybrid optics: ray-marched near fused joints and clip edges, looked up elsewhere.',
+  },
+  {
+    id: 'raymarch',
+    zh: '求交',
+    en: 'Ray march',
+    hintZh: '三维求交：所有倒角与融合区域逐步求交，开销最高。',
+    hintEn: 'Ray marching: every bevel and fused region is marched in 3D, most expensive.',
+  },
+]
 
 /**
  * 面板展开时所在的玻璃层。同层玻璃会相互融合：面板很大，如果留在页面玻璃所在的第 0 层，
@@ -224,6 +247,8 @@ const panelStyle = computed(() => ({
 const material = computed(() => defaults.value.materials[variant.value][theme.value])
 const variantOption = computed(() => VARIANTS.find(option => option.id === variant.value) ?? VARIANTS[0]!)
 const canvasActive = computed(() => renderer?.mode.value === 'canvas')
+/** 当前光路的说明。 */
+const opticsHint = computed(() => OPTICS.find(option => option.id === renderer?.optics.value) ?? OPTICS[0]!)
 let suppressClick = false
 let gesture: { pointerId: number, startX: number, startY: number, left: number, top: number } | null = null
 let copyTimer: ReturnType<typeof setTimeout> | undefined
@@ -476,14 +501,21 @@ onBeforeUnmount(() => {
                     >
                     <span>{{ tr('帧率不足时自动降低玻璃着色倍率', 'Lower the glass shading ratio when frames drop') }}</span>
                   </label>
-                  <label class="tuner-check">
-                    <input
-                      type="checkbox" data-field="optics"
-                      :checked="renderer.optics.value === 'profile'"
-                      @change="renderer.setOptics(($event.target as HTMLInputElement).checked ? 'profile' : 'raymarch')"
+                  <div class="tuner-segment" role="group" data-field="optics" :aria-label="tr('光路', 'Optics')">
+                    <button
+                      v-for="option in OPTICS"
+                      :key="option.id"
+                      type="button"
+                      :data-optics="option.id"
+                      :aria-pressed="renderer.optics.value === option.id"
+                      @click="renderer.setOptics(option.id)"
                     >
-                    <span>{{ tr('剖面光学：按截面查表折射，开销更低；融合连接处是近似', 'Profile optics: refraction looked up along the cross-section, cheaper; fused joints are approximate') }}</span>
-                  </label>
+                      {{ tr(option.zh, option.en) }}
+                    </button>
+                  </div>
+                  <p class="tuner-hint" data-role="optics">
+                    {{ tr(opticsHint.hintZh, opticsHint.hintEn) }}
+                  </p>
                   <p v-if="ratios" class="tuner-hint" data-role="ratios">
                     {{ tr('当前画布', 'Canvas now') }} {{ ratios.canvas.toFixed(2) }}× · {{ tr('玻璃着色', 'glass shading') }} {{ ratios.glass.toFixed(2) }}×
                   </p>
