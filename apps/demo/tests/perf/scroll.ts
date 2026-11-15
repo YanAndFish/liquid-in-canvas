@@ -68,8 +68,8 @@ const hold = query.has('hold')
   ? Number(query.get('hold'))
   : null
 const configured = new WeakSet<object>()
-/** 最近一次绘制的舞台，测量结束时读取实际倍率与光路（自适应降级后的结果）。 */
-let observed: ObservedStage | null = null
+/** 读取舞台的实际倍率与光路（自适应降级后的结果），测量结束时调用。 */
+let readMetrics: (() => ReturnType<CanvasStage['getMetrics']>) | null = null
 const errors: string[] = []
 let active = false
 let measurement = 0
@@ -105,8 +105,8 @@ prototype.draw = function (event) {
     if (Object.keys(resolutionOverride).length)
       this.setResolution(resolutionOverride)
     applyStageQuery(this, query)
+    readMetrics = this.getMetrics.bind(this)
   }
-  observed = this
   const gpu = this.gpu
   if (!adapterInfo && gpu) {
     const info = gpu.device.adapterInfo
@@ -227,7 +227,7 @@ button.onclick = () => {
         adapterInfo,
         elapsed,
         viewport: [innerWidth, innerHeight, devicePixelRatio],
-        metrics: observed?.getMetrics() ?? null,
+        metrics: readMetrics?.() ?? null,
         distance,
         hold,
         maxScroll: Math.max(...positions),
