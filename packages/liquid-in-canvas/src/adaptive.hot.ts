@@ -1,5 +1,5 @@
 /**
- * 玻璃着色倍率的自适应缩放。每次绘制都会调用 `sample()`，只做数值运算。
+ * 玻璃着色的自适应降级：先把光路降为查表，再降低着色倍率。每次绘制都会调用 `sample()`，只做数值运算。
  */
 
 /** 判定窗口：连续这么多帧才评估一次，避免单次卡顿触发调整。 */
@@ -24,13 +24,20 @@ const SETTLE_FRAMES = 10
 const PROBATION_WINDOWS = 4
 
 /**
- * 根据连续绘制的间隔调整玻璃着色的缩放。
+ * 根据连续绘制的间隔调整玻璃着色的质量。
  *
  * 绘制由浏览器按显示器刷新驱动，间隔只能说明“是否跟得上”，不能说明还有多少余量。
  * 因此持续变慢时降一级；流畅一段时间后试着升一级，如果升回后不久又变慢，就把下次尝试推后一倍。
+ *
+ * 降级按损失从小到大排列：光路不是剖面查表时，第一级先改用查表（只有融合连接处与裁剪边变成近似，
+ * 清晰度不变）；之后才逐级降低着色倍率（所有玻璃的轮廓与高光变软）。升回时顺序相反。
  */
 export class AdaptiveScale {
   scale = 1
+  /** 光路是否已降为剖面查表。 */
+  relaxed = false
+  /** 光路能否降级：配置的光路不是剖面查表时由舞台设为 true。 */
+  private relaxable = false
   private last = 0
   private total = 0
   private count = 0
@@ -44,6 +51,7 @@ export class AdaptiveScale {
   /** 恢复到不缩放的初始状态。 */
   reset(): void {
     this.scale = 1
+    this.relaxed = false
     this.last = 0
     this.total = 0
     this.count = 0
@@ -54,7 +62,14 @@ export class AdaptiveScale {
     this.probation = 0
   }
 
-  /** 记录一次绘制的时间戳（毫秒）。缩放发生变化时返回 true。 */
+  /** 设置光路能否降级。不能降级时撤销已有的光路降级，着色倍率不变。 */
+  setRelaxable(relaxable: boolean): void {
+    this.relaxable = relaxable
+    if (!relaxable)
+      this.relaxed = false
+  }
+
+  /** 记录一次绘制的时间戳（毫秒）。光路或缩放发生变化时返回 true。 */
   sample(now: number): boolean {
     const interval = now - this.last
     this.last = now
@@ -84,17 +99,26 @@ export class AdaptiveScale {
       if (this.probation > 0)
         this.retryDelay = Math.min(this.retryDelay * 2, RETRY_DELAY_MAX)
       this.probation = 0
+      if (this.relaxable && !this.relaxed) {
+        this.relaxed = true
+        this.settle = SETTLE_FRAMES
+        return true
+      }
       return this.apply(Math.max(MIN_SCALE, this.scale * STEP))
     }
     this.slowWindows = 0
     if (this.probation > 0 && --this.probation === 0)
       this.retryDelay = RETRY_DELAY
-    if (mean < FAST_INTERVAL && this.scale < 1) {
+    if (mean < FAST_INTERVAL && (this.scale < 1 || this.relaxed)) {
       this.fastSince ||= now
       if (now - this.fastSince >= this.retryDelay) {
         this.fastSince = 0
         this.probation = PROBATION_WINDOWS
-        return this.apply(Math.min(1, this.scale / STEP))
+        if (this.scale < 1)
+          return this.apply(Math.min(1, this.scale / STEP))
+        this.relaxed = false
+        this.settle = SETTLE_FRAMES
+        return true
       }
       return false
     }

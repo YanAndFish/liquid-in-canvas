@@ -15,6 +15,7 @@ import { GlassGroups, writePressedBox } from './fusion.hot'
 import { createProfileTable, createStackLevels, createVolumeBands, createVolumePlan, growInt32 } from './pools'
 import { profileBevelHeight, profileBevelWidth, profileHalfDepth } from './profile'
 import { assignStackLevels, MAX_STACK_LEVELS, stackMargin } from './stack.hot'
+import { HYBRID_REACH_PAD, HYBRID_REACH_SCALE } from './volume-hybrid-shader'
 import { bindVolumeTextures, createVolumePipelines, VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from './volume-shader'
 
 /** 体积着色的分辨率设置。 */
@@ -50,6 +51,8 @@ export interface VolumeGroupPlan extends StackGroup {
   ceiling: number
   /** 平顶捷径要求其余成员保持的最小距离。 */
   reach: number
+  /** 混合光路里其余成员不参与平滑合并的最小距离，比 `reach` 紧。 */
+  apart: number
   /** 阴影的不透明度与延伸范围。 */
   shadowAlpha: number
   shadowSize: number
@@ -144,6 +147,9 @@ function planGroup(plan: VolumeGroupPlan, group: GlassGroup, cssWidth: number, c
   plan.ceiling = highest + 4
   // 每一步平滑合并最多让距离减小半径的四分之一，按成员数量留出余量。
   plan.reach = fusion * 2 * (1 + group.count / 4) + 1
+  // 只有一名成员靠近时：它与其余成员合并的半径不超过 2 × 融合距离；排在它之前的成员之间
+  // 最多合并 count − 2 次，每次让距离减小不超过半径的四分之一。
+  plan.apart = fusion * 2 * (1 + Math.max(0, group.count - 2) / 4) + 1
   plan.shadowAlpha = shadowAlpha
   plan.shadowSize = shadowSize
   plan.variance = variance
@@ -215,16 +221,23 @@ export class VolumePlanner {
   }
 }
 
+/** 裁剪范围与玻璃之间除光线横向位移外再留出的距离：阴影取样的偏移与边缘的过渡带。 */
+const CLIP_CUT_PAD = 6
+
 /**
  * 把一组体积的参数写入 uniform，`start` 指向矩形与目标尺寸之后的位置。
- * 传入 `profiles` 时同时写入每名成员的剖面查找表行号（剖面光学）。
+ * 传入 `profiles` 时同时写入每名成员的剖面查找表行号（剖面光学与混合光路）。
+ *
+ * 返回裁剪范围是否切进了某名成员：裁剪边到玻璃的距离小于光线在玻璃内可能的横向位移加半厚度时，
+ * 裁剪会改变光路，混合光路要对这一组逐像素判断。没有传入 `profiles` 时不判断，返回 false。
  */
-export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGroupPlan, profiles: ProfileTable | null = null): void {
+export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGroupPlan, profiles: ProfileTable | null = null): boolean {
   // 背景已经含有遮罩。仅压暗新增的染色与高光，玻璃覆盖率保持不变。
   const brightness = srgbToLinear(plan.members[0]!.brightness)
   data[start] = plan.ceiling
   data[start + 1] = plan.reach
   data[start + 2] = brightness
+  data[start + 3] = plan.apart
   data[start + 4] = plan.shadowAlpha
   data[start + 5] = plan.shadowSize
   const valid = plan.valid
@@ -233,6 +246,7 @@ export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGr
   data[start + 10] = valid.right
   data[start + 11] = valid.bottom
   let offset = start + VOLUME_GROUP_FLOATS
+  let cut = false
   for (let i = 0; i < plan.count; i++) {
     const member = plan.members[i]!
     const options = member.options
@@ -275,10 +289,19 @@ export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGr
     if (profiles) {
       // 与着色器一致：倒角宽度不超过按压后的半宽高，也不小于半个像素。
       const bevelWidth = Math.max(Math.min(data[offset + 24]!, data[offset + 2]!, data[offset + 3]!), 0.5)
-      data[offset + 28] = profiles.rowOf(bevelWidth / halfDepth, data[offset + 25]! / halfDepth, options.bevelCurve, options.bottomBevel, options.dispersion)
+      const row = profiles.rowOf(bevelWidth / halfDepth, data[offset + 25]! / halfDepth, options.bevelCurve, options.bottomBevel, options.dispersion)
+      data[offset + 28] = row
+      // 与混合着色器的查表条件一致，横向位移取这一行的最大值。
+      const pad = profiles.reachOf(row) * halfDepth * HYBRID_REACH_SCALE + HYBRID_REACH_PAD + halfDepth + CLIP_CUT_PAD
+      const x = data[offset]!
+      const y = data[offset + 1]!
+      const halfWidth = data[offset + 2]!
+      const halfHeight = data[offset + 3]!
+      cut ||= clip[0]! > x - halfWidth - pad || clip[1]! > y - halfHeight - pad || clip[2]! < x + halfWidth + pad || clip[3]! < y + halfHeight + pad
     }
     offset += VOLUME_MEMBER_FLOATS
   }
+  return cut
 }
 
 /** 按玻璃层级合并邻近实体，并在每组中追踪三维折射光路。 */
@@ -295,9 +318,11 @@ export class VolumeGroups {
    * 每次都要重新编译着色器，造成数十毫秒的单帧卡顿。
    */
   private readonly pipelines: PipelineTable[]
-  /** 剖面光学的管线，第一次切换到剖面光学时创建。 */
-  private profilePipelines: PipelineTable[] | null = null
-  /** 剖面光学的查找表。 */
+  /** 剖面光学的管线；混合光路里只有一名成员、裁剪也没有切进玻璃的组也用它。 */
+  private readonly profilePipelines: PipelineTable[]
+  /** 混合光路的管线：逐像素在查表与求交之间选择，用于多名成员的组与被裁剪切开的组。 */
+  private readonly hybridPipelines: PipelineTable[]
+  /** 剖面光学与混合光路的查找表，第一次切换到这两种光路时创建。 */
   private profiles: ProfileTable | null = null
   private optics: GlassOptics = 'raymarch'
   /** `split` 之下与之上的两段。 */
@@ -314,7 +339,10 @@ export class VolumeGroups {
     this.blurs = blurs
     for (let i = 0; i < MAX_STACK_LEVELS; i++)
       this.sources.push(null)
+    // 管线表只是空表，着色器在第一次取用或预热时才编译。
     this.pipelines = createVolumePipelines(gpu)
+    this.profilePipelines = createVolumePipelines(gpu, 'profile')
+    this.hybridPipelines = createVolumePipelines(gpu, 'hybrid')
     this.bands = createVolumeBands(gpu)
   }
 
@@ -325,23 +353,27 @@ export class VolumeGroups {
 
   /** 在后台编译常见成员数量的管线，第一次出现融合时不必等待着色器编译。 */
   warm(counts: readonly number[]): void {
-    const pipelines = this.table()
+    const optics = this.optics
     for (let i = 0; i < counts.length; i++) {
-      pipelines[SLOT_CANVAS]!.warm(counts[i]!)
-      pipelines[SLOT_TARGET]!.warm(counts[i]!)
+      const count = counts[i]!
+      // 混合光路里只有一名成员的组通常用剖面管线，被裁剪切开时才用混合管线，两条都预热。
+      if (optics === 'hybrid' && count === 1) {
+        this.profilePipelines[SLOT_CANVAS]!.warm(count)
+        this.profilePipelines[SLOT_TARGET]!.warm(count)
+      }
+      const pipelines = this.table(true)
+      pipelines[SLOT_CANVAS]!.warm(count)
+      pipelines[SLOT_TARGET]!.warm(count)
     }
   }
 
-  /** 切换光路计算方式。第一次切到剖面光学时创建查找表并在后台编译常见数量的管线。 */
+  /** 切换光路计算方式。第一次切到剖面光学或混合光路时创建查找表。 */
   setOptics(optics: GlassOptics): void {
     if (optics === this.optics)
       return
     this.optics = optics
-    if (optics === 'profile' && !this.profilePipelines) {
-      const created = createProfileTable(this.gpu)
-      this.profilePipelines = created.pipelines
-      this.profiles = created.table
-    }
+    if (optics !== 'raymarch' && !this.profiles)
+      this.profiles = createProfileTable(this.gpu)
   }
 
   /** 按层级与邻近关系分组，并为每组分配背景级别。 */
@@ -381,17 +413,15 @@ export class VolumeGroups {
     if (planner.count === 0)
       return
     if (shading.scale >= 1) {
-      const pipelines = this.table()[SLOT_CANVAS]!
       for (let i = 0; i < planner.count; i++) {
-        const plan = planner.plans[i]!
-        canvas.push(plan.order, pipelines.get(plan.count), this.write(plan, shading.cssWidth, shading.cssHeight, shading.pixelWidth, shading.pixelHeight), this.textureGroup(plan.level))
+        const bounds = planner.plans[i]!.bounds
+        this.push(canvas, SLOT_CANVAS, planner.plans[i]!, bounds.left, bounds.top, bounds.right, bounds.bottom, shading.cssWidth, shading.cssHeight, shading.pixelWidth, shading.pixelHeight)
       }
       return
     }
 
     const width = Math.max(1, Math.ceil(shading.pixelWidth * shading.scale))
     const height = Math.max(1, Math.ceil(shading.pixelHeight * shading.scale))
-    const pipelines = this.table()[SLOT_TARGET]!
     const tile = this.gpu.blitScreen.get(SLOT_CANVAS)
     for (let index = 0; index < bands.length; index++) {
       const band = bands[index]!
@@ -415,7 +445,8 @@ export class VolumeGroups {
         if ((plan.order >= shading.split
           ? 1
           : 0) === index) {
-          band.list.push(plan.order, pipelines.get(plan.count), this.write(plan, shading.cssWidth, shading.cssHeight, width, height), this.textureGroup(plan.level))
+          const bounds = plan.bounds
+          this.push(band.list, SLOT_TARGET, plan, bounds.left, bounds.top, bounds.right, bounds.bottom, shading.cssWidth, shading.cssHeight, width, height)
         }
       }
       // 离屏目标里各组已经相互混合，重叠的包围矩形要先换成互不重叠的矩形，否则重叠处的阴影会叠加两遍。
@@ -448,8 +479,7 @@ export class VolumeGroups {
     const bottom = Math.min(bounds.bottom, limit.bottom)
     if (right <= left || bottom <= top)
       return
-    const uniform = this.writeRect(plan, left, top, right, bottom, cssWidth, cssHeight, targetWidth, targetHeight)
-    list.push(plan.order, this.table()[SLOT_TARGET]!.get(plan.count), uniform, this.textureGroup(plan.level))
+    this.push(list, SLOT_TARGET, plan, left, top, right, bottom, cssWidth, cssHeight, targetWidth, targetHeight)
   }
 
   /** 编码低分辨率的离屏绘制。目标清成全透明，体积按普通混合叠加后得到预乘颜色。 */
@@ -468,27 +498,23 @@ export class VolumeGroups {
     this.profiles?.dispose()
   }
 
-  /** 当前光路计算方式的管线表。 */
-  private table(): PipelineTable[] {
-    return this.optics === 'profile' && this.profilePipelines
-      ? this.profilePipelines
-      : this.pipelines
+  /**
+   * 一组体积使用的管线表。`traced` 表示这一组在混合光路下需要逐像素判断是否求交：
+   * 成员多于一名，或裁剪范围切进了玻璃；其余的组与剖面光学一样只查表。
+   */
+  private table(traced: boolean): PipelineTable[] {
+    const optics = this.optics
+    if (optics === 'raymarch')
+      return this.pipelines
+    return optics === 'hybrid' && traced
+      ? this.hybridPipelines
+      : this.profilePipelines
   }
 
-  /** 当前光路计算方式使用的查找表；三维求交时为 null。 */
-  private profileTable(): ProfileTable | null {
-    return this.optics === 'profile'
-      ? this.profiles
-      : null
-  }
-
-  private write(plan: VolumeGroupPlan, cssWidth: number, cssHeight: number, targetWidth: number, targetHeight: number): number {
-    const bounds = plan.bounds
-    return this.writeRect(plan, bounds.left, bounds.top, bounds.right, bounds.bottom, cssWidth, cssHeight, targetWidth, targetHeight)
-  }
-
-  /** 写入一组体积的 uniform，只绘制给定矩形（CSS 像素）。 */
-  private writeRect(
+  /** 写入一组体积的 uniform，按这一组的情况选管线，把绘制项加入 `list`。只绘制给定矩形（CSS 像素）。 */
+  private push(
+    list: DrawList,
+    slot: number,
     plan: VolumeGroupPlan,
     left: number,
     top: number,
@@ -498,7 +524,7 @@ export class VolumeGroups {
     cssHeight: number,
     targetWidth: number,
     targetHeight: number,
-  ): number {
+  ): void {
     const start = this.frame.rect(
       HEADER_FLOATS + VOLUME_GROUP_FLOATS + plan.count * VOLUME_MEMBER_FLOATS,
       left,
@@ -510,14 +536,19 @@ export class VolumeGroups {
       targetWidth,
       targetHeight,
     )
-    writeVolumeGroup(this.frame.data, start + HEADER_FLOATS, plan, this.profileTable())
-    return start * 4
+    // 三维求交不读查找表，其余两种光路都要写行号。
+    const cut = writeVolumeGroup(this.frame.data, start + HEADER_FLOATS, plan, this.optics === 'raymarch'
+      ? null
+      : this.profiles)
+    list.push(plan.order, this.table(plan.count > 1 || cut)[slot]!.get(plan.count), start * 4, this.textureGroup(plan.level))
   }
 
   private textureGroup(level: number): GPUBindGroup {
     const source = this.sources[level] ?? this.sources[0]!
     const blur = this.blurs[level] ?? this.blurs[0]!
-    const profiles = this.profileTable()
+    const profiles = this.optics === 'raymarch'
+      ? null
+      : this.profiles
     if (profiles) {
       // 查找表与模糊的代数合成一个数：任意一方重建纹理都会让缓存失效。
       const generation = blur.generation * 65536 + profiles.generation

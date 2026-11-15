@@ -1,4 +1,4 @@
-import type { PipelineTable, StageGpu } from '../gpu'
+import type { StageGpu } from '../gpu'
 /**
  * 热路径对象池的冷路径：创建池里的对象、扩容类型化数组。
  *
@@ -14,7 +14,6 @@ import { RenderTarget } from '../gpu'
 import { CoverBuilder } from './cover.hot'
 import { ProfileTable } from './optics-lut'
 import { MAX_STACK_LEVELS } from './stack.hot'
-import { createVolumePipelines } from './volume-shader'
 
 /** 创建一个空的玻璃分组。 */
 export function createGroup(): GlassGroup {
@@ -53,6 +52,7 @@ export function createVolumePlan(): VolumeGroupPlan {
     contentRegions: Array.from({ length: MAX_STACK_LEVELS }, createCoverRect),
     ceiling: 0,
     reach: 0,
+    apart: 0,
     shadowAlpha: 0,
     shadowSize: 0,
   }
@@ -102,10 +102,7 @@ export function growInt32(count: number): Int32Array<ArrayBuffer> {
   return new Int32Array(Math.max(32, count * 2))
 }
 
-/** 剖面光学的管线与查找表，第一次切换到剖面光学时创建。 */
-export function createProfileTable(gpu: StageGpu): { pipelines: PipelineTable[], table: ProfileTable } {
-  return {
-    pipelines: createVolumePipelines(gpu, true),
-    table: new ProfileTable(gpu),
-  }
+/** 剖面光学与混合光路的查找表，第一次切换到这两种光路时创建。 */
+export function createProfileTable(gpu: StageGpu): ProfileTable {
+  return new ProfileTable(gpu)
 }

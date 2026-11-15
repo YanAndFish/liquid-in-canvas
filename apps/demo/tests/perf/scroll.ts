@@ -31,6 +31,8 @@ interface ObservedStage {
   setResolution: CanvasStage['setResolution']
   /** 切换光路计算方式。 */
   setOptics: CanvasStage['setOptics']
+  /** 当前画布尺寸、倍率与实际使用的光路。 */
+  getMetrics: CanvasStage['getMetrics']
 }
 
 /** 将 GPU 时间对应到绘制目标。 */
@@ -61,7 +63,13 @@ const resolutionOverride = {
     ? { adaptive: query.get('adaptive') !== '0' }
     : {}),
 }
+/** `?hold=600` 在八秒里停在给定的滚动位置，用于测量某个画面持续重绘时的开销（需要视频或动画保持重绘）。 */
+const hold = query.has('hold')
+  ? Number(query.get('hold'))
+  : null
 const configured = new WeakSet<object>()
+/** 读取舞台的实际倍率与光路（自适应降级后的结果），测量结束时调用。 */
+let readMetrics: (() => ReturnType<CanvasStage['getMetrics']>) | null = null
 const errors: string[] = []
 let active = false
 let measurement = 0
@@ -77,12 +85,27 @@ let adapterInfo: Record<string, string | boolean> | null = null
 
 applyGlassQuery(query)
 
+// `?glass=0` 去掉页面上所有玻璃声明，只测量整页快照与页面绘制的开销。
+if (query.get('glass') === '0') {
+  const strip = (): void => {
+    for (const element of document.querySelectorAll('[data-liquid-glass]'))
+      element.removeAttribute('data-liquid-glass')
+  }
+  new MutationObserver(strip).observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['data-liquid-glass'],
+  })
+}
+
 prototype.draw = function (event) {
   if (!configured.has(this)) {
     configured.add(this)
     if (Object.keys(resolutionOverride).length)
       this.setResolution(resolutionOverride)
     applyStageQuery(this, query)
+    readMetrics = this.getMetrics.bind(this)
   }
   const gpu = this.gpu
   if (!adapterInfo && gpu) {
@@ -157,7 +180,7 @@ output.id = 'scroll-result'
 panel.append(button, output)
 document.body.append(panel)
 
-/** 暂停视频，在相同八秒路径中向下滚动 2200 像素，再回到顶部。 */
+/** 暂停视频，在相同八秒路径中向下滚动 2200 像素，再回到顶部；带 `?hold` 时停在给定位置。 */
 button.onclick = () => {
   const scroller = getStageScroller()
   if (active || !scroller)
@@ -193,7 +216,7 @@ button.onclick = () => {
         ...(durations.length < 30
           ? ['绘制次数不足']
           : []),
-        ...(Math.max(...positions) < distance * 0.95
+        ...(hold === null && Math.max(...positions) < distance * 0.95
           ? ['没有经过规定的滚动范围']
           : []),
       ]
@@ -204,7 +227,9 @@ button.onclick = () => {
         adapterInfo,
         elapsed,
         viewport: [innerWidth, innerHeight, devicePixelRatio],
+        metrics: readMetrics?.() ?? null,
         distance,
+        hold,
         maxScroll: Math.max(...positions),
         draw: distribution(durations),
         paintInterval: distribution(intervals(paints)),
@@ -219,7 +244,7 @@ button.onclick = () => {
       return
     }
     const fraction = elapsed / 8000
-    scroller.scrollTo({ top: distance * (1 - Math.abs(fraction * 2 - 1)), behavior: 'instant' })
+    scroller.scrollTo({ top: hold ?? distance * (1 - Math.abs(fraction * 2 - 1)), behavior: 'instant' })
     positions.push(scroller.scrollTop)
     frames.push(time)
     requestAnimationFrame(frame)

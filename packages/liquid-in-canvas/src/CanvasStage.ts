@@ -63,6 +63,7 @@ export class CanvasStage {
     }
     this.theme = options.theme ?? null
     this.optics = options.optics ?? 'profile'
+    this.adaptive.setRelaxable(this.optics !== 'profile')
   }
 
   async init(): Promise<StageMetrics> {
@@ -105,6 +106,7 @@ export class CanvasStage {
     return {
       ...metrics,
       glassDpr: this.glassPixelRatio(metrics.dpr),
+      optics: this.effectiveOptics(),
     }
   }
 
@@ -120,11 +122,12 @@ export class CanvasStage {
       ...resolution,
     }
     this.adaptive.reset()
+    this.glass?.setOptics(this.effectiveOptics())
     this.requestResize()
     this.invalidate()
   }
 
-  /** 当前的光路计算方式。 */
+  /** 配置的光路计算方式。自适应降级期间实际使用的光路见 `getMetrics().optics`。 */
   getOptics(): GlassOptics {
     return this.optics
   }
@@ -132,7 +135,8 @@ export class CanvasStage {
   /** 切换光路计算方式，下一帧生效。 */
   setOptics(optics: GlassOptics): void {
     this.optics = optics
-    this.glass?.setOptics(optics)
+    this.adaptive.setRelaxable(optics !== 'profile')
+    this.glass?.setOptics(this.effectiveOptics())
     this.invalidate()
   }
 
@@ -171,7 +175,7 @@ export class CanvasStage {
         gpu,
         getBackdrop: () => this.page,
         theme: this.theme,
-        optics: this.optics,
+        optics: this.effectiveOptics(),
         onInvalidate: () => this.invalidate(),
         onFault: cause => this.fail(cause),
       })
@@ -261,8 +265,8 @@ export class CanvasStage {
     if (!frame || !page || !root)
       return
 
-    if (this.resolution.adaptive)
-      this.adaptive.sample(performance.now())
+    if (this.resolution.adaptive && this.adaptive.sample(performance.now()))
+      this.glass?.setOptics(this.effectiveOptics())
 
     try {
       const dpr = this.metrics?.dpr ?? 1
@@ -345,7 +349,15 @@ export class CanvasStage {
       pixelHeight: Math.max(1, Math.round(height * dpr)),
       dpr,
       glassDpr: this.glassPixelRatio(dpr),
+      optics: this.effectiveOptics(),
     }
+  }
+
+  /** 实际使用的光路：自适应降级把光路降为查表时是 `profile`，否则是配置的光路。 */
+  private effectiveOptics(): GlassOptics {
+    return this.resolution.adaptive && this.adaptive.relaxed
+      ? 'profile'
+      : this.optics
   }
 
   /** 玻璃体积当前的着色倍率。 */

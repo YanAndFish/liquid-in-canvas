@@ -23,8 +23,10 @@ export interface StageFault {
  * - `profile`（缺省）：按到轮廓的距离查预先沿截面追踪的光路，每个像素的开销固定、远低于逐步求交；
  *   单块玻璃上与 `raymarch` 一致，融合连接处与小圆角拐角是近似。
  * - `raymarch`：在三维距离场里逐步求交，融合连接处与拐角都按三维实体折射，开销约为前者的三倍。
+ * - `hybrid`：逐像素混合。只有一块玻璃的组按 `profile` 查表；融合的组与被 `data-glass-clip` 切开的玻璃里，
+ *   离其余成员和裁剪边足够远的像素查表，连接处与裁剪边附近逐步求交，画面在这些地方与 `raymarch` 一致。
  */
-export type GlassOptics = 'raymarch' | 'profile'
+export type GlassOptics = 'raymarch' | 'profile' | 'hybrid'
 
 export interface StageMetrics {
   cssWidth: number
@@ -35,6 +37,8 @@ export interface StageMetrics {
   dpr: number
   /** 玻璃体积的实际着色倍率，不高于 `dpr`。 */
   glassDpr: number
+  /** 实际使用的光路。配置为 `hybrid` 或 `raymarch` 时，自适应降级的第一级会临时改用 `profile`。 */
+  optics: GlassOptics
 }
 
 /**
@@ -51,6 +55,9 @@ export interface StageResolution {
   maxPixels: number
   /** 玻璃体积着色倍率的上限。画布倍率高于它时，玻璃以较低分辨率着色后放大合成。 */
   maxGlassPixelRatio: number
-  /** 连续绘制低于约 51 帧时自动降低玻璃着色倍率（最低降到一半），恢复流畅后逐步升回。不改变画布分辨率。 */
+  /**
+   * 连续绘制低于约 51 帧时自动降级，恢复流畅后逐步升回。光路不是 `profile` 时先改用 `profile`（只影响融合连接处与裁剪边），
+   * 之后逐级降低玻璃着色倍率（最低降到一半）。不改变画布分辨率。
+   */
   adaptive: boolean
 }

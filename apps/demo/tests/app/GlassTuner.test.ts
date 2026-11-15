@@ -47,6 +47,7 @@ function createRenderer(canvasSupported = true, svgSupported = true): RendererCo
       pixelHeight: 1600,
       dpr: 2,
       glassDpr: 1.5,
+      optics: 'profile' as GlassOptics,
     }),
     setMode: vi.fn(async (next) => {
       mode.value = next
@@ -199,15 +200,28 @@ describe('渲染方式开关', () => {
     expect(renderer.setResolution).toHaveBeenCalledWith({ maxPixelRatio: 1.5 })
   })
 
-  it('切换三维求交与剖面光学', async () => {
+  it('在剖面、混合与三维求交之间切换光路', async () => {
     const renderer = createRenderer()
     wrapper = mountTuner(renderer)
     await wrapper.get('.tuner-launcher').trigger('click')
-    const checkbox = wrapper.get('[data-section="renderer"] input[data-field="optics"]')
-    expect((checkbox.element as HTMLInputElement).checked).toBe(true)
-    await checkbox.setValue(false)
-    expect(renderer.setOptics).toHaveBeenCalledWith('raymarch')
+    const pressed = () => wrapper!.findAll('[data-field="optics"] button').filter(button => button.attributes('aria-pressed') === 'true').map(button => button.attributes('data-optics'))
+    expect(pressed()).toEqual(['profile'])
+    await wrapper.get('[data-optics="hybrid"]').trigger('click')
+    expect(renderer.setOptics).toHaveBeenCalledWith('hybrid')
+    expect(pressed()).toEqual(['hybrid'])
+    expect(wrapper.get('[data-role="optics"]').text()).toContain('混合光路')
+    await wrapper.get('[data-optics="raymarch"]').trigger('click')
     expect(renderer.optics.value).toBe('raymarch')
+  })
+
+  it('自适应把光路降为剖面时在倍率旁说明', async () => {
+    const renderer = createRenderer()
+    wrapper = mountTuner(renderer)
+    await wrapper.get('.tuner-launcher').trigger('click')
+    expect(wrapper.get('[data-role="ratios"]').text()).not.toContain('光路已自动降为剖面')
+    // 配置为混合光路，舞台实际仍在用剖面：说明处于自动降级。
+    await wrapper.get('[data-optics="hybrid"]').trigger('click')
+    expect(wrapper.get('[data-role="ratios"]').text()).toContain('光路已自动降为剖面')
   })
 
   it('没有渲染控制器时只显示玻璃参数', async () => {

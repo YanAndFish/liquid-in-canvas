@@ -69,7 +69,7 @@ Render order ranges live in `src/render-order.ts` (page = 0, glass layer L at `9
 
 ### Canvas frame pipeline
 
-No persistent RAF loop: the browser `paint` event drives a frame; continuous redraw is requested only while video plays, springs move, or liquid morph is in flight. Per frame (`stage-frame.hot.ts`): page snapshot → glass surface sync (`LiquidGlassLayer`) → content occlusion (`content-order`, `ContentBackdrop`) → multi-level Gaussian blur (`blur`) → 3D SDF volume groups with same-layer fusion (`VolumeGroups`, `volume-shader.ts`) → overlay (`CanvasOverlay`) → canvas pass. All in one command buffer.
+No persistent RAF loop: the browser `paint` event drives a frame; continuous redraw is requested only while video plays, springs move, or liquid morph is in flight. Per frame (`stage-frame.hot.ts`): page snapshot → glass surface sync (`LiquidGlassLayer`) → content occlusion (`content-order`, `ContentBackdrop`) → multi-level Gaussian blur (`blur`) → 3D SDF volume groups with same-layer fusion (`VolumeGroups`; optics `profile` (default) / `raymarch` / `hybrid` in `volume-profile-shader.ts`, `volume-shader.ts`, `volume-hybrid-shader.ts`) → overlay (`CanvasOverlay`) → canvas pass. All in one command buffer.
 
 GPU (`gpu.ts`): raw WebGPU, no scene graph. Every draw is "one rect + one uniform slice"; vertices are generated from the uniform (no vertex buffers); all uniforms for a frame are packed into one buffer with dynamic offsets; pipelines are cached in `PipelineTable` keyed by integer (volume member count, occluder count). Snapshots are `rgba8unorm-srgb`, offscreen targets linear `rgba16float`.
 
