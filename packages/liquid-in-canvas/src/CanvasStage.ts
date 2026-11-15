@@ -4,10 +4,12 @@ import type { GlassOptics, StageMetrics, StageResolution } from './types'
 import { AdaptiveScale } from './adaptive.hot'
 import { CanvasOverlay } from './CanvasOverlay.hot'
 import { attr, STAGE_OVERLAY_ATTR } from './contract'
+import { FrameProbe } from './frame-probe.hot'
 import { createElementTexture, createStageDevice, disposeElementTexture, StageGpu } from './gpu'
 import { LiquidGlassLayer } from './liquid-glass/LiquidGlassLayer'
 import { DEFAULT_STAGE_RESOLUTION, resolveGlassPixelRatio, resolvePixelRatio } from './resolution'
 import { StageFrame } from './stage-frame.hot'
+import { VideoClock } from './video-clock'
 
 export interface CanvasStageOptions {
   /** 带有 `content="drawable"` 的画布，页面根元素需要是它的后代。 */
@@ -45,11 +47,13 @@ export class CanvasStage {
   private pendingSize: StageMetrics | null = null
   private resolution: StageResolution
   private readonly adaptive = new AdaptiveScale()
+  /** 区分“按页面自己的节拍绘制”与“跟不上显示器”，供自适应降级取样。 */
+  private readonly frameProbe = new FrameProbe()
+  /** 有新的视频帧时请求重绘。 */
+  private readonly videoClock = new VideoClock(() => this.invalidate())
   private theme: GlassTheme | null
   private optics: GlassOptics
   private cssSize = { width: 0, height: 0 }
-  private playingVideos = new Set<HTMLVideoElement>()
-  private videoFrame: number | null = null
   private initialized = false
   private failed = false
   private disposed = false
@@ -188,7 +192,7 @@ export class CanvasStage {
         this.frame.overlay = this.overlay
       }
     }
-    this.attachVideoClock(root)
+    this.videoClock.attach(root)
     this.invalidate()
   }
 
@@ -210,8 +214,9 @@ export class CanvasStage {
       root.removeEventListener('scrollend', this.handleInvalidate, { capture: true })
       root.removeEventListener('load', this.handleInvalidate, { capture: true })
       this.canvas.clearElementGeometry(root)
-      this.detachVideoClock(root)
     }
+    this.videoClock.detach()
+    this.frameProbe.stop()
 
     this.overlay?.dispose()
     this.overlay = null
@@ -265,7 +270,7 @@ export class CanvasStage {
     if (!frame || !page || !root)
       return
 
-    if (this.resolution.adaptive && this.adaptive.sample(performance.now()))
+    if (this.resolution.adaptive && this.adaptive.sample(performance.now(), this.frameProbe.mark()))
       this.glass?.setOptics(this.effectiveOptics())
 
     try {
@@ -369,65 +374,5 @@ export class CanvasStage {
 
   private snapshot(): StageMetrics {
     return this.metrics ?? this.measure()
-  }
-
-  private attachVideoClock(root: HTMLElement): void {
-    root.addEventListener('play', this.handleVideoPlay, true)
-    root.addEventListener('pause', this.handleVideoPause, true)
-    root.addEventListener('ended', this.handleVideoPause, true)
-    root.addEventListener('seeked', this.handleInvalidate, true)
-    for (const video of root.querySelectorAll('video')) {
-      if (!video.paused)
-        this.playingVideos.add(video)
-    }
-    if (this.playingVideos.size)
-      this.scheduleVideoFrame()
-  }
-
-  private detachVideoClock(root: HTMLElement): void {
-    root.removeEventListener('play', this.handleVideoPlay, true)
-    root.removeEventListener('pause', this.handleVideoPause, true)
-    root.removeEventListener('ended', this.handleVideoPause, true)
-    root.removeEventListener('seeked', this.handleInvalidate, true)
-    this.playingVideos.clear()
-    if (this.videoFrame !== null) {
-      cancelAnimationFrame(this.videoFrame)
-      this.videoFrame = null
-    }
-  }
-
-  private readonly handleVideoPlay = (event: Event): void => {
-    if (!(event.target instanceof HTMLVideoElement))
-      return
-    this.playingVideos.add(event.target)
-    this.scheduleVideoFrame()
-  }
-
-  private readonly handleVideoPause = (event: Event): void => {
-    if (!(event.target instanceof HTMLVideoElement))
-      return
-    this.playingVideos.delete(event.target)
-    if (!this.playingVideos.size && this.videoFrame !== null) {
-      cancelAnimationFrame(this.videoFrame)
-      this.videoFrame = null
-    }
-  }
-
-  private scheduleVideoFrame(): void {
-    if (this.videoFrame !== null || this.disposed)
-      return
-    this.videoFrame = requestAnimationFrame(this.tickVideo)
-  }
-
-  private readonly tickVideo = (): void => {
-    this.videoFrame = null
-    for (const video of this.playingVideos) {
-      if (!video.isConnected || video.paused)
-        this.playingVideos.delete(video)
-    }
-    if (this.disposed || !this.playingVideos.size)
-      return
-    this.invalidate()
-    this.videoFrame = requestAnimationFrame(this.tickVideo)
   }
 }

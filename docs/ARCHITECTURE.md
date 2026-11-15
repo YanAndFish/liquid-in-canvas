@@ -19,10 +19,12 @@ docs                        设计记录、视觉依据与性能记录
 src/index.ts            公开 API，不静态引入画布渲染器
 src/canvas.ts           liquid-in-canvas/canvas 入口：直接导出 CanvasStage
 src/mount.ts            mountLiquidGlass()：选择渲染方式、搭建与拆除
-src/CanvasStage.ts      画布舞台：初始化、尺寸与分辨率、视频时钟
+src/CanvasStage.ts      画布舞台：初始化、尺寸与分辨率
+src/video-clock.ts      视频时钟：有新的视频帧时请求重绘
 src/stage-frame.hot.ts  一帧的绘制：页面快照、前景、玻璃、画布遍
 src/resolution.ts       画布倍率、玻璃着色倍率
 src/adaptive.hot.ts     玻璃着色的自适应降级：光路与着色倍率
+src/frame-probe.hot.ts  显示帧探针：一次绘制是否紧接着上一个显示帧
 src/css/                回退实现：backdrop-filter，加上可选的 SVG 位移滤镜
 src/liquid-glass/       三维距离场、同层融合、内容遮挡、多级模糊、液体迁移、默认参数与属性解析
 src/contract.ts         页面与舞台之间的 DOM 约定
@@ -66,7 +68,11 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 
 ### 帧流水线（画布）
 
-浏览器的 `paint` 事件驱动一帧，舞台本身没有常驻循环。只有视频播放、按压弹簧和液体迁移运动时才逐帧请求重绘。
+浏览器的 `paint` 事件驱动一帧，舞台本身没有常驻循环。按压弹簧和液体迁移运动时逐显示帧请求重绘；视频播放时按视频帧请求重绘。
+
+**视频时钟**（`video-clock.ts`）：对根元素里每个正在播放的视频登记 `requestVideoFrameCallback()`，回调里请求重绘并重新登记；暂停、播放结束、移出文档（浏览器随后在元素上触发 `pause`）和舞台销毁时用 `cancelVideoFrameCallback()` 取消，停止时与 `seeked` 时各补一次重绘。30 帧的视频在 60 Hz 的屏幕上每两个显示帧重绘一次。Chrome 157 里视频滚出视口后不再回调，也就不再重绘；回调、`requestAnimationFrame` 与 `paint` 依次发生在同一个显示帧里，画进快照的就是刚到的那一帧视频，玻璃里的折射取自同一张快照（测量见[性能记录](performance/2026-11-15-video-clock/README.md)）。浏览器没有这个接口时退回 `requestAnimationFrame` 逐显示帧请求重绘。
+
+**显示帧探针**（`frame-probe.hot.ts`）：绘制间隔是 33 ms 时，可能是跟不上显示器，也可能是页面本来就每两个显示帧才更新一次（30 帧的视频、间歇的 DOM 更新）。浏览器自行触发的 `paint` 不经过 `invalidate()`，无法靠“谁请求了重绘”分辨；能分辨的是两次绘制之间有没有一个没有绘制的显示帧。每次绘制之后探针用 `requestAnimationFrame` 数最多两个显示帧，下一次绘制时不足两个就是连续的。自适应降级只对连续的绘制取样（见[分辨率](#分辨率)）。探针只在自适应降级开启时工作，绘制停止后数到两帧也随之停止。
 
 1. **页面快照**：`CanvasStage` 把整个根元素上传为纹理，同时作为全屏背景和玻璃的折射源。
 2. **玻璃表面**（`LiquidGlassLayer.sync`）：测量每块 `[data-liquid-glass]`，按需上传其 HTML 内容。
@@ -100,6 +106,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 | `frame.hot.ts` | uniform 分配、绘制列表排序、渲染遍编码、元素上传 |
 | `CanvasOverlay.hot.ts` | 上传前景层 |
 | `adaptive.hot.ts` | 按绘制间隔降级：先改用剖面光学，再调整玻璃着色倍率 |
+| `frame-probe.hot.ts` | 数两次绘制之间的显示帧，判断绘制是否连续 |
 | `liquid-glass/glass-frame.hot.ts` | 测量玻璃、决定上传、排列前后顺序、写入内容 |
 | `liquid-glass/content.hot.ts`、`content-order.hot.ts` | 内容与遮挡轮廓的 uniform，HTML 绘制顺序 |
 | `liquid-glass/ContentBackdrop.hot.ts`、`blur.hot.ts` | 被遮挡内容的背景合成，多级模糊 |
@@ -165,7 +172,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 
 - **画布倍率**决定整页文字和玻璃上文字的清晰度，只受两个静态上限约束：`maxPixelRatio`（默认 3）和 `maxPixels`（默认不限），结果不低于 1。
 - **玻璃着色倍率**不超过画布倍率和 `maxGlassPixelRatio`（默认 2），再乘以自适应缩放。低于画布倍率时，体积组改画进低分辨率的离屏目标，再放大合成回画布（`VolumeGroups.compose()`）。玻璃后的背景本来就经过折射与模糊，降低后主要是轮廓和高光略微变软。
-- **自适应降级**只作用于玻璃着色：连续两个窗口（各 45 帧）平均间隔超过 19.5 ms 时降一级，流畅 4 秒后尝试升回，升回失败则把下次尝试推后一倍。各级按损失从小到大排列：光路是 `hybrid` 或 `raymarch` 时第一级先改用 `profile`（只有融合连接处与裁剪边变成近似）；之后着色倍率逐级 ×0.75，最低 0.5。它不改变画布尺寸，文字不会因此变糊。
+- **自适应降级**只作用于玻璃着色：连续两个窗口（各 45 帧）平均间隔超过 19.5 ms 时降一级，流畅 4 秒后尝试升回，升回失败则把下次尝试推后一倍。各级按损失从小到大排列：光路是 `hybrid` 或 `raymarch` 时第一级先改用 `profile`（只有融合连接处与裁剪边变成近似）；之后着色倍率逐级 ×0.75，最低 0.5。它不改变画布尺寸，文字不会因此变糊。只有紧接着上一个显示帧的绘制才计入窗口（显示帧探针，见[帧流水线](#帧流水线画布)）：按视频帧节拍的绘制不取样，既不降级也不升回，已有的降级保持到下一段连续的绘制（滚动、动画）再评估。
 
 合成只覆盖体积组的包围矩形。离屏目标里各组已经相互混合，重叠的包围矩形先换成互不重叠的矩形（`cover.ts`），否则重叠处的阴影会叠加两遍。体积组按前景层的绘制顺序分成两段，各用一个离屏目标，前景层仍然夹在两段之间。低分辨率下一段内的所有体积先于这一段的内容绘制，上层玻璃的阴影因此不再压暗下层玻璃上的文字。
 

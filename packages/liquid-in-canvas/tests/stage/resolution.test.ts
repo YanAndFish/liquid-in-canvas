@@ -22,12 +22,12 @@ function ratio(devicePixelRatio: number, resolution: Partial<StageResolution> = 
   })
 }
 
-/** 以固定间隔连续绘制，返回期间缩放变化的次数。 */
-function run(adaptive: AdaptiveScale, clock: { now: number }, interval: number, frames: number): number {
+/** 以固定间隔连续绘制，返回期间缩放变化的次数。`continuous` 为 false 时每次绘制之前都空过显示帧。 */
+function run(adaptive: AdaptiveScale, clock: { now: number }, interval: number, frames: number, continuous = true): number {
   let changes = 0
   for (let i = 0; i < frames; i++) {
     clock.now += interval
-    if (adaptive.sample(clock.now))
+    if (adaptive.sample(clock.now, continuous))
       changes++
   }
   return changes
@@ -112,6 +112,54 @@ describe('自适应缩放', () => {
     const clock = { now: 0 }
     for (let i = 0; i < 100; i++)
       run(adaptive, clock, 500, 1)
+    expect(adaptive.scale).toBe(1)
+  })
+
+  it('按视频帧节拍绘制时不降级', () => {
+    const adaptive = new AdaptiveScale()
+    adaptive.setRelaxable(true)
+    const clock = { now: 0 }
+    // 30 帧与 24 帧的视频：间隔 33 ms、42 ms，但每次绘制之前都空过显示帧。
+    expect(run(adaptive, clock, 33.4, 3000, false)).toBe(0)
+    expect(run(adaptive, clock, 41.7, 3000, false)).toBe(0)
+    expect(adaptive.scale).toBe(1)
+    expect(adaptive.relaxed).toBe(false)
+  })
+
+  it('按视频帧节拍绘制时保持已有的降级，不升回', () => {
+    const adaptive = new AdaptiveScale()
+    const clock = { now: 0 }
+    run(adaptive, clock, 28, 90)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    // 一分多钟只有视频在驱动重绘：没有能说明流畅的间隔。
+    expect(run(adaptive, clock, 33.4, 2000, false)).toBe(0)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    // 恢复逐显示帧的绘制后，仍需流畅约四秒才升回。
+    run(adaptive, clock, 16.7, 150)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    run(adaptive, clock, 16.7, 300)
+    expect(adaptive.scale).toBe(1)
+  })
+
+  it('夹在连续绘制之间的零星空帧不抹掉变慢的证据', () => {
+    const adaptive = new AdaptiveScale()
+    const clock = { now: 0 }
+    // 每三次慢的连续绘制之后空一帧再画一次。
+    for (let i = 0; i < 40; i++) {
+      run(adaptive, clock, 28, 3)
+      run(adaptive, clock, 45, 1, false)
+    }
+    expect(adaptive.scale).toBeLessThan(1)
+  })
+
+  it('一段视频节拍把前后两段变慢隔开，各自不足以降级', () => {
+    const adaptive = new AdaptiveScale()
+    const clock = { now: 0 }
+    for (let i = 0; i < 6; i++) {
+      // 不到一个窗口的掉帧，随后只有视频在驱动重绘。
+      run(adaptive, clock, 28, 40)
+      run(adaptive, clock, 33.4, 30, false)
+    }
     expect(adaptive.scale).toBe(1)
   })
 

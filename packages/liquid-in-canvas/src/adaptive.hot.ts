@@ -4,7 +4,7 @@
 
 /** 判定窗口：连续这么多帧才评估一次，避免单次卡顿触发调整。 */
 const WINDOW = 45
-/** 间隔超过它视为绘制中断（页面静止或标签页在后台），丢弃当前窗口。 */
+/** 间隔超过它视为绘制中断（页面静止或标签页在后台），丢弃当前窗口；这么久没有连续的绘制也一样。 */
 const IDLE_GAP = 120
 /** 平均间隔超过它（约 51 帧）时降一级。 */
 const SLOW_INTERVAL = 19.5
@@ -29,6 +29,9 @@ const PROBATION_WINDOWS = 4
  * 绘制由浏览器按显示器刷新驱动，间隔只能说明“是否跟得上”，不能说明还有多少余量。
  * 因此持续变慢时降一级；流畅一段时间后试着升一级，如果升回后不久又变慢，就把下次尝试推后一倍。
  *
+ * 只有紧接着上一个显示帧的绘制才取样（`FrameProbe`）。中间空过显示帧的绘制是页面按自己的节拍在更新，
+ * 例如只有 30 帧的视频在驱动重绘：间隔是 33 ms，却不是掉帧。这样的绘制不改变质量，既不降级也不升回。
+ *
  * 降级按损失从小到大排列：光路不是剖面查表时，第一级先改用查表（只有融合连接处与裁剪边变成近似，
  * 清晰度不变）；之后才逐级降低着色倍率（所有玻璃的轮廓与高光变软）。升回时顺序相反。
  */
@@ -39,6 +42,8 @@ export class AdaptiveScale {
   /** 光路能否降级：配置的光路不是剖面查表时由舞台设为 true。 */
   private relaxable = false
   private last = 0
+  /** 上一次连续绘制的时间戳。 */
+  private sampled = 0
   private total = 0
   private count = 0
   private settle = 0
@@ -53,6 +58,7 @@ export class AdaptiveScale {
     this.scale = 1
     this.relaxed = false
     this.last = 0
+    this.sampled = 0
     this.total = 0
     this.count = 0
     this.settle = 0
@@ -69,15 +75,23 @@ export class AdaptiveScale {
       this.relaxed = false
   }
 
-  /** 记录一次绘制的时间戳（毫秒）。光路或缩放发生变化时返回 true。 */
-  sample(now: number): boolean {
+  /**
+   * 记录一次绘制的时间戳（毫秒）。光路或缩放发生变化时返回 true。
+   *
+   * `continuous` 表示这次绘制紧接着上一次绘制所在的显示帧，只有这样的间隔才说明跟不跟得上显示器。
+   */
+  sample(now: number, continuous = true): boolean {
     const interval = now - this.last
     this.last = now
+    if (!continuous) {
+      // 夹在连续绘制之间的零星空帧只跳过这一次；一直没有连续的绘制时，之前攒下的窗口已经过时。
+      if (now - this.sampled > IDLE_GAP)
+        this.interrupt()
+      return false
+    }
+    this.sampled = now
     if (interval <= 0 || interval > IDLE_GAP) {
-      this.total = 0
-      this.count = 0
-      this.slowWindows = 0
-      this.fastSince = 0
+      this.interrupt()
       return false
     }
     if (this.settle > 0) {
@@ -124,6 +138,14 @@ export class AdaptiveScale {
     }
     this.fastSince = 0
     return false
+  }
+
+  /** 绘制中断：丢弃当前窗口与连续变慢、连续流畅的计数，已有的降级保持不变。 */
+  private interrupt(): void {
+    this.total = 0
+    this.count = 0
+    this.slowWindows = 0
+    this.fastSince = 0
   }
 
   private apply(next: number): boolean {
