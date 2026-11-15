@@ -220,7 +220,7 @@ const opened = ref(false)
 const dragging = ref(false)
 const variant = ref<GlassVariant>('regular')
 const copied = ref(false)
-const ratios = ref<{ canvas: number, glass: number, optics: GlassOptics } | null>(null)
+const ratios = ref<{ canvas: number, target: number, glass: number, optics: GlassOptics } | null>(null)
 const viewport = ref({ x: window.innerWidth, y: window.innerHeight })
 const position = ref({ x: viewport.value.x - 92, y: viewport.value.y - 92 })
 const buttonSize = computed(() => viewport.value.x < 600
@@ -393,6 +393,7 @@ function watchPixelRatio(active: boolean): void {
     const metrics = renderer.metrics()
     ratios.value = metrics && {
       canvas: metrics.dpr,
+      target: metrics.targetDpr,
       glass: metrics.glassDpr,
       optics: metrics.optics,
     }
@@ -503,7 +504,16 @@ onBeforeUnmount(() => {
                       :checked="renderer.resolution.value.adaptive"
                       @change="renderer.setResolution({ adaptive: ($event.target as HTMLInputElement).checked })"
                     >
-                    <span>{{ tr('帧率不足时自动降级：先改用剖面光学，再降低玻璃着色倍率', 'When frames drop, fall back to profile optics, then lower the glass shading ratio') }}</span>
+                    <span>{{ tr('帧率不足时自动降级：先改用剖面光学，再降低玻璃着色倍率；不见效的一级会撤回', 'When frames drop, fall back to profile optics, then lower the glass shading ratio; a step that does not help is undone') }}</span>
+                  </label>
+                  <label class="tuner-check">
+                    <input
+                      type="checkbox" data-field="adaptiveCanvas"
+                      :disabled="!renderer.resolution.value.adaptive"
+                      :checked="renderer.resolution.value.minPixelRatio < renderer.resolution.value.maxPixelRatio"
+                      @change="renderer.setResolution({ minPixelRatio: ($event.target as HTMLInputElement).checked ? 1 : Infinity })"
+                    >
+                    <span>{{ tr('仍然不足时降低画布倍率（文字变软，最低 1×）', 'If that is not enough, lower the canvas ratio (softer text, down to 1×)') }}</span>
                   </label>
                   <div class="tuner-segment" role="group" data-field="optics" :aria-label="tr('光路', 'Optics')">
                     <button
@@ -521,7 +531,9 @@ onBeforeUnmount(() => {
                     {{ tr(opticsHint.hintZh, opticsHint.hintEn) }}
                   </p>
                   <p v-if="ratios" class="tuner-hint" data-role="ratios">
-                    {{ tr('当前画布', 'Canvas now') }} {{ ratios.canvas.toFixed(2) }}× · {{ tr('玻璃着色', 'glass shading') }} {{ ratios.glass.toFixed(2) }}×<template v-if="ratios.optics !== renderer.optics.value">
+                    {{ tr('当前画布', 'Canvas now') }} {{ ratios.canvas.toFixed(2) }}×<template v-if="ratios.canvas < ratios.target - 0.005">
+                      {{ tr('（已自动降低，原为', '(lowered from') }} {{ ratios.target.toFixed(2) }}×{{ tr('）', ')') }}
+                    </template> · {{ tr('玻璃着色', 'glass shading') }} {{ ratios.glass.toFixed(2) }}×<template v-if="ratios.optics !== renderer.optics.value">
                       · {{ tr('光路已自动降为剖面', 'optics lowered to profile') }}
                     </template>
                   </p>

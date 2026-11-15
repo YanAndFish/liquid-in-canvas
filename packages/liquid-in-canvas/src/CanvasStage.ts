@@ -6,7 +6,7 @@ import { CanvasOverlay } from './CanvasOverlay.hot'
 import { attr, STAGE_OVERLAY_ATTR } from './contract'
 import { createElementTexture, createStageDevice, disposeElementTexture, StageGpu } from './gpu'
 import { LiquidGlassLayer } from './liquid-glass/LiquidGlassLayer'
-import { DEFAULT_STAGE_RESOLUTION, resolveGlassPixelRatio, resolvePixelRatio } from './resolution'
+import { DEFAULT_STAGE_RESOLUTION, resolveCanvasScaleFloor, resolveGlassPixelRatio, resolvePixelRatio } from './resolution'
 import { StageFrame } from './stage-frame.hot'
 
 export interface CanvasStageOptions {
@@ -254,6 +254,12 @@ export class CanvasStage {
     if (this.failed || this.disposed)
       return
 
+    // 自适应降级可能改变光路、玻璃着色倍率或画布倍率；画布尺寸的变化与其他来源的一样，在这一帧里应用。
+    if (this.root && this.resolution.adaptive && this.adaptive.sample(performance.now())) {
+      this.glass?.setOptics(this.effectiveOptics())
+      this.requestResize()
+    }
+
     const pending = this.pendingSize
     // Resize inside paint so the canvas is not cleared in a separate frame.
     if (pending && this.applySize(pending))
@@ -264,9 +270,6 @@ export class CanvasStage {
     const root = this.root
     if (!frame || !page || !root)
       return
-
-    if (this.resolution.adaptive && this.adaptive.sample(performance.now()))
-      this.glass?.setOptics(this.effectiveOptics())
 
     try {
       const dpr = this.metrics?.dpr ?? 1
@@ -336,18 +339,24 @@ export class CanvasStage {
     const devicePixelRatio = typeof window === 'undefined'
       ? 1
       : window.devicePixelRatio || 1
-    const dpr = resolvePixelRatio({
+    const base = resolvePixelRatio({
       devicePixelRatio,
       cssWidth: width,
       cssHeight: height,
       resolution: this.resolution,
     })
+    // 静态上限给出的倍率再乘以自适应降级的系数；系数的下限随设备倍率与窗口尺寸变化，每次重新计算。
+    this.adaptive.setCanvasFloor(resolveCanvasScaleFloor(devicePixelRatio, base, this.resolution.minPixelRatio))
+    const dpr = this.resolution.adaptive
+      ? base * this.adaptive.canvasScale
+      : base
     return {
       cssWidth: width,
       cssHeight: height,
       pixelWidth: Math.max(1, Math.round(width * dpr)),
       pixelHeight: Math.max(1, Math.round(height * dpr)),
       dpr,
+      targetDpr: base,
       glassDpr: this.glassPixelRatio(dpr),
       optics: this.effectiveOptics(),
     }

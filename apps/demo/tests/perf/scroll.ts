@@ -62,6 +62,11 @@ const resolutionOverride = {
   ...(query.has('adaptive')
     ? { adaptive: query.get('adaptive') !== '0' }
     : {}),
+  ...(query.has('minPixelRatio')
+    ? {
+        minPixelRatio: Number(query.get('minPixelRatio')),
+      }
+    : {}),
 }
 /** `?hold=600` 在八秒里停在给定的滚动位置，用于测量某个画面持续重绘时的开销（需要视频或动画保持重绘）。 */
 const hold = query.has('hold')
@@ -81,6 +86,10 @@ let gpuPassSums: number[] = []
 let gpuPassTimes: number[][] = []
 let gpuPassInfo: PassInfo[][] = []
 let positions: number[] = []
+/** 自适应降级的变化记录：`[距测量开始的毫秒数, 画布倍率, 玻璃着色倍率, 光路]`，第一项是测量开始时的状态。 */
+let adaptation: [number, number, number, string][] = []
+let measurementStart = 0
+let lastState = ''
 let adapterInfo: Record<string, string | boolean> | null = null
 
 applyGlassQuery(query)
@@ -148,6 +157,17 @@ prototype.draw = function (event) {
   draw.call(this, event)
   durations.push(performance.now() - start)
   paints.push(start)
+  const metrics = this.getMetrics()
+  const state = `${metrics.dpr.toFixed(3)} ${metrics.glassDpr.toFixed(3)} ${metrics.optics}`
+  if (state !== lastState) {
+    lastState = state
+    adaptation.push([
+      Math.round(start - measurementStart),
+      +metrics.dpr.toFixed(3),
+      +metrics.glassDpr.toFixed(3),
+      metrics.optics,
+    ])
+  }
 }
 window.addEventListener('error', event => errors.push(event.message))
 window.addEventListener('unhandledrejection', event => errors.push(String(event.reason)))
@@ -197,6 +217,9 @@ button.onclick = () => {
   gpuPassInfo = []
   measurement++
   positions = []
+  adaptation = []
+  lastState = ''
+  measurementStart = performance.now()
   errors.length = 0
   active = true
   button.disabled = true
@@ -228,6 +251,7 @@ button.onclick = () => {
         elapsed,
         viewport: [innerWidth, innerHeight, devicePixelRatio],
         metrics: readMetrics?.() ?? null,
+        adaptation,
         distance,
         hold,
         maxScroll: Math.max(...positions),

@@ -33,8 +33,10 @@ export interface StageMetrics {
   cssHeight: number
   pixelWidth: number
   pixelHeight: number
-  /** 画布的实际渲染倍率，也是页面文字的倍率；可能低于 `devicePixelRatio`。 */
+  /** 画布的实际渲染倍率，也是页面文字的倍率；受静态上限限制或被自适应降级降低后会低于 `devicePixelRatio`。 */
   dpr: number
+  /** 两个静态上限给出的画布倍率。`dpr` 低于它说明自适应降级降低了画布倍率。 */
+  targetDpr: number
   /** 玻璃体积的实际着色倍率，不高于 `dpr`。 */
   glassDpr: number
   /** 实际使用的光路。配置为 `hybrid` 或 `raymarch` 时，自适应降级的第一级会临时改用 `profile`。 */
@@ -44,7 +46,8 @@ export interface StageMetrics {
 /**
  * 渲染分辨率的限制。
  *
- * 画布分辨率决定整页文字的清晰度，只受 `maxPixelRatio` 与 `maxPixels` 这两个静态上限约束。
+ * 画布分辨率决定整页文字的清晰度，由 `maxPixelRatio` 与 `maxPixels` 这两个静态上限决定；
+ * 自适应降级只在其余手段无效或用尽后才降低它，下限是 `minPixelRatio`。
  * 玻璃体积的着色分辨率可以单独降低：玻璃后的背景本来就经过折射与模糊，降低它几乎不影响观感，
  * 页面文字和玻璃上的文字仍按画布分辨率绘制。
  */
@@ -57,7 +60,14 @@ export interface StageResolution {
   maxGlassPixelRatio: number
   /**
    * 连续绘制低于约 51 帧时自动降级，恢复流畅后逐步升回。光路不是 `profile` 时先改用 `profile`（只影响融合连接处与裁剪边），
-   * 之后逐级降低玻璃着色倍率（最低降到一半）。不改变画布分辨率。
+   * 之后逐级降低玻璃着色倍率（最低降到一半），最后逐级降低画布倍率（最低降到 `minPixelRatio`）。
+   * 每降一级都会检验：绘制间隔没有明显缩短就撤回这一级，并在一段时间内跳过这种手段。
    */
   adaptive: boolean
+  /**
+   * 自适应降级可以把画布倍率降到的下限，缺省 1。实际下限不低于 1 与 `devicePixelRatio` 中的较小值。
+   * 设为不低于 `maxPixelRatio` 的值（例如 `Infinity`）时自适应降级不改变画布尺寸，文字不会因此变软。
+   * 只在 `adaptive` 开启时起作用，不影响两个静态上限的结果。
+   */
+  minPixelRatio: number
 }
