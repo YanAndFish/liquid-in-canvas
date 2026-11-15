@@ -154,6 +154,65 @@ describe('自适应缩放', () => {
     expect(adaptive.scale).toBeCloseTo(0.75)
   })
 
+  it('光路可以降级时先降光路，再降着色倍率；升回时顺序相反', () => {
+    const adaptive = new AdaptiveScale()
+    adaptive.setRelaxable(true)
+    const clock = { now: 0 }
+    run(adaptive, clock, 28, 90)
+    expect(adaptive.relaxed).toBe(true)
+    expect(adaptive.scale).toBe(1)
+    // 改用查表后仍然跟不上，才开始降低着色倍率。
+    run(adaptive, clock, 28, 120)
+    expect(adaptive.relaxed).toBe(true)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    // 恢复流畅：先升回着色倍率，光路仍是查表。
+    run(adaptive, clock, 16.7, 450)
+    expect(adaptive.scale).toBe(1)
+    expect(adaptive.relaxed).toBe(true)
+    run(adaptive, clock, 16.7, 450)
+    expect(adaptive.relaxed).toBe(false)
+  })
+
+  it('改用查表后恢复流畅时不再降低着色倍率', () => {
+    const adaptive = new AdaptiveScale()
+    adaptive.setRelaxable(true)
+    const clock = { now: 0 }
+    run(adaptive, clock, 28, 90)
+    run(adaptive, clock, 16.7, 100)
+    expect(adaptive.relaxed).toBe(true)
+    expect(adaptive.scale).toBe(1)
+  })
+
+  it('升回光路后再次变慢时推迟下一次尝试', () => {
+    const adaptive = new AdaptiveScale()
+    adaptive.setRelaxable(true)
+    const clock = { now: 0 }
+    run(adaptive, clock, 28, 90)
+    run(adaptive, clock, 16.7, 400)
+    expect(adaptive.relaxed).toBe(false)
+    run(adaptive, clock, 28, 90)
+    expect(adaptive.relaxed).toBe(true)
+    run(adaptive, clock, 16.7, 400)
+    expect(adaptive.relaxed).toBe(true)
+    run(adaptive, clock, 16.7, 300)
+    expect(adaptive.relaxed).toBe(false)
+  })
+
+  it('光路不能降级时直接降低着色倍率；改为不能降级时撤销光路降级', () => {
+    const adaptive = new AdaptiveScale()
+    const clock = { now: 0 }
+    run(adaptive, clock, 28, 90)
+    expect(adaptive.relaxed).toBe(false)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    adaptive.reset()
+    adaptive.setRelaxable(true)
+    // 重置后的第一帧只用来记下时间，多画几帧凑满两个窗口。
+    run(adaptive, clock, 28, 100)
+    expect(adaptive.relaxed).toBe(true)
+    adaptive.setRelaxable(false)
+    expect(adaptive.relaxed).toBe(false)
+  })
+
   it('重置后回到初始状态', () => {
     const adaptive = new AdaptiveScale()
     run(adaptive, { now: 0 }, 28, 200)

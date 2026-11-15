@@ -22,7 +22,7 @@ src/mount.ts            mountLiquidGlass()：选择渲染方式、搭建与拆�
 src/CanvasStage.ts      画布舞台：初始化、尺寸与分辨率、视频时钟
 src/stage-frame.hot.ts  一帧的绘制：页面快照、前景、玻璃、画布遍
 src/resolution.ts       画布倍率、玻璃着色倍率
-src/adaptive.hot.ts     玻璃着色倍率的自适应缩放
+src/adaptive.hot.ts     玻璃着色的自适应降级：光路与着色倍率
 src/css/                回退实现：backdrop-filter，加上可选的 SVG 位移滤镜
 src/liquid-glass/       三维距离场、同层融合、内容遮挡、多级模糊、液体迁移、默认参数与属性解析
 src/contract.ts         页面与舞台之间的 DOM 约定
@@ -99,7 +99,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 | `stage-frame.hot.ts` | 上传页面快照，组装画布遍，编码并提交 |
 | `frame.hot.ts` | uniform 分配、绘制列表排序、渲染遍编码、元素上传 |
 | `CanvasOverlay.hot.ts` | 上传前景层 |
-| `adaptive.hot.ts` | 按绘制间隔调整玻璃着色倍率 |
+| `adaptive.hot.ts` | 按绘制间隔降级：先改用剖面光学，再调整玻璃着色倍率 |
 | `liquid-glass/glass-frame.hot.ts` | 测量玻璃、决定上传、排列前后顺序、写入内容 |
 | `liquid-glass/content.hot.ts`、`content-order.hot.ts` | 内容与遮挡轮廓的 uniform，HTML 绘制顺序 |
 | `liquid-glass/ContentBackdrop.hot.ts`、`blur.hot.ts` | 被遮挡内容的背景合成，多级模糊 |
@@ -165,7 +165,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 
 - **画布倍率**决定整页文字和玻璃上文字的清晰度，只受两个静态上限约束：`maxPixelRatio`（默认 3）和 `maxPixels`（默认不限），结果不低于 1。
 - **玻璃着色倍率**不超过画布倍率和 `maxGlassPixelRatio`（默认 2），再乘以自适应缩放。低于画布倍率时，体积组改画进低分辨率的离屏目标，再放大合成回画布（`VolumeGroups.compose()`）。玻璃后的背景本来就经过折射与模糊，降低后主要是轮廓和高光略微变软。
-- **自适应缩放**只作用于玻璃着色倍率：连续两个窗口（各 45 帧）平均间隔超过 19.5 ms 时降一级（×0.75，最低 0.5），流畅 4 秒后尝试升回，升回失败则把下次尝试推后一倍。它不改变画布尺寸，文字不会因此变糊。
+- **自适应降级**只作用于玻璃着色：连续两个窗口（各 45 帧）平均间隔超过 19.5 ms 时降一级，流畅 4 秒后尝试升回，升回失败则把下次尝试推后一倍。各级按损失从小到大排列：光路是 `hybrid` 或 `raymarch` 时第一级先改用 `profile`（只有融合连接处与裁剪边变成近似）；之后着色倍率逐级 ×0.75，最低 0.5。它不改变画布尺寸，文字不会因此变糊。
 
 合成只覆盖体积组的包围矩形。离屏目标里各组已经相互混合，重叠的包围矩形先换成互不重叠的矩形（`cover.ts`），否则重叠处的阴影会叠加两遍。体积组按前景层的绘制顺序分成两段，各用一个离屏目标，前景层仍然夹在两段之间。低分辨率下一段内的所有体积先于这一段的内容绘制，上层玻璃的阴影因此不再压暗下层玻璃上的文字。
 

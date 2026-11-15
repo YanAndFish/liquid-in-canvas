@@ -37,6 +37,8 @@ export interface StageMetrics {
   dpr: number
   /** 玻璃体积的实际着色倍率，不高于 `dpr`。 */
   glassDpr: number
+  /** 实际使用的光路。配置为 `hybrid` 或 `raymarch` 时，自适应降级的第一级会临时改用 `profile`。 */
+  optics: GlassOptics
 }
 
 /**
@@ -53,6 +55,9 @@ export interface StageResolution {
   maxPixels: number
   /** 玻璃体积着色倍率的上限。画布倍率高于它时，玻璃以较低分辨率着色后放大合成。 */
   maxGlassPixelRatio: number
-  /** 连续绘制低于约 51 帧时自动降低玻璃着色倍率（最低降到一半），恢复流畅后逐步升回。不改变画布分辨率。 */
+  /**
+   * 连续绘制低于约 51 帧时自动降级，恢复流畅后逐步升回。光路不是 `profile` 时先改用 `profile`（只影响融合连接处与裁剪边），
+   * 之后逐级降低玻璃着色倍率（最低降到一半）。不改变画布分辨率。
+   */
   adaptive: boolean
 }

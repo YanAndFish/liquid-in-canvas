@@ -220,7 +220,7 @@ const opened = ref(false)
 const dragging = ref(false)
 const variant = ref<GlassVariant>('regular')
 const copied = ref(false)
-const ratios = ref<{ canvas: number, glass: number } | null>(null)
+const ratios = ref<{ canvas: number, glass: number, optics: GlassOptics } | null>(null)
 const viewport = ref({ x: window.innerWidth, y: window.innerHeight })
 const position = ref({ x: viewport.value.x - 92, y: viewport.value.y - 92 })
 const buttonSize = computed(() => viewport.value.x < 600
@@ -383,7 +383,7 @@ function resize(): void {
   position.value = clampLauncherPosition(position.value, viewport.value, buttonSize.value)
 }
 
-/** 面板打开期间定时读取实际倍率，自适应调整玻璃着色倍率后能及时显示。 */
+/** 面板打开期间定时读取实际倍率与光路，自适应降级后能及时显示。 */
 function watchPixelRatio(active: boolean): void {
   clearInterval(ratioTimer)
   ratioTimer = undefined
@@ -391,7 +391,11 @@ function watchPixelRatio(active: boolean): void {
     return
   const read = (): void => {
     const metrics = renderer.metrics()
-    ratios.value = metrics && { canvas: metrics.dpr, glass: metrics.glassDpr }
+    ratios.value = metrics && {
+      canvas: metrics.dpr,
+      glass: metrics.glassDpr,
+      optics: metrics.optics,
+    }
   }
   read()
   ratioTimer = setInterval(read, 500)
@@ -499,7 +503,7 @@ onBeforeUnmount(() => {
                       :checked="renderer.resolution.value.adaptive"
                       @change="renderer.setResolution({ adaptive: ($event.target as HTMLInputElement).checked })"
                     >
-                    <span>{{ tr('帧率不足时自动降低玻璃着色倍率', 'Lower the glass shading ratio when frames drop') }}</span>
+                    <span>{{ tr('帧率不足时自动降级：先改用剖面光学，再降低玻璃着色倍率', 'When frames drop, fall back to profile optics, then lower the glass shading ratio') }}</span>
                   </label>
                   <div class="tuner-segment" role="group" data-field="optics" :aria-label="tr('光路', 'Optics')">
                     <button
@@ -517,7 +521,9 @@ onBeforeUnmount(() => {
                     {{ tr(opticsHint.hintZh, opticsHint.hintEn) }}
                   </p>
                   <p v-if="ratios" class="tuner-hint" data-role="ratios">
-                    {{ tr('当前画布', 'Canvas now') }} {{ ratios.canvas.toFixed(2) }}× · {{ tr('玻璃着色', 'glass shading') }} {{ ratios.glass.toFixed(2) }}×
+                    {{ tr('当前画布', 'Canvas now') }} {{ ratios.canvas.toFixed(2) }}× · {{ tr('玻璃着色', 'glass shading') }} {{ ratios.glass.toFixed(2) }}×<template v-if="ratios.optics !== renderer.optics.value">
+                      · {{ tr('光路已自动降为剖面', 'optics lowered to profile') }}
+                    </template>
                   </p>
                 </template>
               </section>

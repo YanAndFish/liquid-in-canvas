@@ -31,6 +31,8 @@ interface ObservedStage {
   setResolution: CanvasStage['setResolution']
   /** 切换光路计算方式。 */
   setOptics: CanvasStage['setOptics']
+  /** 当前画布尺寸、倍率与实际使用的光路。 */
+  getMetrics: CanvasStage['getMetrics']
 }
 
 /** 将 GPU 时间对应到绘制目标。 */
@@ -66,6 +68,8 @@ const hold = query.has('hold')
   ? Number(query.get('hold'))
   : null
 const configured = new WeakSet<object>()
+/** 最近一次绘制的舞台，测量结束时读取实际倍率与光路（自适应降级后的结果）。 */
+let observed: ObservedStage | null = null
 const errors: string[] = []
 let active = false
 let measurement = 0
@@ -81,6 +85,20 @@ let adapterInfo: Record<string, string | boolean> | null = null
 
 applyGlassQuery(query)
 
+// `?glass=0` 去掉页面上所有玻璃声明，只测量整页快照与页面绘制的开销。
+if (query.get('glass') === '0') {
+  const strip = (): void => {
+    for (const element of document.querySelectorAll('[data-liquid-glass]'))
+      element.removeAttribute('data-liquid-glass')
+  }
+  new MutationObserver(strip).observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['data-liquid-glass'],
+  })
+}
+
 prototype.draw = function (event) {
   if (!configured.has(this)) {
     configured.add(this)
@@ -88,6 +106,7 @@ prototype.draw = function (event) {
       this.setResolution(resolutionOverride)
     applyStageQuery(this, query)
   }
+  observed = this
   const gpu = this.gpu
   if (!adapterInfo && gpu) {
     const info = gpu.device.adapterInfo
@@ -208,6 +227,7 @@ button.onclick = () => {
         adapterInfo,
         elapsed,
         viewport: [innerWidth, innerHeight, devicePixelRatio],
+        metrics: observed?.getMetrics() ?? null,
         distance,
         hold,
         maxScroll: Math.max(...positions),
