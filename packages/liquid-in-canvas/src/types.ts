@@ -24,7 +24,8 @@ export interface StageFault {
  *   单块玻璃上与 `raymarch` 一致，融合连接处与小圆角拐角是近似。
  * - `raymarch`：在三维距离场里逐步求交，融合连接处与拐角都按三维实体折射，开销约为前者的三倍。
  * - `hybrid`：逐像素混合。只有一块玻璃的组按 `profile` 查表；融合的组与被 `data-glass-clip` 切开的玻璃里，
- *   离其余成员和裁剪边足够远的像素查表，连接处与裁剪边附近逐步求交，画面在这些地方与 `raymarch` 一致。
+ *   离其余成员和裁剪边足够远的像素查表，连接处与裁剪边附近求交，静止的画面在这些地方与 `raymarch` 一致。
+ *   缺省缓存求交结果（`fieldCache`）：几何静止后求交一次，运动中这一组查表。
  */
 export type GlassOptics = 'raymarch' | 'profile' | 'hybrid'
 

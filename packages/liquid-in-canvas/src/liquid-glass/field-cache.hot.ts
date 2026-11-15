@@ -103,10 +103,7 @@ export class FieldCache {
     this.settling = false
     this.baking = null
     this.list.reset()
-    const retired = this.retired
-    for (let i = 0; i < retired.length; i++)
-      retired[i]!.destroy()
-    retired.length = 0
+    this.flush()
     const entries = this.entries
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i]!
@@ -245,11 +242,15 @@ export class FieldCache {
     this.frame.encodeFieldPass(encoder, target.views, target.width, target.height, this.list)
   }
 
-  /** 放弃全部缓存：切换到不使用缓存的光路时调用。纹理在下一帧开始时释放。 */
+  /**
+   * 放弃全部缓存并释放纹理：切换到不使用缓存的光路时调用。
+   * 只能在两帧之间调用（上一帧已经提交、这一帧还没有排绘制），之后不会再有 `begin()` 来释放它们。
+   */
   reset(): void {
     const entries = this.entries
     for (let i = 0; i < entries.length; i++)
       this.forget(entries[i]!)
+    this.flush()
     this.baking = null
     this.list.reset()
     this.settling = false
@@ -257,13 +258,17 @@ export class FieldCache {
 
   dispose(): void {
     this.reset()
+    const empty = this.empty.textures
+    for (let i = 0; i < empty.length; i++)
+      empty[i]!.destroy()
+  }
+
+  /** 销毁换下的纹理。 */
+  private flush(): void {
     const retired = this.retired
     for (let i = 0; i < retired.length; i++)
       retired[i]!.destroy()
     retired.length = 0
-    const empty = this.empty.textures
-    for (let i = 0; i < empty.length; i++)
-      empty[i]!.destroy()
   }
 
   /** 记录着同一组成员的条目。 */

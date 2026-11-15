@@ -66,14 +66,14 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 
 ### 帧流水线（画布）
 
-浏览器的 `paint` 事件驱动一帧，舞台本身没有常驻循环。只有视频播放、按压弹簧和液体迁移运动时才逐帧请求重绘。
+浏览器的 `paint` 事件驱动一帧，舞台本身没有常驻循环。只有视频播放、按压弹簧和液体迁移运动时，以及折射场缓存等待静止或淡化的约 0.3 秒里才逐帧请求重绘。
 
 1. **页面快照**：`CanvasStage` 把整个根元素上传为纹理，同时作为全屏背景和玻璃的折射源。
 2. **玻璃表面**（`LiquidGlassLayer.sync`）：测量每块 `[data-liquid-glass]`，按需上传其 HTML 内容。
 3. **内容遮挡**（`content-order.ts`、`ContentBackdrop`）：按层级、层叠上下文与 DOM 顺序排序；被上层玻璃覆盖的下层文字写进背景的副本，参与模糊。
 4. **多级模糊**（`blur.ts`）：对合成背景逐级做高斯卷积，σ 为 2/6/16/40/80 CSS 像素；本帧用不到的层不生成。
 5. **背景分级**（`stack.hot.ts`、`StackBackdrops`）：盖在其他玻璃上的组取样更高一级的背景，其中已经画好它看到的下层玻璃与内容，并在需要的范围内单独模糊；互不交叠时不生成。
-6. **三维体积**（`VolumeGroups`、`volume-shader.ts`、`volume-profile-shader.ts` 或 `volume-hybrid-shader.ts`）：同层邻近玻璃合成一个距离场，按 RGB 三条光路折射取样，再叠加凸透镜偏移。
+6. **三维体积**（`VolumeGroups`、`volume-shader.ts`、`volume-profile-shader.ts` 或 `volume-hybrid-shader.ts`）：同层邻近玻璃合成一个距离场，按 RGB 三条光路折射取样，再叠加凸透镜偏移。混合光路里几何静止的组读取折射场缓存，见下文。
 7. **前景**（`CanvasOverlay`）：`[data-stage-overlay]` 单独上传，画在低层玻璃之上。
 8. **画布遍**：页面快照、前景、体积与玻璃内容按绘制顺序画进画布。
 
@@ -85,7 +85,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 - **uniform**：一帧内所有绘制项的 uniform 先写进同一块内存，提交前一次 `writeBuffer`，绘制时用动态偏移切换。没有逐对象的缓冲和绑定组。
 - **绑定**：第 0 组是 uniform 与取样器，全帧共用；第 1 组是这次绘制取样的纹理，按纹理视图缓存。
 - **管线**：按键缓存。体积着色器按成员数量生成，内容着色器按遮挡数量生成；滚动中成员或遮挡变化只会取用已有的管线。启动时在后台编译常见数量（体积 1–4 名成员、遮挡 0–2 块），第一次出现更大的数量时同步编译。
-- **命令**：一帧只有一个命令缓冲，依次是背景合成、模糊、各级上层背景及其模糊、低分辨率体积和画布遍。
+- **命令**：一帧只有一个命令缓冲，依次是背景合成、模糊、各级上层背景及其模糊、折射场缓存的写入（只在某一组刚静止的那一帧）、低分辨率体积和画布遍。
 - **颜色**：HTML 快照是 `rgba8unorm-srgb`，取样时由硬件解码；离屏目标是线性 `rgba16float`；画布配置为 8 位格式，以 sRGB 视图写入，混合在线性空间进行，写入时编码，不需要额外的颜色转换遍。
 - **出错**：设备丢失或出现校验错误时舞台停止绘制并调用 `onFault`，`mountLiquidGlass` 据此改用回退实现。
 - **计时**：设备支持 `timestamp-query` 时，测量页可以打开逐遍计时（`StageGpu.timing`），平时不写时间戳。
@@ -104,6 +104,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 | `liquid-glass/content.hot.ts`、`content-order.hot.ts` | 内容与遮挡轮廓的 uniform，HTML 绘制顺序 |
 | `liquid-glass/ContentBackdrop.hot.ts`、`blur.hot.ts` | 被遮挡内容的背景合成，多级模糊 |
 | `liquid-glass/VolumeGroups.hot.ts`、`fusion.hot.ts`、`cover.hot.ts` | 融合分组、体积 uniform、低分辨率分块合成 |
+| `liquid-glass/field-cache.hot.ts` | 混合光路的折射场缓存：比较几何特征、决定求交与淘汰 |
 | `liquid-glass/flow.hot.ts`、`shared/spring.hot.ts` | 液体迁移与按压弹簧 |
 
 做法：
@@ -112,7 +113,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 - **预先创建的描述对象**：渲染遍描述、动态偏移（`Uint32Array`）、元素上传的参数、画布纹理视图描述、`updateElementGeometry()` 的变换矩阵都在构造时创建。
 - **管线按整数取用**：`PipelineTable.get(count)` 是一次数组读取，不拼字符串键，也不创建回调。
 - **排序不用 `Array.prototype.sort`**：V8 的实现每次都分配工作数组，绘制列表与可见玻璃用插入排序。
-- **冷路径分开放**：池的扩容、缓存未命中时创建对象、纹理尺寸变化写在普通文件里（`frame.ts`、`liquid-glass/pools.ts`、`blur-shader.ts`、`content-shader.ts`、`volume-shader.ts`、`surface.ts`、`LiquidGlassLayer.ts`），热路径只在少见情况下调用。
+- **冷路径分开放**：池的扩容、缓存未命中时创建对象、纹理尺寸变化写在普通文件里（`frame.ts`、`liquid-glass/pools.ts`、`blur-shader.ts`、`content-shader.ts`、`volume-shader.ts`、`field-cache.ts`、`surface.ts`、`LiquidGlassLayer.ts`），热路径只在少见情况下调用。
 - **DOM 读取每帧每个元素只读一次**：定位基准、裁剪区域、淡入淡出容器的矩形与透明度按帧编号缓存（`ElementBox`）；可见性用返回布尔值的 `checkVisibility()`；快照尺寸只在元素或画布尺寸变化后重新读取。DOM 接口返回的对象由 Blink 的堆管理，只能等老生代 GC 回收，规则检查不到，这是它们单独处理的原因。
 
 数据见[性能记录](performance/2026-11-13-webgpu/README.md#追加热路径不再分配)。
@@ -128,9 +129,14 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
   - **按组**：只有一名成员、裁剪范围也没有切进玻璃的组直接用剖面管线；成员多于一名的组，以及被 `data-glass-clip` 切开的玻璃，用混合管线。管线在写完这一组的 uniform 之后选定（`VolumeGroups.push()`），三张管线表都按成员数量缓存。
   - **按像素**：混合着色器按到各成员轮廓（含裁剪）的距离找出最近与次近的成员。落在最近成员的平顶、次近成员不参与平滑合并时走平顶捷径；次近成员与裁剪边离得比“平滑合并的范围 + 光线在玻璃内的横向位移”更远时按最近成员查表；其余像素（融合连接处、裁剪边附近）逐步求交。
   - **横向位移**取自查找表：每行多一条纹素行，记录这个位置的三条光路在玻璃内离开入射位置的最大距离。轮廓附近发生全内反射的光线走得远，倒角内侧接近零，所以越靠内的像素越早改为查表。
-  - 判定保证查表的像素上三维距离场与只有这名成员时逐点相同，所以两档交界处的结果一致，成员移动时交界连续移动；覆盖率与阴影在三档里用同一个投影距离。画面上融合连接处与 `raymarch` 一致，单块玻璃与 `profile` 一致。
+  - 判定保证查表的像素上三维距离场与只有这名成员时逐点相同，所以两档交界处的结果一致，成员移动时交界连续移动；覆盖率与阴影在三档里用同一个投影距离。画面上静止的融合连接处与 `raymarch` 一致，单块玻璃与 `profile` 一致。
 
-三条路径读取同样的 uniform；`profile` 与 `hybrid` 多绑定一张查找表，放在最后。桌面 @2 的滚动测量里 `profile` 每帧 GPU 时间约为 `raymarch` 的三分之一，见 [性能记录](performance/2026-11-14-stack-optics/README.md)；`hybrid` 的开销取决于画面里融合连接处的面积，见 [混合光路的记录](performance/2026-11-14-hybrid-optics/README.md)。
+  - **折射场缓存**（`field-cache.hot.ts`、`volume-field-shader.ts`，缺省打开，`fieldCache: false` 关闭）：求交得到的量与背景无关，组内成员的相对几何不变时也不变。几何静止满 120 ms 的组求交一次，把每个求交档像素的三条光路落点（相对像素的偏移）、入射法线、各条光路的有效程度与入射点高度写进三张 `rgba16float` 纹理；之后改用读缓存的管线，每帧只读回这些量、按入射点重算一次外观的平滑合并权重，再照常取样背景与模糊。背景与视频仍然每帧更新；染色、压暗、淡入淡出不在缓存里，变化时不需要重新求交。
+    - **按组的局部坐标存放**：缓存相对组内第一名成员的中心定位，纹素与着色像素对齐。整组平移（随页面滚动）不失效；裁剪边离玻璃足够远时也不算几何的一部分，玻璃在裁剪容器里滚动仍然命中。
+    - **失效与运动时查表**：成员的相对位置、尺寸、圆角、厚度、截面参数、按压与材质化、切进玻璃的裁剪边位置、色散、成员数量或着色倍率变化后缓存作废，这一组改用剖面管线（连接处是近似）；上一次的求交结果用 80 ms 淡出，重新静止后求交一次、用 160 ms 淡入。等待与淡化期间舞台继续请求重绘。
+    - **范围与显存**：只覆盖可能落在求交档的范围（两名成员都在“平滑合并范围 + 横向位移”之内的地方，以及裁剪边切进玻璃的一条），按着色倍率分配，每个纹素 24 字节。全部缓存不超过 200 万纹素（48 MB）：不够时释放最久没有出现的组，单独一组就超过上限时不缓存、静止后每帧逐步求交；连续 180 帧没有出现的组释放纹理。缓存里没有光路的纹素（范围之外、轮廓上视线没有碰到实体的一圈）读取时仍然逐步求交，画面不依赖缓存是否完整。
+
+三条路径读取同样的 uniform；`profile` 与 `hybrid` 多绑定一张查找表，放在最后（读缓存的管线在它之后再绑定三张折射场纹理）。桌面 @2 的滚动测量里 `profile` 每帧 GPU 时间约为 `raymarch` 的三分之一，见 [性能记录](performance/2026-11-14-stack-optics/README.md)；`hybrid` 的开销取决于画面里融合连接处的面积，见 [混合光路的记录](performance/2026-11-14-hybrid-optics/README.md)。
 
 ### 凸透镜
 
@@ -238,7 +244,7 @@ src/shared                  偏好存储与滚动容器
 - `packages/liquid-in-canvas/tests`：Vitest + jsdom，覆盖属性解析、默认参数、分辨率、融合分组（含嵌套玻璃）、内容顺序、不重叠覆盖、液体迁移的弹簧与交接、回退实现（含折射滤镜的贴图取值）和不支持时的挂载行为。管线缓存、uniform 布局、绘制列表与玻璃图层的每帧逻辑用记录调用的假设备（`tests/helpers/fake-gpu.ts`）驱动真实代码检查。
 - `tools/eslint-plugin-hot/tests`：热路径规则的正反用例。
 - `apps/demo/tests`：领域逻辑与视图。
-- `apps/demo/tests/visual/*.html`：在支持的浏览器中人工检查玻璃边缘与内容遮挡；`glass-stack.html` 检查多层叠放、生效与移除；`reference.html` 复刻参考画面的几何条件，配合 `docs/performance/2026-11-14-visual/tools/profile_fit.py` 测量折射剖面。`?optics=profile`、`?optics=raymarch`、`?optics=hybrid` 切换光路。
+- `apps/demo/tests/visual/*.html`：在支持的浏览器中人工检查玻璃边缘与内容遮挡；`glass-stack.html` 检查多层叠放、生效与移除；`reference.html` 复刻参考画面的几何条件，配合 `docs/performance/2026-11-14-visual/tools/profile_fit.py` 测量折射剖面。`?optics=profile`、`?optics=raymarch`、`?optics=hybrid` 切换光路，`?cache=0` 关闭混合光路的折射场缓存。
 - `apps/demo/tests/perf/`：独立构建入口，通过替换 `CanvasStage.prototype.draw` 记录帧时间，`?gpu` 时打开逐遍计时，结果保存在 `docs/performance/`。`scroll.html?hold=600` 停在给定的滚动位置测量。`?lens=0` 关闭透镜，用于和没有透镜的旧版本逐像素比对（`docs/performance/2026-11-13-webgpu/tools/`）。
 
 jsdom 不绘制 WebGPU，测试通过不能证明着色器的画面。画面需要在支持这些 API 的浏览器中检查。

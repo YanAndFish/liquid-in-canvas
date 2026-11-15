@@ -612,14 +612,18 @@ describe('折射场缓存', () => {
     run(SETTLE_FRAMES, scene())
     const textures = fieldTextures()
     groups.setFieldCache(false)
+    // 关闭之后不会再有缓存的帧，纹理当场释放。
+    expect(textures.every(texture => texture.destroy.mock.calls.length === 1)).toBe(true)
     expect(frame(scene()).map(item => item.label).sort()).toEqual(['volume-hybrid:0:2', 'volume-profile:0:1'])
     expect(groups.settling).toBe(false)
     groups.setFieldCache(true)
-    // 重新打开：从查表开始，换下的纹理在这一帧开始时销毁。
+    // 重新打开：从查表开始。
     expect(frame(scene()).map(item => item.label).sort()).toEqual(['volume-profile:0:1', 'volume-profile:0:2'])
-    expect(textures.every(texture => texture.destroy.mock.calls.length === 1)).toBe(true)
     run(SETTLE_FRAMES, scene())
+    const again = fieldTextures().slice(FIELD_TARGETS)
+    expect(again).toHaveLength(FIELD_TARGETS)
     groups.setOptics('profile')
+    expect(again.every(texture => texture.destroy.mock.calls.length === 1)).toBe(true)
     expect(frame(scene()).map(item => item.label).sort()).toEqual(['volume-profile:0:1', 'volume-profile:0:2'])
     expect(groups.settling).toBe(false)
     groups.setOptics('raymarch')
