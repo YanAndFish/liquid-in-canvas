@@ -380,7 +380,7 @@ export class GlassFrame {
     surface.contentOpacity = base * fade * fade * (3 - 2 * fade)
     surface.contentBlur = (1 - eased) * REVEAL_BLUR
     surface.contentScale = 1 + REVEAL_ZOOM * (1 - eased)
-    const rect = surface.rect
+    const rect = surface.contentRect
     if (surface.revealGrowing && progress < 1) {
       // 缩放中心夹在元素之内：起点在元素外时，放大会把内容整个推开，看起来是从远处移过来。
       const originX = Math.min(Math.max(surface.revealX, rect.left), rect.left + rect.width)
@@ -561,9 +561,23 @@ export class GlassFrame {
       surface.contentClip[1] = clip ? clip.top : 0
       surface.contentClip[2] = clip ? clip.right : viewWidth
       surface.contentClip[3] = clip ? clip.bottom : viewHeight
-      // 元素已经是新尺寸，体积还在过渡：内容只画在体积之内，随玻璃展开显露、收拢遮住。
+      const flowing = surface.flow !== null && surface.flow.active
+      const morphContent = surface.options.morphContent
+      // follow：内容映射到体积上，随拉伸、回弹和晃动一起变形，不需要再裁剪。
+      if (flowing && morphContent === 'follow')
+        copyRect(surface.contentRect, volume)
+      else
+        copyRect(surface.contentRect, rect)
+      // clip：内容停在元素位置，超出体积的部分被裁掉，相当于 overflow: hidden。
+      if (flowing && morphContent === 'clip') {
+        surface.contentClip[0] = Math.max(surface.contentClip[0]!, volume.left)
+        surface.contentClip[1] = Math.max(surface.contentClip[1]!, volume.top)
+        surface.contentClip[2] = Math.min(surface.contentClip[2]!, volume.left + volume.width)
+        surface.contentClip[3] = Math.min(surface.contentClip[3]!, volume.top + volume.height)
+      }
+      // static：元素已经是新尺寸，体积还在过渡：内容只画在体积之内，随玻璃展开显露、收拢遮住。
       // 展开时可见范围只扩大不缩小，玻璃越过目标后回弹、晃动时内容的边缘保持不动。
-      if (surface.flow !== null && surface.flow.resizing) {
+      else if (morphContent === 'static' && surface.flow !== null && surface.flow.resizing) {
         const reveal = surface.revealClip
         let left = volume.left
         let top = volume.top
@@ -743,7 +757,7 @@ export class GlassFrame {
       for (let j = i + 1; j < count; j++) {
         const other = visible[j]!.volume
         // 嵌套玻璃画在外层内容之下，不遮挡外层的文字。
-        if (other.host === surface.id || !covers(surface.rect, other))
+        if (other.host === surface.id || !covers(surface.contentRect, other))
           continue
         surface.occluders[surface.occluderCount++] = other
         const above = groups.planOf(other)

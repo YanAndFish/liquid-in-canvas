@@ -4,6 +4,9 @@ export const TUNER_STYLE_ID = 'liquid-in-canvas-tuner-style'
 /**
  * 面板样式。颜色都来自 `--lg-tuner-*` 自定义属性，在 `.lg-tuner` 或它的祖先上声明即可覆盖；
  * 主题缺省值写在 `:where()` 里，不增加优先级。元素自带重置，不依赖页面的 CSS 重置。
+ *
+ * `.lg-tuner` 的 `overflow: clip` 绕过 Chrome 的问题：画布里平移过的 drawable 在计算滚动范围时位置被算两次，
+ * 贴在视口右下的按钮会把页面撑出滚动条，见 docs/known-issues/drawable-scroll-overflow.md。
  */
 export const TUNER_CSS = `
 :where(.lg-tuner[data-theme='dark']) {
@@ -34,7 +37,7 @@ export const TUNER_CSS = `
   --lg-tuner-pressed-text: #f5f5f7;
   --lg-tuner-error: #c4493b;
 }
-.lg-tuner { position: fixed; inset: 0; pointer-events: none; color: var(--lg-tuner-text); font-size: 12px; line-height: 1.4; text-align: left; -webkit-font-smoothing: antialiased; }
+.lg-tuner { position: fixed; inset: 0; overflow: clip; pointer-events: none; color: var(--lg-tuner-text); font-size: 12px; line-height: 1.4; text-align: left; -webkit-font-smoothing: antialiased; }
 .lg-tuner[data-hidden] { display: none; }
 .lg-tuner [hidden] { display: none !important; }
 .lg-tuner *, .lg-tuner *::before, .lg-tuner *::after { box-sizing: border-box; }

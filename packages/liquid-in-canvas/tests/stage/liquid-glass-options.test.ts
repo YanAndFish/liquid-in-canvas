@@ -48,6 +48,7 @@ describe('parseGlassOptions', () => {
       morphStretch: 1,
       morphBounce: 0.33,
       morphWobble: 0.35,
+      morphContent: 'static',
       materialize: true,
     })
   })
@@ -79,6 +80,7 @@ describe('parseGlassOptions', () => {
       morphStretch: 1,
       morphBounce: 0.33,
       morphWobble: 0.35,
+      morphContent: 'static',
       materialize: true,
     })
   })
@@ -127,6 +129,7 @@ describe('parseGlassOptions', () => {
       morphStretch: 1,
       morphBounce: 0.33,
       morphWobble: 0.35,
+      morphContent: 'static',
       materialize: true,
     })
   })
@@ -176,6 +179,7 @@ describe('parseGlassOptions', () => {
       morphStretch: 1,
       morphBounce: 0.33,
       morphWobble: 0.35,
+      morphContent: 'static',
       materialize: true,
     })
   })
@@ -261,6 +265,24 @@ describe('parseGlassOptions', () => {
     expect(parseGlassOptions(makeElement(), 'dark').anchor).toBeNull()
   })
 
+  it('treats "true" as an unnamed morph and "false" as off, so booleans from JSX never share a name', () => {
+    expect(parseGlassOptions(makeElement({ 'data-glass-morph': 'true' }), 'dark').morph).toBe('')
+    expect(parseGlassOptions(makeElement({ 'data-glass-morph': 'false' }), 'dark').morph).toBeNull()
+    expect(parseGlassOptions(makeElement({ 'data-glass-morph': 'tab' }), 'dark').morph).toBe('tab')
+  })
+
+  it('parses the morph content mode and falls back to static', () => {
+    const mode = (raw: string) => parseGlassOptions(makeElement({ 'data-glass-morph-content': raw }), 'dark').morphContent
+    expect(mode(' Follow ')).toBe('follow')
+    expect(mode('clip')).toBe('clip')
+    expect(mode('stretch')).toBe('static')
+  })
+
+  it('turns materialize off with "false"', () => {
+    expect(parseGlassOptions(makeElement({ 'data-glass-materialize': 'false' }), 'dark').materialize).toBe(false)
+    expect(parseGlassOptions(makeElement({ 'data-glass-materialize': 'true' }), 'dark').materialize).toBe(true)
+  })
+
   it('does not throw when the element has no attributes', () => {
     expect(() => parseGlassOptions(makeElement(), 'light')).not.toThrow()
   })
@@ -289,5 +311,50 @@ describe('glassOptionsSignature', () => {
     }), 'dark')
 
     expect(glassOptionsSignature(first)).toBe(glassOptionsSignature(second))
+  })
+})
+
+describe('data-glass-scope', () => {
+  function tree(): { outer: HTMLElement, inner: HTMLElement, element: HTMLElement } {
+    const outer = makeElement({
+      'data-glass-scope': '',
+      'data-glass-blur': '10',
+      'data-glass-layer': '2',
+      'data-glass-variant': 'clear',
+      'data-glass-morph': 'tab',
+    })
+    const inner = makeElement({ 'data-glass-scope': '', 'data-glass-blur': '20' })
+    const element = makeElement({ 'data-liquid-glass': '' })
+    outer.append(inner)
+    inner.append(element)
+    return { outer, inner, element }
+  }
+
+  it('uses the nearest scope, then outer scopes, then the defaults', () => {
+    const { element } = tree()
+    const options = parseGlassOptions(element, 'dark')
+    expect(options.blur).toBe(20)
+    expect(options.layer).toBe(2)
+    expect(options.variant).toBe('clear')
+    expect(options.shadow).toBe(0.12)
+  })
+
+  it('lets the element override its scopes', () => {
+    const { element } = tree()
+    element.setAttribute('data-glass-blur', '4')
+    expect(parseGlassOptions(element, 'dark').blur).toBe(4)
+  })
+
+  it('does not pass morph names down', () => {
+    const { element } = tree()
+    expect(parseGlassOptions(element, 'dark').morph).toBeNull()
+  })
+
+  it('ignores ancestors without data-glass-scope and scopes set to "false"', () => {
+    const { outer, inner, element } = tree()
+    inner.setAttribute('data-glass-scope', 'false')
+    expect(parseGlassOptions(element, 'dark').blur).toBe(10)
+    outer.removeAttribute('data-glass-scope')
+    expect(parseGlassOptions(element, 'dark').blur).toBe(18)
   })
 })

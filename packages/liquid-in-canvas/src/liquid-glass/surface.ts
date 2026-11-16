@@ -193,6 +193,7 @@ export function createSurface(init: SurfaceInit): GlassSurface {
     revealX: 0,
     revealY: 0,
     rect: { left: 0, top: 0, width: 0, height: 0 },
+    contentRect: { left: 0, top: 0, width: 0, height: 0 },
     layout: { left: 0, top: 0, width: 0, height: 0 },
     originX: 0,
     originY: 0,

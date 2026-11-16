@@ -119,6 +119,43 @@ describe('cssGlassStage', () => {
     expect(element.style.getPropertyValue('--lg-blur')).toBe('')
   })
 
+  it('data-liquid-glass="false" 等同于没有声明，可以按布尔值开关', async () => {
+    const element = glass()
+    element.setAttribute('data-liquid-glass', 'false')
+    root.append(element)
+    stage = new CssGlassStage({ root })
+    stage.start()
+    expect(element.hasAttribute(GLASS_CSS_ATTR)).toBe(false)
+
+    element.setAttribute('data-liquid-glass', 'true')
+    await flush()
+    expect(element.hasAttribute(GLASS_CSS_ATTR)).toBe(true)
+
+    element.setAttribute('data-liquid-glass', 'false')
+    await flush()
+    expect(element.hasAttribute(GLASS_CSS_ATTR)).toBe(false)
+  })
+
+  it('作用域上的参数变化时更新其中的玻璃', async () => {
+    const scope = document.createElement('div')
+    scope.setAttribute('data-glass-scope', '')
+    scope.setAttribute('data-glass-blur', '14')
+    const element = glass()
+    scope.append(element)
+    root.append(scope)
+    stage = new CssGlassStage({ root })
+    stage.start()
+    expect(element.style.getPropertyValue('--lg-blur')).toBe('14px')
+
+    scope.setAttribute('data-glass-blur', '30')
+    await flush()
+    expect(element.style.getPropertyValue('--lg-blur')).toBe('30px')
+
+    scope.setAttribute('data-glass-scope', 'false')
+    await flush()
+    expect(element.style.getPropertyValue('--lg-blur')).toBe('18px')
+  })
+
   it('全局默认参数变化时更新未单独声明的属性', () => {
     const plain = glass()
     const explicit = glass({ 'data-glass-blur': '14' })

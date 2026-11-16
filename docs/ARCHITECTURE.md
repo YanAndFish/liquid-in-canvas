@@ -164,6 +164,12 @@ src/tuner/, tuner.ts    调参面板（原生 DOM），经 liquid-in-canvas/tune
 
 窗口尺寸变化引起的重新排版不算迁移，体积直接到位；系统要求减少动态效果时也直接到位。
 
+迁移期间内容的表现由 `data-glass-morph-content` 决定（`glass-frame.hot.ts`）。内容快照画在 `ContentSource.contentRect` 上，静止时它等于元素矩形：
+
+- `static`（缺省）：内容停在元素位置；尺寸过渡时裁剪在体积内，可见范围只扩大不缩小，回弹和晃动不带动内容边缘。
+- `clip`：内容停在元素位置，裁剪范围每帧取体积矩形，相当于 `overflow: hidden`，晃动时边缘随体积进出。
+- `follow`：`contentRect` 取体积矩形，内容随拉伸、回弹和晃动一起变形；遮挡判断也用这个矩形。
+
 ### 逐像素开销
 
 整页快照和玻璃着色的开销都与画布像素数成正比，体积着色器是最贵的一遍。它按像素位置分三种情况：
@@ -212,18 +218,19 @@ src/tuner/, tuner.ts    调参面板（原生 DOM），经 liquid-in-canvas/tune
 
 ## DOM 约定
 
-舞台只通过以下钩子认识页面。修改时同步 `packages/liquid-in-canvas/src/contract.ts` 与 `src/attributes.ts` 里的类型。
+舞台只通过以下钩子认识页面。修改时同步 `packages/liquid-in-canvas/src/contract.ts` 与 `src/attributes.ts` 里的类型。值为 `"false"` 的约定属性视为不存在（`contract.ts` `attr()` / `hasAttr()`），框架里可以直接绑定布尔值。
 
 | 钩子 | 舞台行为 |
 | --- | --- |
 | `[data-liquid-glass]` + `data-glass-*` | 注册为玻璃表面，参数见包的 README；嵌套在另一块玻璃里时只绘制体积。`data-glass-materialize="none"` 关闭生效与移除的过渡 |
+| `[data-glass-scope]` + `data-glass-*` | 参数作用域：其中玻璃未声明的参数取最近作用域的值，再取更外层的作用域，最后取全局默认参数（`options.ts` `GlassAttributeSource`）。`data-glass-morph` 不继承。作用域上的参数变化时刷新其中的玻璃 |
 | `[data-glass-clip]` | 限制后代玻璃与阴影的绘制范围 |
 | `[data-glass-modal]` | 模态层根节点，内部玻璃不被压暗 |
 | `[data-glass-scrim]` | 背景色 alpha × 模态层 opacity 决定压暗强度 |
 | `[data-glass-fade]` | opacity 作用到内部玻璃 |
 | `[data-stage-overlay="L"]` | 单独上传的透明前景层，盖住低于第 L 层的玻璃，被第 L 层及更高层的玻璃盖住；不写值时位于所有玻璃之上。需要在舞台 `start()` 之前存在 |
 
-回退实现只使用第一行；裁剪、压暗和淡入淡出由浏览器按普通 DOM 处理。
+回退实现只使用前两行；裁剪、压暗和淡入淡出由浏览器按普通 DOM 处理。
 
 ## 绘制顺序
 

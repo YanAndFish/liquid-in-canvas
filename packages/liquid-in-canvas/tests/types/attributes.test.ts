@@ -9,6 +9,7 @@ import {
   GLASS_CLIP_ATTR,
   GLASS_FADE_ATTR,
   GLASS_MODAL_ATTR,
+  GLASS_SCOPE_ATTR,
   GLASS_SCRIM_ATTR,
   STAGE_OVERLAY_ATTR,
 } from '../../src/contract'
@@ -21,6 +22,7 @@ const CONTRACT_ATTRS = [
   GLASS_MODAL_ATTR,
   GLASS_SCRIM_ATTR,
   GLASS_FADE_ATTR,
+  GLASS_SCOPE_ATTR,
   STAGE_OVERLAY_ATTR,
 ] as const
 type KnownAttribute = (typeof GLASS_OPTION_ATTRS)[number] | (typeof CONTRACT_ATTRS)[number]
@@ -41,8 +43,11 @@ describe('data-* 属性的类型', () => {
     expectTypeOf<{ 'data-glass-radius': '20 20 0 0' }>().toExtend<LiquidGlassAttributes>()
     expectTypeOf<{ 'data-glass-variant': 'frosted' }>().not.toExtend<LiquidGlassAttributes>()
     expectTypeOf<{ 'data-glass-tint': 'fff' }>().not.toExtend<LiquidGlassAttributes>()
-    // 框架把 false 渲染成 "false"，属性仍然存在。
-    expectTypeOf<{ 'data-liquid-glass': false }>().not.toExtend<LiquidGlassAttributes>()
+    // 框架把 false 渲染成 "false"，舞台把它当作没有这个属性。
+    expectTypeOf<{ 'data-liquid-glass': false }>().toExtend<LiquidGlassAttributes>()
+    expectTypeOf<{ 'data-liquid-glass': boolean }>().toExtend<LiquidGlassAttributes>()
+    expectTypeOf<{ 'data-glass-morph': boolean }>().toExtend<LiquidGlassAttributes>()
+    expectTypeOf<{ 'data-liquid-glass': 'yes' }>().not.toExtend<LiquidGlassAttributes>()
   })
 
   it('扩展 Vue 与 React 的原生元素属性', () => {

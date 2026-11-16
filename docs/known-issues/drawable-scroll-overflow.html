@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { margin: 0 }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block }
+  #root { width: 100vw; height: 100vh; overflow: auto; background: #eee }
+  .el { position: absolute; top: 300px; width: 50px; height: 50px; background: tomato }
+</style>
+<canvas content="drawable"><div id="root" drawable></div></canvas>
+<script type="module">
+const out = {}; window.result = out
+try {
+const canvas = document.querySelector('canvas'), root = document.getElementById('root')
+const raf = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+const size = () => [root.scrollWidth, root.scrollHeight]
+const adapter = await navigator.gpu.requestAdapter(), device = await adapter.requestDevice()
+canvas.width = innerWidth; canvas.height = innerHeight
+canvas.getContext('webgpu').configure({ device, format: navigator.gpu.getPreferredCanvasFormat() })
+canvas.updateElementGeometry(root, { canvasTransform: new DOMMatrix() })
+async function trial(name, left, matrix) {
+  const el = document.createElement('div'); el.className = 'el'; el.id = name; el.style.left = left + 'px'
+  root.append(el); await raf()
+  el.setAttribute('drawable', '')
+  canvas.updateElementGeometry(el, { canvasTransform: matrix })
+  await raf()
+  out[name] = {
+    scrollWidth: root.scrollWidth,
+    hitAtLayout: document.elementFromPoint(left + 25, 325)?.id === name,
+    hitAtOrigin: document.elementFromPoint(25, 25)?.id === name,
+    hitAtMatrix: document.elementFromPoint(matrix.e + 25, matrix.f + 25)?.id === name,
+  }
+  el.remove(); await raf()
+}
+await trial('identity', 900, new DOMMatrix())
+await trial('translateToRect', 900, new DOMMatrix().translate(900, 300))
+await trial('translate100', 900, new DOMMatrix().translate(100, 300))
+} catch (e) { out.error = String(e) }
+</script>

@@ -488,4 +488,86 @@ describe('玻璃内容纹理', () => {
       layer.dispose()
     }
   })
+  it('data-liquid-glass="false" 注销玻璃，改回来时重新注册', async () => {
+    const { layer, sync, element } = setup()
+    try {
+      sync()
+      expect(layer.surfaces.map(surface => surface.element)).toContain(element)
+      element.dataset.liquidGlass = 'false'
+      await flush()
+      expect(layer.surfaces.map(surface => surface.element)).not.toContain(element)
+      element.dataset.liquidGlass = 'true'
+      await flush()
+      expect(layer.surfaces.map(surface => surface.element)).toContain(element)
+    }
+    finally {
+      layer.dispose()
+    }
+  })
+
+  it('作用域上的参数变化时刷新其中的玻璃', async () => {
+    const { layer, sync, element, anchor } = setup()
+    try {
+      anchor.dataset.glassScope = ''
+      anchor.dataset.glassBlur = '6'
+      await flush()
+      sync()
+      expect(layer.surfaces[0]!.options.blur).toBe(6)
+      anchor.dataset.glassBlur = '30'
+      await flush()
+      expect(layer.surfaces[0]!.options.blur).toBe(30)
+      element.dataset.glassBlur = '2'
+      await flush()
+      expect(layer.surfaces[0]!.options.blur).toBe(2)
+    }
+    finally {
+      layer.dispose()
+    }
+  })
+  it.each(['static', 'clip', 'follow'] as const)('液体迁移期间内容按 data-glass-morph-content="%s" 绘制', async (mode) => {
+    const { layer, sync, element, anchor } = setup()
+    const frame = (layer as unknown as { frame: { advanceMotion: (seconds: number, pressed: HTMLElement | null, reduced: boolean) => boolean } }).frame
+    let offsetLeft = 0
+    Object.defineProperty(element, 'offsetLeft', {
+      get: () => offsetLeft,
+      configurable: true,
+    })
+    // 定位父元素足够宽，移动后的玻璃仍在其中可见。
+    anchor.getBoundingClientRect = () => new DOMRect(100, 100, 600, 60)
+    try {
+      element.dataset.glassMorph = ''
+      element.dataset.glassMorphContent = mode
+      await flush()
+      sync()
+      for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++)
+        sync()
+      const surface = layer.surfaces[0]!
+      expect(surface.contentRect).toEqual(surface.rect)
+
+      offsetLeft = 200
+      sync()
+      for (let steps = 0; steps < 3; steps++) {
+        frame.advanceMotion(1 / 60, null, false)
+        sync()
+      }
+      expect(surface.flow?.active).toBe(true)
+      const { volume, rect, contentRect, contentClip } = surface
+      expect(volume.left).not.toBe(rect.left)
+      if (mode === 'follow') {
+        expect(contentRect.left).toBe(volume.left)
+        expect(contentRect.width).toBe(volume.width)
+      }
+      else {
+        expect(contentRect).toEqual(rect)
+      }
+      if (mode === 'clip') {
+        expect(contentClip[0]).toBeCloseTo(Math.max(0, volume.left))
+        expect(contentClip[2]).toBeCloseTo(volume.left + volume.width)
+      }
+      else {
+        expect(contentClip).toEqual([0, 0, 800, 600])
+      }
+    }
+    finally { layer.dispose() }
+  })
 })
