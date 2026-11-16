@@ -1,23 +1,27 @@
 # liquid-in-canvas
 
-用 **HTML-in-Canvas + WebGPU** 给实时 HTML 加上液态玻璃：折射、凸透镜放大、色散、同层融合、内容遮挡、按压形变和液体迁移。页面和控件仍然是可点击、可聚焦的普通 HTML，只需要在元素上加属性。
+<p align="center">
+  <b>English</b> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-浏览器不支持时自动回退，读取同一套属性：Chromium 内核用 `backdrop-filter` 加 SVG 位移滤镜保留边缘折射、色散和轮廓高光，其他浏览器用纯 `backdrop-filter`。
+Add liquid glass to live HTML with **HTML-in-Canvas and WebGPU**. Glass can refract and magnify the background, split colors, fuse with nearby glass on the same layer, and deform when pressed. The renderer handles content occlusion and lets glass flow between elements. Add an attribute to an ordinary HTML element to turn it into glass. Its content stays clickable and focusable.
 
-## 安装
+When canvas mode is unavailable, the library uses the same attributes with a fallback. Chromium-based browsers use `backdrop-filter` with an SVG displacement filter for edge refraction, dispersion, and rim highlights. The CSS fallback uses `backdrop-filter` alone.
+
+## Installation
 
 ```sh
 pnpm add liquid-in-canvas
 ```
 
-没有运行时依赖。画布渲染器直接使用 WebGPU，在确认浏览器支持后才动态加载（演示商店的生产构建里压缩后约 66 kB，gzip 约 23 kB），只能使用回退实现的浏览器不会下载它。完整效果需要支持 HTML-in-Canvas、WebGPU 和 `GPUQueue.drawElementImageToTexture()` 的浏览器（开发时使用 Chrome 157）。
+The package has zero runtime dependencies. The canvas renderer uses WebGPU directly and loads only after the browser passes the capability check. In the production demo build, it is about 66 kB minified and 23 kB gzipped. Canvas mode requires HTML-in-Canvas, WebGPU, and `GPUQueue.drawElementImageToTexture()`. Development used Chrome 157.
 
-## 使用
+## Usage
 
 ```html
 <div id="app">
   <div style="position: relative">
-    <button data-liquid-glass data-glass-radius="999">浏览系列</button>
+    <button data-liquid-glass data-glass-radius="999">Browse collection</button>
   </div>
 </div>
 ```
@@ -30,35 +34,45 @@ const glass = await mountLiquidGlass({
   canvasClass: 'stage',
 })
 
-console.log(glass.mode) // 'canvas'、'svg' 或 'css'
+console.log(glass.mode) // 'canvas', 'svg', or 'css'
 ```
 
-画布模式下，`mountLiquidGlass` 会创建一张 `<canvas content="drawable">` 插入到根元素原来的位置，并把根元素移入画布。画布的尺寸由你的样式决定，通常铺满视口：
+In canvas mode, `mountLiquidGlass` creates a `<canvas content="drawable">` at the root's original position and moves the root into it. Use CSS to size the canvas, typically to fill the viewport.
 
 ```css
-.stage { position: fixed; inset: 0; width: 100dvw; height: 100dvh; display: block; }
-#app[drawable] { width: 100dvw; height: 100dvh; overflow: clip; }
+.stage {
+  position: fixed;
+  inset: 0;
+  width: 100dvw;
+  height: 100dvh;
+  display: block;
+}
+#app[drawable] {
+  width: 100dvw;
+  height: 100dvh;
+  overflow: clip;
+}
 ```
 
-根元素成为画布子元素后，页面滚动需要发生在根元素内部的滚动容器里，而不是 `window`。
+In canvas mode, put scroll containers inside the root.
 
-### 渲染方式
+### Rendering modes
 
-| `mode` | 行为 |
+| `mode` | Behavior |
 | --- | --- |
-| `'auto'`（缺省） | 按 `canvas` → `svg` → `css` 的顺序使用浏览器支持的第一种。画布不支持、初始化失败或运行中出错时改用回退，并调用 `onFault` 说明原因 |
-| `'canvas'` | 只用画布。不支持时抛出 `StageUnsupportedError`，初始化失败抛出原始错误；运行中出错调用 `onFault`，由你决定后续处理 |
-| `'svg'` | `backdrop-filter` 加 SVG 位移滤镜。浏览器不支持时使用 `'css'`，以返回值的 `mode` 为准 |
-| `'css'` | 只用 `backdrop-filter` |
+| `'auto'` (default) | Tries `canvas`, `svg`, and `css` in that order. If canvas support is missing, initialization fails, or a runtime fault occurs, it falls back and reports the reason through `onFault`. |
+| `'canvas'` | Requires canvas support and throws `StageUnsupportedError` if it is missing. Initialization errors propagate to the caller. Runtime faults call `onFault` so the caller can decide how to recover. |
+| `'svg'` | Uses `backdrop-filter` with an SVG displacement filter. It falls back to `'css'` when SVG backdrop filters are unavailable. Read the returned `mode` to see which renderer is active. |
+| `'css'` | Uses `backdrop-filter` alone. |
 
-两种回退都不改变页面结构。
+Both fallback renderers leave elements in place.
 
-| 回退 | 效果 | 浏览器 |
+| Fallback | Effects | Browser support |
 | --- | --- | --- |
-| `svg` | 模糊、染色、圆角、阴影，加上边缘折射、色散和按光照方向分布的轮廓高光 | Chromium 内核，可用 `supportsSvgBackdropFilter()` 检测 |
-| `css` | 模糊、染色、圆角、阴影和一圈轮廓高光 | 支持 `backdrop-filter` 的浏览器 |
+| `svg` | Blur, tint, rounded corners, shadows, edge refraction, dispersion, and directional rim highlights | Chromium-based browsers. Check with `supportsSvgBackdropFilter()`. |
+| `css` | Blur, tint, rounded corners, shadows, and a rim highlight | Browsers that support `backdrop-filter` |
 
-回退没有同层融合、内容遮挡和按压形变。`svg` 方式下，面积超过 12 万 CSS 像素的玻璃（大面板）只用模糊：滤镜开销与面积成正比，背景每变化一帧都要重算。清晰背景（`data-glass-blur="0"`）上的折射比画布粗糙，位移滤镜按整像素取样。
+Same-layer fusion, content occlusion, and press deformation require canvas mode. In SVG mode, glass larger than 120,000 CSS px² uses blur only. The filter cost scales with area, and a changing backdrop requires a fresh calculation each frame. Refraction over an unblurred backdrop (`data-glass-blur="0"`) looks coarser than canvas refraction because the displacement filter samples at whole-pixel increments.
 
 ```ts
 const glass = await mountLiquidGlass({
@@ -66,16 +80,16 @@ const glass = await mountLiquidGlass({
   mode: 'auto',
   onFault(fault) {
     // fault.kind: 'unsupported' | 'init' | 'runtime'
-    console.warn('已改用回退实现', fault)
+    console.warn('Using a fallback renderer', fault)
   },
 })
 
-glass.dispose() // 停止渲染，页面恢复到挂载前的状态
+glass.dispose() // Stop rendering and restore the page to its pre-mount state.
 ```
 
-要在运行中切换方式，先 `dispose()` 再用另一个 `mode` 重新挂载。根元素在文档中移动时，内部的滚动位置会归零，正在播放的视频会被暂停，需要自行恢复。
+To switch renderers at runtime, call `dispose()` and mount again with the new `mode`. Moving the root resets scroll positions inside it and pauses playing videos. Restore them from your application as needed.
 
-使用框架时，在 `beforeStart` 里挂载应用。此时根元素已经在最终位置，舞台还没有开始绘制：
+When using a framework, mount your app in `beforeStart`. The root is already in its final position when the callback runs. Rendering starts after the callback.
 
 ```ts
 await mountLiquidGlass({
@@ -84,67 +98,67 @@ await mountLiquidGlass({
 })
 ```
 
-也可以用 `detectStageSupport()` 先行检测，再决定显示什么。
+Use `detectStageSupport()` to check capabilities before choosing what to show.
 
-## 元素属性
+## Element attributes
 
-在元素上添加 `data-liquid-glass`。它的定位父元素应当是没有 `drawable` 属性的普通元素，自身背景应当透明。
+Add `data-liquid-glass` to the element you want to render as glass. Give the element a transparent background and use an ordinary element without `drawable` as its positioning parent.
 
-| 属性 | 含义 | 缺省 |
+| Attribute | Meaning | Default |
 | --- | --- | --- |
-| `data-glass-variant` | `regular` 或 `clear`，决定下面各项的默认值 | `regular` |
-| `data-glass-radius` | 圆角，支持 CSS 顺序的一至四个值 | 28 |
-| `data-glass-blur` | 背景高斯模糊的标准差，0–80 | 18 / 0 |
-| `data-glass-refraction` | 三维实体的半厚度上限，0–80。实际厚度为短边的 0.3 倍，不超过这个值 | 80 |
-| `data-glass-bevel-width` | 边缘倒角的水平宽度，按半厚度的倍数，0.1–4，不超过短边的一半 | 0.8 |
-| `data-glass-bevel-height` | 边缘倒角的垂直高度，按半厚度的倍数，0.05–1；1 表示侧面没有竖直部分 | 1 |
-| `data-glass-bevel-curve` | 倒角曲线的超椭圆指数，1–8：1 是直线斜面，2 是椭圆弧，越大越接近直角 | 2.75 |
-| `data-glass-bottom-bevel` | 底面倒角相对顶面倒角的比例，0–1；0 表示底面是带直角边的平面 | 1 |
-| `data-glass-dispersion` | RGB 采样分离强度，0–1 | 0.05 |
-| `data-glass-lens` | 凸透镜强度，0–0.6。玻璃中间的背景放大约 1 / (1 − lens) 倍，长条形只沿短边放大 | 0 |
-| `data-glass-saturation` | 透射背景的饱和度倍数，0–3 | 1.3 / 1.15 |
-| `data-glass-brightness` | 透射背景的亮度倍数，0.5–1.5 | 浅色 1.06、深色 1 / 1 |
-| `data-glass-tint` | 十六进制染色值 | 随主题 |
-| `data-glass-tint-alpha` | 染色比例，0–1 | 随主题 |
-| `data-glass-specular` | 轮廓高光强度，0–2 | 0.7 / 0.9 |
-| `data-glass-shadow` | 外侧阴影强度，0–1。画布渲染按背景亮度调整：暗背景与照片上更淡 | 0.16 / 0.12 |
-| `data-glass-shadow-size` | 阴影范围，0–100 | 32 / 28 |
-| `data-glass-layer` | 玻璃层级，值越大越靠前，只有同层玻璃会融合 | 0 |
-| `data-glass-fusion` | 融合距离，0 表示关闭 | 32 |
-| `data-glass-elevation` | 玻璃底面到背景的距离 | 16 |
-| `data-glass-anchor` | 用于定位的祖先选择器 | `offsetParent` |
-| `data-glass-morph` | 液体迁移，见下文。空值表示自身位置或尺寸变化时流动过去，非空值同时是迁移的名字 | 关闭 |
-| `data-glass-morph-stretch` | 液体迁移的拉伸，0–2。0 表示整体平移，越大前缘与后缘拉得越开、拖尾越长 | 1 |
-| `data-glass-morph-bounce` | 液体迁移的回弹，0–1。0 表示前缘不越过目标 | 0.33 |
-| `data-glass-morph-wobble` | 液体迁移的晃动，0–1。到达时被压扁，随后在压扁与拉长之间振荡；0 表示不晃动 | 0.35 |
-| `data-glass-materialize` | 生效与移除的过渡。出现（注册或由隐藏变为显示）时光线先弯折、再成为磨砂并略微越过；从 DOM 移除或隐藏时在原处退去。`none` 关闭 | 开启 |
+| `data-glass-variant` | Selects the `regular` or `clear` defaults below | `regular` |
+| `data-glass-radius` | Corner radius. Accepts one to four values in CSS order. | 28 |
+| `data-glass-blur` | Standard deviation of the backdrop's Gaussian blur, 0–80 | 18 / 0 |
+| `data-glass-refraction` | Reference half-thickness of the glass volume, 0–80. The renderer caps it at 30% of the shorter side and applies a 2 px minimum. | 80 |
+| `data-glass-bevel-width` | Horizontal bevel width as a multiple of the half-thickness, 0.1–4, capped at half the shorter side | 0.8 |
+| `data-glass-bevel-height` | Vertical bevel height as a multiple of the half-thickness, 0.05–1. At 1, the bevel spans the full half-thickness. | 1 |
+| `data-glass-bevel-curve` | Superellipse exponent of the bevel, 1–8. At 1 the bevel is a straight slope, at 2 it is an elliptical arc, and higher values approach a right angle. | 2.75 |
+| `data-glass-bottom-bevel` | Ratio of the bottom bevel to the top bevel, 0–1. At 0, the bottom is flat with a square edge. | 1 |
+| `data-glass-dispersion` | Strength of the separation between RGB samples, 0–1 | 0.05 |
+| `data-glass-lens` | Convex lens strength, 0–0.6. The center magnifies the backdrop by about 1 / (1 − lens). Long, narrow shapes magnify along the short axis only. | 0 |
+| `data-glass-saturation` | Saturation multiplier for the backdrop seen through the glass, 0–3 | 1.3 / 1.15 |
+| `data-glass-brightness` | Brightness multiplier for the backdrop seen through the glass, 0.5–1.5 | 1.06 in light mode and 1 in dark mode / 1 |
+| `data-glass-tint` | Hex tint color | Theme-dependent |
+| `data-glass-tint-alpha` | Tint opacity, 0–1 | Theme-dependent |
+| `data-glass-specular` | Rim highlight intensity, 0–2 | 0.7 / 0.9 |
+| `data-glass-shadow` | Outer shadow intensity, 0–1. Canvas mode draws fainter shadows over dark backdrops and photos. | 0.16 / 0.12 |
+| `data-glass-shadow-size` | Shadow spread, 0–100 | 32 / 28 |
+| `data-glass-layer` | Stacking layer. Higher layers appear in front. Fusion occurs within each layer. | 0 |
+| `data-glass-fusion` | Fusion distance. Set to 0 to disable fusion. | 32 |
+| `data-glass-elevation` | Distance from the bottom of the glass to the backdrop | 16 |
+| `data-glass-anchor` | Selector for the ancestor used to position the glass | `offsetParent` |
+| `data-glass-morph` | An empty value animates changes to the element's own position or size. A nonempty value also names the morph so elements can share it. | Off |
+| `data-glass-morph-stretch` | Stretch during a morph, 0–2. At 0 the glass moves as a single piece. Higher values pull the front and rear farther apart and lengthen the trail. | 1 |
+| `data-glass-morph-bounce` | Bounce during a morph, 0–1. At 0 the front edge stops at the destination. | 0.33 |
+| `data-glass-morph-wobble` | Wobble during a morph, 0–1. The glass compresses on arrival, then alternates between compressing and stretching. At 0 it settles without wobbling. | 0.35 |
+| `data-glass-materialize` | Appearance and removal transition. When the glass first appears or becomes visible, it starts by bending light, then becomes frosted and briefly overshoots. When hidden or removed, it fades in place. Set to `none` to disable it. | On |
 
-长度单位都是 CSS 像素，缺省一栏写作 `regular / clear`。`data-glass-lens` 与后五项只对画布渲染有效；折射、透镜和色散在 `css` 回退下不起作用。
+Lengths are in CSS pixels. When two defaults are listed, the order is `regular / clear`. The lens, morph, and materialization attributes require canvas mode. Use canvas for lens magnification and canvas or SVG for edge refraction and dispersion.
 
-辅助属性（画布渲染）：
+Canvas mode also supports these attributes.
 
-- `data-glass-clip`：加在普通祖先上，后代玻璃和阴影限制在它的矩形内。
-- `data-glass-modal` 与 `data-glass-scrim`：模态层根节点和其中的遮罩。打开时模态层外的玻璃按遮罩透明度压暗。
-- `data-glass-fade`：页面切换容器，其 `opacity` 作用到内部玻璃。
-- `data-stage-overlay`：单独上传的透明前景层，用于需要插在玻璃之间的内容（例如跨越多块玻璃的过渡动画）。属性值是一个玻璃层级：`data-stage-overlay="5"` 盖住低于第 5 层的玻璃，被第 5 层及更高层的玻璃盖住；不写值时位于所有玻璃之上。需要在开始绘制前存在，一个页面一个。
+- Add `data-glass-clip` to an ordinary ancestor to clip descendant glass and shadows to its rectangle.
+- Mark the modal root with `data-glass-modal` and its scrim with `data-glass-scrim`. While the modal is open, the scrim opacity controls how much the glass outside it dims.
+- Add `data-glass-fade` to a page transition container to apply its `opacity` to the glass inside it.
+- Use `data-stage-overlay` for a transparent foreground layer sampled separately from the page, such as a transition that crosses multiple pieces of glass. `data-stage-overlay="5"` appears above glass below layer 5 and below glass at layer 5 or higher. An empty value places it above all glass. Add at most one overlay per page and put it in the DOM before rendering starts.
 
-### TypeScript 类型
+### TypeScript types
 
-`LiquidGlassAttributes` 列出上面所有属性和它们接受的写法：数值属性接受数字或数字字符串，`data-glass-variant` 只接受 `regular` / `clear`，`data-glass-tint` 要以 `#` 开头，只看是否存在的属性（`data-liquid-glass` 等）接受空字符串或模板里不写值。只有类型，没有运行时代码。
+`LiquidGlassAttributes` describes these attributes and their accepted values. Numeric attributes accept numbers or numeric strings. `data-glass-variant` accepts `regular` and `clear`. `data-glass-tint` starts with `#`. Presence attributes such as `data-liquid-glass` accept an empty string or can be written without a value in markup.
 
-在 Vue 模板或 React JSX 里检查原生元素上的这些属性，把对应入口加进 tsconfig：
+To check attributes on native elements in Vue templates or React JSX, add the matching type entry point to your tsconfig.
 
 ```jsonc
 {
   "compilerOptions": {
-    "types": ["liquid-in-canvas/vue"] // React 用 "liquid-in-canvas/react"
+    "types": ["liquid-in-canvas/vue"] // Use "liquid-in-canvas/react" for React.
   }
 }
 ```
 
-也可以在任意 `.d.ts` 里写 `/// <reference types="liquid-in-canvas/vue" />`。之后 `<div data-glass-variant="frosted">` 会报错，补全会列出全部属性。这两个入口分别扩展 `vue` 的 `HTMLAttributes` 与 `@types/react` 的 `HTMLAttributes`，它们是可选的 peer 依赖。
+You can also add `/// <reference types="liquid-in-canvas/vue" />` to a `.d.ts` file. For example, TypeScript will flag `<div data-glass-variant="frosted">`, and your editor can suggest the available attributes. The type entry points extend the `HTMLAttributes` types from `vue` and `@types/react`, both optional peer dependencies.
 
-把属性收在对象里再 `v-bind` / 展开时，给对象标上这个类型：
+Use `LiquidGlassAttributes` when collecting attributes in an object for Vue's `v-bind` or a JSX spread.
 
 ```ts
 import type { LiquidGlassAttributes } from 'liquid-in-canvas'
@@ -152,32 +166,32 @@ import type { LiquidGlassAttributes } from 'liquid-in-canvas'
 const pill: LiquidGlassAttributes = { 'data-liquid-glass': '', 'data-glass-variant': 'clear', 'data-glass-blur': 1 }
 ```
 
-不要绑定 `false` 来去掉属性：框架会把它渲染成字符串 `"false"`，属性仍然存在，玻璃仍然生效。用 `undefined` 或 `null`。
+Bind `undefined` or `null` to remove a presence attribute. A framework can render `false` as the string `"false"`, which leaves the attribute present and the glass active.
 
-## 嵌套玻璃与液体迁移
+## Nested glass and liquid morph
 
-玻璃里可以再放一层玻璃，例如标签组里的激活项：
+Nest one piece of glass inside another to mark the active item in a group of tabs.
 
 ```html
 <div data-liquid-glass data-glass-radius="999" role="group">
-  <button data-liquid-glass data-glass-morph="tabs" data-glass-variant="clear" aria-pressed="true">全部</button>
-  <button aria-pressed="false">家居</button>
-  <button aria-pressed="false">厨房</button>
+  <button data-liquid-glass data-glass-morph="tabs" data-glass-variant="clear" aria-pressed="true">All</button>
+  <button aria-pressed="false">Home</button>
+  <button aria-pressed="false">Kitchen</button>
 </div>
 ```
 
-- 嵌套玻璃只有体积：它的 HTML 已经包含在外层玻璃的快照里，文字由外层清晰地画在它上面。它画在外层体积之上，与外层同层，不与外层融合，只与同一外层里的其他嵌套玻璃融合。只支持一层嵌套。
-- 嵌套玻璃折射的是页面背景，不是外层玻璃本身（不同玻璃之间没有递归折射），所以它看起来像嵌在磨砂外层里的一块通透玻璃。
-- 切换激活项时，把 `data-liquid-glass` 连同同名的 `data-glass-morph` 从旧按钮移到新按钮（框架里按激活状态绑定属性即可）。画布渲染下，玻璃体积从旧位置流向新位置：朝运动方向的一端先到并略微越过目标，另一端被拖在后面，体积先被拉长变细再收拢。
-- 同一个元素的 `data-glass-morph` 为空值时，它自己的位置或尺寸变化（不含滚动和窗口缩放）也以同样的方式过渡，例如拖动一块玻璃：本体紧跟元素，后面拖出一团与它融合的液滴，方向就是拖动方向（包括斜向）；松手后本体越过落点再弹回，液滴甩过本体后收拢，晃动几下停下。拖尾需要非零的融合距离。位置按 `offsetLeft` / `offsetTop` 测量：拖动时要改变玻璃元素自己的 `left` / `top`（或布局位置），只移动外层容器或使用 `transform` 不会触发流动。
-- 同名玻璃仍在页面上时，新出现的玻璃从它里面流出来，例如面板从按钮里长出来：两者同名，面板一步出现在最终位置，玻璃从按钮的位置和尺寸流向面板，内容随玻璃展开显露。面板移除时，它的体积流回按钮并被吸收。
-- 用 `data-glass-morph` 过渡尺寸时，元素应一步切换到新尺寸，由玻璃负责过渡。逐帧改变元素尺寸会让画布每帧重建内容快照，文字和控件会闪烁。
-- `data-glass-morph-stretch`、`-bounce`、`-wobble` 调整流动的手感，缺省值来自全局默认参数里的 `morphStretch`、`morphBounce`、`morphWobble`。
-- 系统要求减少动态效果时直接到位；回退实现里激活项是一块直接切换的高亮。
+- Nested glass shares its parent's glass layer and is drawn above the parent's glass volume. The parent captures the HTML for both, so text appears clearly above the inner surface. Nested glass fuses only with sibling glass inside the same parent. Nesting supports one level.
+- Nested glass refracts the page backdrop directly, which gives it the appearance of a clear piece inset into the frosted outer glass.
+- To switch the active item, move `data-liquid-glass` and the matching `data-glass-morph` value to the new button. In a framework, bind both attributes to the active state. In canvas mode, the leading edge reaches the destination first and overshoots slightly. The rear edge trails behind, then the stretched glass contracts into place.
+- Use an empty `data-glass-morph` to animate an element's own layout position or size. When dragging, the glass follows the element and pulls a fused droplet behind it, including along diagonals. On release, the glass overshoots and bounces back as the droplet swings past it, contracts, and settles. Set a nonzero fusion distance to show the trail. Position is measured using `offsetLeft` and `offsetTop`, so update the glass element's own `left`, `top`, or layout position. This transition responds to layout changes of the glass element itself, independent of scrolling, viewport resizing, ancestor movement, and CSS transforms.
+- If another piece of glass with the same morph name is present, the new piece flows out of it. For example, place a panel at its final position in one step and give it the same name as the button that opens it. The glass grows from the button's size and position and reveals the panel content as it expands. On removal, the panel flows back into the button.
+- Set the element's final size in one step and let the glass animate between sizes. Changing the element's size every frame rebuilds its content snapshot on every frame and can make text and controls flicker.
+- Adjust the motion with `data-glass-morph-stretch`, `data-glass-morph-bounce`, and `data-glass-morph-wobble`. Their global defaults are `morphStretch`, `morphBounce`, and `morphWobble`.
+- With reduced motion, the glass goes directly to its destination. In fallback modes, the highlight switches immediately to the active item.
 
-## 全局默认参数
+## Global defaults
 
-没有在元素上声明的属性取全局默认值，可以随时修改，已挂载的页面在下一帧应用：
+Attributes omitted from an element use the global defaults. You can update those defaults at any time, and mounted pages apply the changes on the next frame.
 
 ```ts
 import { getGlassDefaults, onGlassDefaultsChange, resetGlassDefaults, setGlassDefaults } from 'liquid-in-canvas'
@@ -197,45 +211,45 @@ const stop = onGlassDefaultsChange(defaults => console.log(defaults))
 resetGlassDefaults()
 ```
 
-补丁里没有列出的字段保持不变。数值会被限制在 `GLASS_LIMITS` 内，无效值被忽略；`getGlassDefaults()` 返回的对象是冻结的。库内置的值是 `BUILTIN_GLASS_DEFAULTS`。
+`setGlassDefaults()` applies only the fields you pass. It clamps numbers to `GLASS_LIMITS` and ignores invalid values. `getGlassDefaults()` returns a frozen object. The built-in values are available as `BUILTIN_GLASS_DEFAULTS`.
 
-材质按主题分为 `light` 和 `dark`。主题的来源依次是：挂载时的 `theme` 选项或 `glass.setTheme()` → `<html data-theme="light|dark">` → 系统配色。
+Materials have `light` and `dark` variants. The theme comes from the `theme` mount option or `glass.setTheme()`, then `<html data-theme="light|dark">`, then the system color scheme.
 
-## 分辨率与性能
+## Resolution and performance
 
-画布分辨率和玻璃着色分辨率分开控制。页面文字画在画布上，画布倍率低于设备倍率时文字会变软；玻璃后的背景本来就经过折射和模糊，单独降低它的着色分辨率几乎看不出来。
+Canvas resolution controls how sharply page text is drawn. Glass shading has its own resolution. Reducing that resolution is less visible because the backdrop is already refracted and blurred.
 
 ```ts
 await mountLiquidGlass({
   root,
   resolution: {
-    maxPixelRatio: 3, // 画布倍率上限，决定文字清晰度，缺省 3
-    maxPixels: Infinity, // 画布像素总数上限，缺省不限
-    maxGlassPixelRatio: 2, // 玻璃着色倍率上限，缺省 2
-    adaptive: true, // 持续掉帧时自动降级（剖面光学 → 玻璃着色倍率 → 画布倍率），流畅后升回，缺省开启
-    minPixelRatio: 1, // 自适应降级可以把画布倍率降到的下限，缺省 1；Infinity 表示不降低画布倍率
+    maxPixelRatio: 3, // Canvas pixel ratio limit. Controls text sharpness. Defaults to 3.
+    maxPixels: Infinity, // Total canvas pixel limit. Defaults to unlimited.
+    maxGlassPixelRatio: 2, // Glass shading pixel ratio limit. Defaults to 2.
+    adaptive: true, // Lowers quality during sustained frame drops. Enabled by default.
+    minPixelRatio: 1, // Adaptive canvas pixel ratio floor. Use Infinity to keep the target ratio.
   },
 })
 
 glass.stage?.setResolution({ maxGlassPixelRatio: 1.5 })
-glass.stage?.getMetrics() // { dpr: 画布实际倍率, targetDpr: 降级前的画布倍率, glassDpr: 玻璃实际着色倍率, … }
+glass.stage?.getMetrics() // Includes dpr, targetDpr, and glassDpr.
 ```
 
-- `adaptive` 按损失从小到大降级：`optics` 是 `hybrid` 或 `raymarch` 时第一级先改用 `profile`（只有融合连接处与裁剪边变成近似），之后调整玻璃着色倍率（每级 ×0.75，最低到一半），最后才降低画布倍率（每级像素数 ×0.75，慢得多时一级最多减半，文字随之变软）；升回时顺序相反。每降一级都会检验：绘制间隔没有缩短 1 ms 且 5% 以上就撤回这一级，并在一段时间内跳过这种手段，所以不会为了没有效果的降级损失画质。实际使用的光路与倍率见 `stage.getMetrics()` 的 `optics`、`glassDpr`、`dpr`。
-- 整页快照、页面绘制和模糊的开销与画布像素数成正比，不受玻璃着色倍率影响。画布很大时（例如 5K 屏幕上的全屏窗口）浏览器把整页画进画布本身就跟不上，只有降低画布分辨率有效：自适应降级会在其余手段无效后自动降低，下限是 `minPixelRatio`（缺省 1，实际不低于 1 与设备倍率中的较小值）。不希望文字自动变软时把 `minPixelRatio` 设为 `Infinity`，改用 `maxPixelRatio` 或 `maxPixels` 自己决定画布分辨率。画布倍率不会低于 1。
-- `optics` 选择光路计算方式（`mountLiquidGlass`、`CanvasStage` 的选项，或 `stage.setOptics()`）：`profile`（缺省）按到轮廓的距离查预先沿截面追踪的光路；`raymarch` 在三维距离场里逐步求交。单块玻璃上两者结果一致，`profile` 在融合连接处与小圆角拐角是近似，GPU 开销约为 `raymarch` 的三分之一。`hybrid` 逐像素混合两者：只有一块玻璃的组查表，融合的组与被 `data-glass-clip` 切开的玻璃里只有连接处与裁剪边附近求交，静止的画面在这些地方与 `raymarch` 一致。
-- `fieldCache`（`mountLiquidGlass`、`CanvasStage` 的选项，或 `stage.setFieldCache()`，缺省 `true`）只对 `hybrid` 有意义：连接处的求交结果（折射场）在几何静止约 0.1 秒后算一次并缓存，之后每帧读回、照常取样背景，视频与页面滚动不受影响；成员相对运动、按压或液体迁移期间这一组改用查表，停下后再求交并淡入。缓存按着色倍率分配，总量不超过 48 MB。设为 `false` 时连接处每帧逐步求交，运动中也与 `raymarch` 一致，开销随连接处的面积变化。
-- 上层玻璃盖在下层玻璃上时，上层取样一张画好下层玻璃的背景（最多三级），只在需要的范围内额外合成与模糊；互不交叠时没有额外开销。
-- 同层玻璃靠近或重叠时会并入同一个融合组，组内每个像素都要对所有成员求距离。大面积的面板请用 `data-glass-layer` 放到单独的层，避免和它下方的控件融合。
+- When frames drop for a sustained period, adaptive quality switches from `hybrid` or `raymarch` to `profile` first, then lowers the glass shading ratio in ×0.75 steps to as low as half the initial ratio. It lowers canvas resolution last, usually cutting the pixel count to 75% per step and by up to half when rendering is much slower. It restores quality in reverse order. Each step must shorten the interval between draws by at least 1 ms and 5% to stay in effect. Otherwise, it rolls back the step and skips that adjustment for a while. Read the active settings from `stage.getMetrics()` using `optics`, `glassDpr`, and `dpr`.
+- The cost of taking a page snapshot, drawing the page, and blurring it scales with canvas pixels. A large canvas, such as a fullscreen window on a 5K display, can make the page snapshot itself the bottleneck. Adaptive quality lowers the canvas resolution if cheaper adjustments are ineffective. The default floor for adaptive reductions is `minPixelRatio: 1`. Set it to `Infinity` to keep the canvas at the target resolution and use `maxPixelRatio` or `maxPixels` to manage text sharpness yourself.
+- Set `optics` in `mountLiquidGlass`, in `CanvasStage`, or with `stage.setOptics()`. The default, `profile`, looks up rays traced through the cross-section by distance from the outline. `raymarch` finds ray intersections by stepping through a 3D distance field. Both give the same result on a single piece of glass, with approximations in `profile` at tight corners and fusion joints. The GPU cost of `profile` is about one third that of `raymarch`. `hybrid` uses lookups except near fusion joints and edges cut by `data-glass-clip`, where stationary glass matches `raymarch`.
+- `fieldCache` applies to `hybrid` and defaults to `true`. Set it in `mountLiquidGlass`, in `CanvasStage`, or with `stage.setFieldCache()`. The renderer caches ray intersections after the glass geometry has been stationary for about 0.1 s and uses them to sample the current backdrop each frame, including while a video plays or the page scrolls. While group members move relative to each other, deform under a press, or morph, the group uses the profile lookup. After the motion settles, it computes new intersections and blends them in. The cache scales with the shading resolution and is capped at 48 MB. Set `fieldCache` to `false` to raymarch joints every frame, including during motion. The cost then scales with the joint area.
+- Where layers overlap, the upper glass samples a backdrop that includes the glass beneath it. The renderer supports up to three backdrop levels and limits extra compositing and blur to the overlap regions.
+- Nearby or overlapping pieces of glass on the same layer form a fusion group. Each pixel in the group checks its distance to every member. Use `data-glass-layer` to give large panels their own layer so they render independently of the controls underneath.
 
-## 其他导出
+## Other exports
 
-- `liquid-in-canvas/canvas`：`CanvasStage`，画布渲染器本身。需要自己管理画布时使用；`mountLiquidGlass` 在需要时动态加载它。
-- `CssGlassStage`：回退实现本身，`refraction` 选项控制是否使用 SVG 滤镜。
-- `glassProfile`、`glassProfileOutline`、`glassEdgeTilt`：由厚度与倒角参数算出玻璃的实际截面、截面轮廓线和边缘倾斜程度，渲染器和 SVG 滤镜使用同一套计算，可以用来绘制截面示意图。
-- `liquid-in-canvas/vue`、`liquid-in-canvas/react`：只有类型，见上文 TypeScript 类型。
-- `liquid-in-canvas/motion`：`advanceSpring`、`reducedMotionQuery`、`prefersReducedMotion`。玻璃按压使用的阻尼弹簧，页面自己的动画用同一套参数时手感一致。这个入口不引入画布渲染器。
+- `liquid-in-canvas/canvas` exports `CanvasStage`. Use it when you manage the canvas yourself. `mountLiquidGlass` loads it on demand.
+- `CssGlassStage` is the fallback renderer. Its `refraction` option controls the use of the SVG filter.
+- `glassProfile`, `glassProfileOutline`, and `glassEdgeTilt` compute the glass cross-section, its outline, and the angle at the edge from the thickness and bevel settings. The canvas and SVG renderers share these calculations, which can also be used to draw a cross-section.
+- `liquid-in-canvas/vue` and `liquid-in-canvas/react` provide the Vue and React type declarations.
+- `liquid-in-canvas/motion` exports `advanceSpring`, `reducedMotionQuery`, and `prefersReducedMotion` independently of the canvas renderer. Use the damped spring and the same parameters as the glass press effect to give your own animations a similar feel.
 
-## 范围
+## Scope
 
-这是对 Apple Liquid Glass 视觉行为的 Web 近似，不是原生材质。同层融合用平滑距离场近似表面张力；不同层的玻璃按背景分级相互折射，超过三级的玻璃共用最高一级的背景。背景语义适配与设备姿态光照没有实现。设计说明见仓库的 `docs/`。
+The library approximates the visual behavior of Apple Liquid Glass on the web. Same-layer fusion uses a smooth distance field to approximate surface tension. Stacked glass refracts through up to three backdrop levels. Layers beyond that share the top backdrop. The implementation focuses on page geometry and material settings. A fuller reproduction would also require content-aware materials and lighting driven by device motion. See the repository's `docs/` directory for design notes.

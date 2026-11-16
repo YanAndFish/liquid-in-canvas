@@ -35,10 +35,10 @@ Add an attribute to an ordinary element and it becomes a piece of glass that ref
 - **Adaptive quality**: canvas resolution (text sharpness) and glass shading resolution are controlled separately; sustained frame drops lower the cheapest setting first and restore it when things are smooth again.
 - **Small and framework-agnostic**: no runtime dependencies. The WebGPU renderer is loaded only after the capability check passes. Typed attributes for Vue templates and React JSX.
 
-| Same-layer fusion | Liquid morph |
-| :---: | :---: |
+|                                                                   Same-layer fusion                                                                   |                                             Liquid morph                                              |
+| :---------------------------------------------------------------------------------------------------------------------------------------------------: | :---------------------------------------------------------------------------------------------------: |
 | <img src="docs/images/fusion-drag.webp" alt="Dragging a glass button: it fuses with the nearby call-to-action and leaves a liquid trail" width="420"> | <img src="docs/images/morph-tabs-en.webp" alt="The active tab flows between filter tabs" width="420"> |
-| Drag a glass button: it trails a droplet and fuses with nearby glass. | The active tab stretches, flows to the new tab and settles. |
+|                                         Drag a glass button: it trails a droplet and fuses with nearby glass.                                         |                      The active tab stretches, flows to the new tab and settles.                      |
 
 ## Quick start
 
@@ -72,21 +72,31 @@ console.log(glass.mode) // 'canvas', 'svg' or 'css'
 In canvas mode the root is moved into a `<canvas content="drawable">`, so size the canvas yourself and scroll inside the root instead of `window`:
 
 ```css
-.stage { position: fixed; inset: 0; width: 100dvw; height: 100dvh; display: block; }
-#app[drawable] { width: 100dvw; height: 100dvh; overflow: clip; }
+.stage {
+  position: fixed;
+  inset: 0;
+  width: 100dvw;
+  height: 100dvh;
+  display: block;
+}
+#app[drawable] {
+  width: 100dvw;
+  height: 100dvh;
+  overflow: clip;
+}
 ```
 
 `mode` defaults to `'auto'`, which tries `canvas` → `svg` → `css` and falls back at runtime if the GPU faults. With a framework, mount your app in `beforeStart`.
 
-The [library README](packages/liquid-in-canvas/README.md) (in Chinese) covers the rest: render modes and `onFault`, every `data-glass-*` attribute, nested glass and liquid morph, global defaults (`setGlassDefaults()`), resolution and performance options, and the TypeScript entry points for Vue and React.
+The [library README](packages/liquid-in-canvas/README.md) documents render modes and `onFault`, every `data-glass-*` attribute, nested glass and liquid morph, global defaults (`setGlassDefaults()`), resolution and performance options, and the TypeScript entry points for Vue and React.
 
 ## Browser support
 
-| Renderer | What you get | Where |
-| --- | --- | --- |
-| `canvas` | Everything above | Browsers with HTML-in-Canvas, WebGPU and `GPUQueue.drawElementImageToTexture()` (developed against Chrome 157) |
-| `svg` | Blur, tint, edge refraction, dispersion and rim highlight. No fusion, occlusion or press deformation | Chromium-based browsers |
-| `css` | Blur, tint, rim highlight and shadow | Any browser with `backdrop-filter` |
+| Renderer | What you get                                                                                         | Where                                                                                                          |
+| -------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `canvas` | Everything above                                                                                     | Browsers with HTML-in-Canvas, WebGPU and `GPUQueue.drawElementImageToTexture()` (developed against Chrome 157) |
+| `svg`    | Blur, tint, edge refraction, dispersion and rim highlight. No fusion, occlusion or press deformation | Chromium-based browsers                                                                                        |
+| `css`    | Blur, tint, rim highlight and shadow                                                                 | Any browser with `backdrop-filter`                                                                             |
 
 ## The demo: STILL
 
@@ -94,8 +104,8 @@ The [library README](packages/liquid-in-canvas/README.md) (in Chinese) covers th
 
 The round button in the bottom-right corner opens a **glass tuner**. It switches renderers and resolution limits and edits the global defaults live (materials, bevel profile, fusion, liquid motion). **Copy JSON** produces an object you can pass straight to `setGlassDefaults()`.
 
-| Glass tuner | Light theme |
-| :---: | :---: |
+|                                        Glass tuner                                         |                                                  Light theme                                                  |
+| :----------------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------------------------------: |
 | <img src="docs/images/tuner-en.webp" alt="The glass tuner panel open over the hero video"> | <img src="docs/images/collection-en.webp" alt="The product collection in light theme with glass filter tabs"> |
 
 ## Development
@@ -124,11 +134,9 @@ Publish the library with `pnpm publish`, not `npm publish`: only pnpm swaps the 
 - At high pixel ratios the full-page snapshot alone can exceed the frame budget. Adaptive quality lowers the canvas resolution last, which softens text. See the performance records on [fill rate](docs/performance/2026-11-13-fill-rate/README.md) and [adaptive canvas resolution](docs/performance/2026-11-15-adaptive-canvas/README.md); not yet measured on real devices.
 - The SVG fallback only works in Chromium, and glass larger than 120,000 CSS px² gets blur only.
 - The first scroll after a cold start can drop frames while the browser rasterizes for the first time.
-- After pausing the video and scrolling, text on some glass can go missing. Reproduced locally, not yet fixed.
-- Opening the cart drawer has been reported to make other glass render incorrectly or disappear. Cause not yet found.
 
 ## Scope and credits
 
-This is a web approximation of Apple's Liquid Glass, not the native material. Fusion uses a smooth 3D signed distance field to approximate surface tension; content-aware adaptation and device-motion lighting are not implemented. The visual references and their limits are recorded in [APPLE_LIQUID_GLASS_REFERENCE.md](docs/APPLE_LIQUID_GLASS_REFERENCE.md) (in Chinese).
+This is a web approximation of Apple's Liquid Glass, not the native material. Fusion uses a smooth 3D signed distance field to approximate surface tension; content-aware adaptation and device-motion lighting are not implemented. The screenshots, observations, and implementation limits are documented in the [Apple Liquid Glass visual reference](docs/APPLE_LIQUID_GLASS_REFERENCE.md).
 
 [liquid-glass-studio](https://github.com/iyinchao/liquid-glass-studio) was a research reference for refraction, dispersion, SDFs and multi-pass blur. The flower video comes from Pixabay / Pexels footage referenced by that project; product photos live in `apps/demo/public/products/`. Apple reference screenshots are used only in the research notes, never as demo assets.

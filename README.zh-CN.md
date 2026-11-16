@@ -35,10 +35,10 @@
 - **自适应画质**：画布分辨率（决定文字清晰度）和玻璃着色分辨率分开控制；持续掉帧时先降低损失最小的一项，流畅后再升回。
 - **轻量、与框架无关**：没有运行时依赖。WebGPU 渲染器在能力检查通过后才加载。为 Vue 模板与 React JSX 提供属性类型。
 
-| 同层融合 | 液体迁移 |
-| :---: | :---: |
+|                                                   同层融合                                                    |                                       液体迁移                                        |
+| :-----------------------------------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------: |
 | <img src="docs/images/fusion-drag.webp" alt="拖动玻璃按钮：它与附近的主按钮融合，并拖出一团液滴" width="420"> | <img src="docs/images/morph-tabs-zh.webp" alt="激活项在分类标签之间流动" width="420"> |
-| 拖动玻璃按钮，后面拖出液滴，靠近其他玻璃时融合。 | 激活项被拉长、流到新标签，再收拢停下。 |
+|                               拖动玻璃按钮，后面拖出液滴，靠近其他玻璃时融合。                                |                        激活项被拉长、流到新标签，再收拢停下。                         |
 
 ## 快速开始
 
@@ -72,21 +72,31 @@ console.log(glass.mode) // 'canvas'、'svg' 或 'css'
 画布模式下，根元素会被移入一张 `<canvas content="drawable">`。画布的尺寸由你的样式决定，页面滚动要发生在根元素内部，而不是 `window`：
 
 ```css
-.stage { position: fixed; inset: 0; width: 100dvw; height: 100dvh; display: block; }
-#app[drawable] { width: 100dvw; height: 100dvh; overflow: clip; }
+.stage {
+  position: fixed;
+  inset: 0;
+  width: 100dvw;
+  height: 100dvh;
+  display: block;
+}
+#app[drawable] {
+  width: 100dvw;
+  height: 100dvh;
+  overflow: clip;
+}
 ```
 
 `mode` 缺省为 `'auto'`：按 `canvas` → `svg` → `css` 的顺序尝试，GPU 运行中出错时也会回退。使用框架时，在 `beforeStart` 里挂载应用。
 
-其余内容见[渲染库的 README](packages/liquid-in-canvas/README.md)：渲染方式与 `onFault`、全部 `data-glass-*` 属性、嵌套玻璃与液体迁移、全局默认参数（`setGlassDefaults()`）、分辨率与性能选项，以及 Vue 和 React 的类型入口。
+其余内容见[渲染库的 README](packages/liquid-in-canvas/README.zh-CN.md)：渲染方式与 `onFault`、全部 `data-glass-*` 属性、嵌套玻璃与液体迁移、全局默认参数（`setGlassDefaults()`）、分辨率与性能选项，以及 Vue 和 React 的类型入口。
 
 ## 浏览器支持
 
-| 实现 | 效果 | 浏览器 |
-| --- | --- | --- |
-| `canvas` | 上面列出的全部效果 | 支持 HTML-in-Canvas、WebGPU 和 `GPUQueue.drawElementImageToTexture()` 的浏览器（开发使用 Chrome 157） |
-| `svg` | 模糊、染色、边缘折射、色散和轮廓高光。没有融合、遮挡和按压形变 | Chromium 内核 |
-| `css` | 模糊、染色、轮廓高光和阴影 | 支持 `backdrop-filter` 的浏览器 |
+| 实现     | 效果                                                           | 浏览器                                                                                                |
+| -------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `canvas` | 上面列出的全部效果                                             | 支持 HTML-in-Canvas、WebGPU 和 `GPUQueue.drawElementImageToTexture()` 的浏览器（开发使用 Chrome 157） |
+| `svg`    | 模糊、染色、边缘折射、色散和轮廓高光。没有融合、遮挡和按压形变 | Chromium 内核                                                                                         |
+| `css`    | 模糊、染色、轮廓高光和阴影                                     | 支持 `backdrop-filter` 的浏览器                                                                       |
 
 ## 演示：STILL
 
@@ -94,8 +104,8 @@ console.log(glass.mode) // 'canvas'、'svg' 或 'css'
 
 右下角的圆形按钮打开**调参面板**，可以切换渲染方式和分辨率上限，实时修改全局默认参数（材质、倒角截面、融合、液体流动）。**复制参数**得到的 JSON 可以直接传给 `setGlassDefaults()`。
 
-| 调参面板 | 浅色主题 |
-| :---: | :---: |
+|                                调参面板                                |                                      浅色主题                                       |
+| :--------------------------------------------------------------------: | :---------------------------------------------------------------------------------: |
 | <img src="docs/images/tuner-zh.webp" alt="在首页视频上展开的调参面板"> | <img src="docs/images/collection-zh.webp" alt="浅色主题下的商品列表和玻璃分类标签"> |
 
 ## 开发
@@ -124,11 +134,9 @@ docs                        架构、视觉依据与性能记录
 - 高分辨率下整页快照本身就可能超出帧预算。自适应降级最后才降低画布分辨率，此时文字变软。见性能记录：[填充率](docs/performance/2026-11-13-fill-rate/README.md)、[画布倍率的自适应降级](docs/performance/2026-11-15-adaptive-canvas/README.md)；没有在真机上测量过。
 - SVG 滤镜回退只在 Chromium 内核上生效，面积超过 12 万 CSS 像素的玻璃只有模糊。
 - 冷启动后第一次滚动可能因浏览器首次栅格化而掉帧。
-- 暂停视频后滚动，部分玻璃上的文字可能缺失。已在本地复现，尚未解决。
-- 打开购物袋后，其他玻璃效果异常和内容偶发消失的问题已有用户反馈，原因尚待定位。
 
 ## 范围与来源
 
-这是对 Apple Liquid Glass 视觉行为的 Web 近似实现，不是原生材质。同层融合用三维平滑距离场近似表面张力；背景语义适配和设备姿态光照尚未实现。视觉依据与限制见 [APPLE_LIQUID_GLASS_REFERENCE.md](docs/APPLE_LIQUID_GLASS_REFERENCE.md)。
+这是对 Apple Liquid Glass 视觉行为的 Web 近似实现，不是原生材质。同层融合用三维平滑距离场近似表面张力；背景语义适配和设备姿态光照尚未实现。视觉依据与限制见 [Apple Liquid Glass 视觉依据](docs/APPLE_LIQUID_GLASS_REFERENCE.zh-CN.md)。
 
 [liquid-glass-studio](https://github.com/iyinchao/liquid-glass-studio) 提供了折射、色散、SDF 和多遍模糊的研究参考。花朵视频使用该项目引用的 Pixabay / Pexels 素材，商品图保存在 `apps/demo/public/products/`。Apple 参考截图只在研究文档中引用，不作为演示素材。

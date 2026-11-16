@@ -1,91 +1,93 @@
-# Liquid Glass 的视觉依据
+# Apple Liquid Glass visual reference
 
-本项目用 HTML-in-Canvas 和 WebGPU 重建 Liquid Glass 的视觉行为。目标以 Apple 官方演示和实际系统界面为准。`liquid-glass-studio` 用于研究 SDF、折射和多遍模糊的实现方法。
+<p align="center">
+  <b>English</b> · <a href="APPLE_LIQUID_GLASS_REFERENCE.zh-CN.md">简体中文</a>
+</p>
 
-Apple 公开资料没有提供完整的原生材质着色器。下面明确区分官方描述、截图观察和本项目的实现选择。资料检查日期为 2026-11-07。
+This project recreates the visual behavior of Liquid Glass with HTML-in-Canvas and WebGPU. Apple's official demos and iOS interface screenshots guide the visual target. `liquid-glass-studio` serves as a reference for signed distance fields, refraction, and multi-pass blur.
 
-## 实际 UI 截图
+These notes distinguish Apple's descriptions, observations from screenshots, and renderer choices made in this project. The review of Apple's materials dates to November 7, 2026.
 
-这些图片来自 Apple 的 iPhone 用户指南，页面选择的版本为 **iOS 26**。它们展示完整应用界面，适合检查控件比例、对比度和内容层级。图片不是本项目截图，也不是本机 iPhone 实测；具体小版本和辅助功能设置无法从图片确认。图片版权归 Apple，以下直接引用官方地址。
+## iOS interface screenshots
 
-### 照片：图库与底部导航
+These screenshots are from the iOS 26 edition of Apple's iPhone User Guide. They show complete screens, which makes them useful for comparing control proportions, contrast, and content layering. The images identify the major iOS version. The exact point release and accessibility settings are unknown. Apple owns the screenshots, and the images below are embedded from Apple's servers.
 
-[来源：Get started with Photos on iPhone](https://support.apple.com/en-gb/guide/iphone/iphc259d0ac7/26/ios/26)
+### Photos library and bottom navigation
 
-<img src="https://help.apple.com/assets/69F8EBBDF3B89A4F6E0C704C/69F8EBC43862495245036393/en_US/6c0c1af2cf439f969cee40af356f077a.png" width="280" alt="iOS 26 照片图库，底部为图库、精选集与独立搜索按钮">
+[Get started with Photos on iPhone](https://support.apple.com/en-gb/guide/iphone/iphc259d0ac7/26/ios/26)
 
-观察：照片保持清晰，底部导航有明显的浅色承托。选中项在整块材质内部呈现为浅填充。搜索按钮与导航组分开，周围保留间距。
+<img src="https://help.apple.com/assets/69F8EBBDF3B89A4F6E0C704C/69F8EBC43862495245036393/en_US/6c0c1af2cf439f969cee40af356f077a.png" width="280" alt="iOS 26 Photos library with Library, Collections, and a separate Search button at the bottom">
 
-项目对应：商品卡片使用普通内容表面；筛选项共享一个胶囊，内部选中背景以弹簧移动。播放按钮与场景选择器分组。
+The photos stay sharp, and a visibly lighter surface backs the bottom navigation. A light fill marks the selected item within the shared material. A gap separates the Search button from the navigation group.
 
-### 照片：回忆列表
+In the demo, product cards use standard content surfaces. The filters share a single pill, and a spring animates the selected background between items. The playback button and scene picker form a group.
 
-[来源：Get started with Photos on iPhone](https://support.apple.com/en-gb/guide/iphone/iphc259d0ac7/26/ios/26)
+### Photos Memories list
 
-<img src="https://help.apple.com/assets/69F8EBBDF3B89A4F6E0C704C/69F8EBC43862495245036393/en_US/61de8a3b3a33d86f531d0a6c4359eaa7.png" width="280" alt="iOS 26 照片回忆页，内容图片占据主体，控制按钮位于独立浮层">
+[Get started with Photos on iPhone](https://support.apple.com/en-gb/guide/iphone/iphc259d0ac7/26/ios/26)
 
-观察：主内容有清晰的图文层级。玻璃只承担返回、播放等操作，不为整张内容图片增加折射外框。
+<img src="https://help.apple.com/assets/69F8EBBDF3B89A4F6E0C704C/69F8EBC43862495245036393/en_US/61de8a3b3a33d86f531d0a6c4359eaa7.png" width="280" alt="iOS 26 Photos Memories screen with a large image and controls on a separate floating layer">
 
-项目对应：首页照片与文案直接呈现；玻璃用于浏览、播放和外观设置。材质选择收在外观菜单中。
+Images and text form a clear hierarchy. Glass is reserved for actions such as going back or playing a memory, leaving the main image visually intact.
 
-### Safari：起始页
+The demo presents homepage imagery and text directly and uses glass for browsing, playback, and appearance controls. Material choices are grouped in the appearance menu.
 
-[来源：Customize your Safari settings on iPhone](https://support.apple.com/en-gb/guide/iphone/iphb3100d149/26/ios/26)
+### Safari start page
 
-<img src="https://help.apple.com/assets/69F8EBBDF3B89A4F6E0C704C/69F8EBC43862495245036393/en_US/b9b877fe98989cc0fdb2b50bbe882bba.png" width="280" alt="iOS 26 Safari 起始页，底部搜索框和圆形操作按钮浮在页面之上">
+[Customize your Safari settings on iPhone](https://support.apple.com/en-gb/guide/iphone/iphb3100d149/26/ios/26)
 
-观察：底部搜索框透出背景色，但没有牺牲文字清晰度。搜索框与两侧圆形操作使用一致的高度和曲率。内容列表与操作层有明显区分。
+<img src="https://help.apple.com/assets/69F8EBBDF3B89A4F6E0C704C/69F8EBC43862495245036393/en_US/b9b877fe98989cc0fdb2b50bbe882bba.png" width="280" alt="iOS 26 Safari start page with a floating bottom search field and round action buttons">
 
-项目对应：导航按用途分组，使用统一的圆角和触摸尺寸。Regular 材质柔化背景并叠加主题染色。购物袋浮在页面边缘，四周留白。
+The bottom search field picks up color from the backdrop while keeping its text sharp. The field and round buttons share a height and curvature. A separate layer distinguishes the controls from the content list.
 
-## 官方动态演示
+The demo groups navigation controls by purpose and uses consistent corner radii and touch target sizes. Regular softens the backdrop and adds a theme tint. The shopping bag floats near the edge of the page with space around it.
 
-[Meet Liquid Glass，WWDC25](https://developer.apple.com/videos/play/wwdc2025/219/) 用于研究运动和光照。已抽帧查看约 2:40 的细轮廓反光，以及 3:00–5:20 的播放按钮、按压、滑块和应用控件示例。
+## Official motion demo
 
-- 玻璃通过折射和透镜形成轮廓，亮边不需要铺满整个表面。
-- 接触产生局部亮光和形变。
-- 菜单从触发点展开，尺寸变大时具有更厚、更柔和的材质。
+The frame around 2:40 shows a narrow rim reflection. The examples from about 3:00 to 5:20 show a play button, press effects, sliders, and app controls. [Meet Liquid Glass, WWDC25](https://developer.apple.com/videos/play/wwdc2025/219/)
 
-本项目将上述行为近似为三维圆角实体、窄轮廓反光和按压形变。按钮展开为菜单时，同步改变宽高、模糊和染色。折射模型和弹簧参数是本项目的实现选择，不代表 Apple 内部参数。
+- Refraction and lensing define the glass outline. Highlights can stay near the rim.
+- Touch produces a local highlight and deformation.
+- A menu expands from its trigger and takes on a thicker, softer material as it grows.
 
-## 2026-11-14 补充对照
+This project approximates these effects with rounded 3D volumes, narrow rim highlights, and press deformation. When a button expands into a menu, its width, height, blur, and tint change together. The refraction model and spring settings are specific to this project.
 
-用户提供的 13 张截图（两色背景上的胶囊、沙丘上的圆形与播放按钮、花朵上的三颗按钮、商店页的菜单展开、网格上的工具条）补充了以下观察：
+## Additional comparisons from November 14, 2026
 
-- 折射集中在边缘，中心平坦，靠边朝内取样，直线在边缘弯成贴合轮廓的弧。两色胶囊里暗区在玻璃两端被内缩成圆角形状。小按钮上也有明显弯折。
-- 通透玻璃几乎不模糊；磨砂菜单模糊强、偏亮、颜色更鲜明；阴影很淡。
-- 按压时控件放大并鼓成厚透镜（三颗按钮里左侧一颗出现倒像）；圆形玻璃出现时先厚后回落；菜单从按钮展开时内容放大且模糊。
-- 工具条盖在玻璃面板上时折射并透出下层玻璃。
+Thirteen provided screenshots cover a pill over a two-color backdrop, round controls and a play button over sand dunes, three buttons over flowers, a menu expanding on a store page, and a toolbar over a grid. They show the following details.
 
-本项目据此重新取值折射剖面、加入饱和度与亮度、自适应阴影、多层玻璃、生效与移除过渡，见[液态玻璃渲染说明](LIQUID_GLASS_NOTES.md)。轮廓高光本轮没有调整；按压放大与手指处亮光试过后去掉，按压仍是原来的轻微形变。测量方法与数据见 `docs/performance/2026-11-14-visual/`。
+- Refraction concentrates near the rim while the center stays flat. Sampling shifts inward near the edge, bending straight lines into curves that follow the outline. At the ends of the two-color pill, the dark region pulls inward into a rounded shape. The effect is visible on small buttons too.
+- Clear glass shows very little blur. Frosted menus have stronger blur, a brighter backdrop, and more saturated colors. Shadows are faint.
+- A pressed control enlarges and bulges into a thick lens. The leftmost of the three buttons shows an inverted image. Circular glass starts thick as it appears, then settles. Menu content magnifies and blurs as it expands from the trigger.
+- A toolbar placed over a glass panel refracts the panel beneath it.
 
-## 设计与可访问性
+The renderer uses these observations to choose a refraction profile, adjust saturation and brightness, vary shadow strength, render stacked glass, and animate glass entering and leaving the page. The press effect uses a slight deformation. The rim highlight follows the directional model described below. See the [rendering notes](LIQUID_GLASS_NOTES.md) and the [measurement methods and data](performance/2026-11-14-visual/README.md).
 
-[Materials — Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/materials) 区分 Regular 与 Clear；[Get to know the new design system](https://developer.apple.com/videos/play/wwdc2025/356/) 说明控制分组、同心圆角和滚动边缘的设计。
+## Design and accessibility
 
-实现检查包括：
+Apple's materials guidelines distinguish Regular and Clear. The WWDC design session discusses grouping controls, using concentric corner radii, and handling scroll edges. [Materials, Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/materials) · [Get to know the new design system, WWDC25](https://developer.apple.com/videos/play/wwdc2025/356/)
 
-- 常驻导航和购物袋使用 Regular；媒体区域的 Clear 配合暗色衬底和白色文字。
-- 控件文字来自独立 HTML 快照，不随背景折射。
-- 视频可暂停，离屏时暂停，减少动态效果时默认不自动播放。
-- 系统要求减少动态效果时，菜单与选中项直接到达目标位置。
-- 菜单支持 Escape，关闭后的内容设置 `inert` 和 `aria-hidden`。
-- 减少透明度与增强对比度使用 CSS 媒体查询。
+- Persistent navigation and the shopping bag use Regular. Clear controls over media use a dark backing and white text.
+- Control text comes from a separate HTML snapshot and stays sharp over the refracted backdrop.
+- Users can pause video. It pauses offscreen, and autoplay is disabled by default when reduced motion is requested.
+- With reduced motion enabled, menus and selection highlights jump directly to their destination.
+- Escape closes the menu. Closed menu content uses `inert` and `aria-hidden`.
+- CSS media queries handle reduced transparency and increased contrast.
 
-## 实现范围
+## Implementation scope
 
-本项目支持圆角实体的三维折射、按波长计算的色散、五级高斯模糊、同层融合、HTML 内容遮挡、屏幕空间环境反光、按压形变和菜单尺寸插值。
+The project supports 3D refraction through rounded glass volumes, wavelength-dependent dispersion, five levels of Gaussian blur, same-layer fusion, HTML content occlusion, screen-space reflections, press deformation, and menu size interpolation.
 
-原生系统的完整环境光模型、设备姿态驱动、语义化背景识别，以及不同玻璃层间的递归折射没有实现。三维 Regular 使用主题染色，不等同于系统的完整自适应材质。浏览器支持检查通过，也不能替代对实际 GPU 画面的检查。
+The renderer uses screen-space lighting and theme tint for the 3D Regular material. A full reproduction would also require the native environment lighting model, device orientation, semantic background recognition, and recursive refraction between layers. Check the actual GPU output separately from the browser capability check.
 
-## 补充截图观察
+## Additional screenshot observations
 
-用户提供的 Dock、控制面板、Safari 及演示视频截图显示：边缘存在窄的明暗过渡；背景蓝线在玻璃内产生位移；邻近绿色在未直接重叠的轮廓上也能出现。截图中的色带既可能来自背景本身的颜色，也可能包含色散，不能把全部彩色边缘都归因于 RGB 分离。
+Provided screenshots of the Dock, Control Center, Safari, and video demos show narrow light-to-dark transitions around the edge. A blue line in the background shifts as it passes through the glass. Nearby green can appear along parts of the rim that lie just outside the green region. Colored edges can come from the backdrop itself as well as from dispersion, so RGB separation explains only some of the observed color.
 
-三维材质使用平滑接合的超椭圆倒角、入射与出射求交，以及按波长区分的折射率来近似这些现象。`tests/visual/liquid-glass.html` 使用独立色块检查位移与色散。它不包含 Apple 图片，方便固定条件下对照参数。
+The 3D material approximates these effects with smoothly joined superellipse bevels, entry and exit ray intersections, and wavelength-specific refractive indices. The [liquid glass visual test](../apps/demo/tests/visual/liquid-glass.html) uses isolated color blocks as a fixed backdrop for comparing displacement and dispersion.
 
-## 三维与融合实验
+## 3D refraction and fusion experiments
 
-当前项目使用闭合三维距离场计算入射、出射和折射，并以平滑距离场近似同层表面的连接。这是本项目的实现选择，没有据此推断 Apple 的内部算法。反射环境取自屏幕空间，融合不模拟流体的质量与速度。
+The renderer uses a closed 3D signed distance field to find where light enters and exits the glass and how it refracts. It approximates the join between surfaces on the same layer with a smooth distance field. This model is specific to the project. It takes reflections from screen space and models fusion as a change in surface shape.
 
-顶栏是完整玻璃条，主物信息牌与商品加入按钮也参与第 0 层融合。HTML 层叠顺序控制内容遮挡：被上层玻璃覆盖的文字先写入背景再进行模糊。鼠标移动不会改变高光，定向亮度集中在较细的轮廓区域。
+The top bar is a single strip of glass. The featured product label and add-to-bag button also participate in layer 0 fusion. HTML stacking order controls occlusion. Text covered by an upper piece of glass is drawn into its backdrop before blur is applied. The highlight stays tied to the lighting direction as the pointer moves, with most of its brightness concentrated in a narrow rim.

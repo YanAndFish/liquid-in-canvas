@@ -262,7 +262,7 @@ jsdom 不绘制 WebGPU，测试通过不能证明着色器的画面。画面需�
 
 ## 相关文档
 
-- [渲染库 README](../packages/liquid-in-canvas/README.md)
+- [渲染库 README](../packages/liquid-in-canvas/README.zh-CN.md)
 - [HTML-in-Canvas 实践记录](HTML_IN_CANVAS_NOTES.md)
 - [液态玻璃设计与着色器](LIQUID_GLASS_NOTES.md)
-- [Apple Liquid Glass 视觉依据](APPLE_LIQUID_GLASS_REFERENCE.md)
+- [Apple Liquid Glass 视觉依据](APPLE_LIQUID_GLASS_REFERENCE.zh-CN.md)
