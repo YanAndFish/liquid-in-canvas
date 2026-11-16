@@ -194,10 +194,15 @@ export interface PipelineSpec {
   entry: string
   /** 取样的纹理数量。 */
   textures: number
+  /**
+   * 不可过滤的纹理（例如 `rgba32float`）所在的绑定，按位记录：第 i 位对应第 i 个纹理绑定。
+   * 这些纹理只能用 `textureLoad` 读取。缺省为 0。
+   */
+  unfilterable?: number
   format: GPUTextureFormat
   blend?: GPUBlendState
-  /** 同时写入的颜色目标数量，格式与混合都相同；缺省为 1。 */
-  targets?: number
+  /** 同时写入多个颜色目标时各目标的格式，混合都相同；缺省只写一个 `format` 目标。 */
+  formats?: readonly GPUTextureFormat[]
 }
 
 /** 绘制目标的格式位置：画布或离屏目标。管线表按它取用对应格式的管线。 */
@@ -306,6 +311,7 @@ export class StageGpu {
   disposed = false
   private readonly sampler: GPUSampler
   private readonly uniformLayout: GPUBindGroupLayout
+  /** 按纹理数量与不可过滤的绑定缓存，键是 `数量 + 掩码 × 64`。 */
   private readonly textureLayouts = new Map<number, TextureLayout>()
   private readonly modules = new Map<string, GPUShaderModule>()
   private readonly textureGroups = new WeakMap<GPUTextureView, GPUBindGroup>()
@@ -379,10 +385,10 @@ export class StageGpu {
     return group
   }
 
-  /** 为一组纹理创建绑定，由调用方缓存。 */
-  textureGroupOf(views: readonly GPUTextureView[]): GPUBindGroup {
+  /** 为一组纹理创建绑定，由调用方缓存。`unfilterable` 的含义见 `PipelineSpec.unfilterable`。 */
+  textureGroupOf(views: readonly GPUTextureView[], unfilterable = 0): GPUBindGroup {
     return this.device.createBindGroup({
-      layout: this.textureLayout(views.length).bindGroup,
+      layout: this.textureLayout(views.length, unfilterable).bindGroup,
       entries: views.map((view, binding) => ({ binding, resource: view })),
     })
   }
@@ -394,14 +400,19 @@ export class StageGpu {
     this.modules.clear()
   }
 
-  private textureLayout(count: number): TextureLayout {
-    let layout = this.textureLayouts.get(count)
+  private textureLayout(count: number, unfilterable = 0): TextureLayout {
+    const key = count + unfilterable * 64
+    let layout = this.textureLayouts.get(key)
     if (!layout) {
       const bindGroup = this.device.createBindGroupLayout({
         entries: Array.from({ length: count }, (_, binding) => ({
           binding,
           visibility: SHADER_STAGE.FRAGMENT,
-          texture: { sampleType: 'float' as const },
+          texture: {
+            sampleType: (unfilterable >> binding) & 1
+              ? 'unfilterable-float' as const
+              : 'float' as const,
+          },
         })),
       })
       layout = {
@@ -413,7 +424,7 @@ export class StageGpu {
           ],
         }),
       }
-      this.textureLayouts.set(count, layout)
+      this.textureLayouts.set(key, layout)
     }
     return layout
   }
@@ -426,12 +437,12 @@ export class StageGpu {
     }
     return {
       label,
-      layout: this.textureLayout(spec.textures).pipeline,
+      layout: this.textureLayout(spec.textures, spec.unfilterable).pipeline,
       vertex: { module, entryPoint: 'vertex' },
       fragment: {
         module,
         entryPoint: spec.entry,
-        targets: Array.from({ length: spec.targets ?? 1 }, () => ({ format: spec.format, blend: spec.blend })),
+        targets: (spec.formats ?? [spec.format]).map(format => ({ format, blend: spec.blend })),
       },
       primitive: { topology: 'triangle-strip' },
     }

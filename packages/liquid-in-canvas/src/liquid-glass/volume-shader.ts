@@ -1,7 +1,7 @@
 import type { StageGpu } from '../gpu'
 import { BLEND_NORMAL, PipelineTable, shaderPrelude, SLOT_CANVAS, SLOT_TARGET, TARGET_FORMAT, wgslFloat } from '../gpu'
 import { BLUR_SIGMAS } from './gaussian'
-import { createFieldBakeShader, FIELD_TARGETS } from './volume-field-shader'
+import { createFieldBakeShader, FIELD_FORMATS, FIELD_TARGETS } from './volume-field-shader'
 import { createHybridVolumeShader } from './volume-hybrid-shader'
 import { createProfileVolumeShader } from './volume-profile-shader'
 
@@ -419,6 +419,19 @@ export interface VolumeTextures {
 }
 
 /**
+ * 读取折射场缓存的管线里不可过滤的绑定（单精度的折射场纹理），按位记录，见 `PipelineSpec.unfilterable`。
+ * 写成函数：这几个着色器模块相互引用，模块初始化时 `FIELD_FORMATS` 可能还没有定义。
+ */
+export function fieldUnfilterable(): number {
+  let mask = 0
+  for (let i = 0; i < FIELD_FORMATS.length; i++) {
+    if (FIELD_FORMATS[i] === 'rgba32float')
+      mask |= 1 << (VOLUME_TEXTURES + 1 + i)
+  }
+  return mask
+}
+
+/**
  * 冷路径：背景视图、模糊纹理、查找表或折射场缓存变化后，重新创建体积着色器的纹理绑定。
  * `lut` 只有剖面光学与混合光路需要，放在各级模糊之后；`fields` 是折射场缓存的几张纹理，放在查找表之后。
  */
@@ -439,7 +452,9 @@ export function bindVolumeTextures(
           lut,
           ...fields,
         ]
-      : [source, ...blurs]),
+      : [source, ...blurs], fields.length > 0
+      ? fieldUnfilterable()
+      : 0),
   }
 }
 
@@ -480,13 +495,16 @@ export function createVolumePipelines(gpu: StageGpu, kind: VolumePipelineKind = 
     code: volumeShaderOf(kind, count),
     entry: 'volume',
     textures: volumeTexturesOf(kind),
+    unfilterable: kind === 'field'
+      ? fieldUnfilterable()
+      : 0,
     format: gpu.formatOf(slot),
     blend: BLEND_NORMAL,
   })))
 }
 
 /**
- * 写入折射场缓存的管线表，按成员数量取用。一次绘制同时写几张半精度纹理，不混合；
+ * 写入折射场缓存的管线表，按成员数量取用。一次绘制同时写三张纹理，不混合；
  * 绑定与混合光路相同（只读其中的查找表）。
  */
 export function createFieldBakePipelines(gpu: StageGpu): PipelineTable {
@@ -495,6 +513,6 @@ export function createFieldBakePipelines(gpu: StageGpu): PipelineTable {
     entry: 'bake',
     textures: VOLUME_TEXTURES + 1,
     format: TARGET_FORMAT,
-    targets: FIELD_TARGETS,
+    formats: FIELD_FORMATS,
   }))
 }

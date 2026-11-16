@@ -102,10 +102,11 @@ function traceTier(cached: boolean): string {
           let rest = textureLoad(field1, texel, 0);
           var paths: Paths;
           paths.height = stored.w;
-          paths.normal = vec3f(rest.zw, sqrt(max(1.0 - dot(rest.zw, rest.zw), 0.0)));
-          paths.red = vec3f(xy + first.xy, stored.x);
-          paths.green = vec3f(xy + first.zw, stored.y);
-          paths.blue = vec3f(xy + rest.xy, stored.z);
+          let green = xy + first.xy;
+          paths.normal = vec3f(first.zw, sqrt(max(1.0 - dot(first.zw, first.zw), 0.0)));
+          paths.red = vec3f(green + rest.xy, stored.x);
+          paths.green = vec3f(green, stored.y);
+          paths.blue = vec3f(green + rest.zw, stored.z);
           shaded = glass_shade(screen_uv, glass_material(vec3f(xy, stored.w)), paths);
         } else {
           shaded = glass_trace(xy, screen_uv);

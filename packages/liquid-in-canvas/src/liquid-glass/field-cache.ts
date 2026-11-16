@@ -5,8 +5,8 @@
  */
 import type { StageGpu } from '../gpu'
 import type { VolumeTextures } from './volume-shader'
-import { TARGET_FORMAT, TEXTURE_USAGE } from '../gpu'
-import { FIELD_TARGETS } from './volume-field-shader'
+import { TEXTURE_USAGE } from '../gpu'
+import { FIELD_FORMATS } from './volume-field-shader'
 import { bindVolumeTextures } from './volume-shader'
 
 /** 成员数量不超过它的组才缓存；更多成员的组每帧逐步求交。 */
@@ -26,10 +26,10 @@ export const FIELD_FADE_OUT_MS = 80
 /** 两帧之间计入淡化的最长时间，毫秒。画面静止很久之后的第一帧不会直接跳到终点。 */
 export const FIELD_FADE_STEP_MS = 34
 /**
- * 全部缓存的纹素总数上限。每个纹素三张半精度四通道纹理共 24 字节，200 万纹素是 48 MB。
+ * 全部缓存的纹素总数上限。每个纹素 32 字节（`FIELD_TEXEL_BYTES`），150 万纹素是 48 MB。
  * 超过时先释放最久没有出现的组；单独一组就超过上限时不缓存，静止后每帧逐步求交。
  */
-export const FIELD_TEXEL_BUDGET = 2_000_000
+export const FIELD_TEXEL_BUDGET = 1_500_000
 /** 连续这么多帧没有出现的组释放缓存纹理。 */
 export const FIELD_IDLE_FRAMES = 180
 /** 缓存尺寸向上取整的步长（纹素），几何反复小幅变化时不必每次重建纹理。 */
@@ -117,9 +117,9 @@ export function createFieldEntry(): FieldEntry {
 
 /** 创建一组给定尺寸的折射场纹理。内容在第一次写入时清空。 */
 export function createFieldTextures(gpu: StageGpu, width: number, height: number): FieldTextures {
-  const textures = Array.from({ length: FIELD_TARGETS }, () => gpu.device.createTexture({
+  const textures = FIELD_FORMATS.map(format => gpu.device.createTexture({
     size: { width, height },
-    format: TARGET_FORMAT,
+    format,
     usage: TEXTURE_USAGE.TEXTURE_BINDING | TEXTURE_USAGE.RENDER_ATTACHMENT | TEXTURE_USAGE.COPY_DST,
   }))
   return {
@@ -140,7 +140,7 @@ const HALF_MINUS_ONE = 0xBC00
 export function createEmptyField(gpu: StageGpu): FieldTextures {
   const field = createFieldTextures(gpu, 1, 1)
   gpu.device.queue.writeTexture(
-    { texture: field.textures[FIELD_TARGETS - 1]! },
+    { texture: field.textures[FIELD_FORMATS.length - 1]! },
     new Uint16Array([0, 0, 0, HALF_MINUS_ONE]),
     { bytesPerRow: 8 },
     { width: 1, height: 1 },

@@ -3,10 +3,10 @@ import type { VolumeSurface } from '../../src/liquid-glass/fusion.hot'
 import { describe, expect, it } from 'vitest'
 import { HEADER_FLOATS } from '../../src/frame'
 import { DrawList } from '../../src/frame.hot'
-import { TARGET_FORMAT, TEXTURE_USAGE } from '../../src/gpu'
+import { TEXTURE_USAGE } from '../../src/gpu'
 import { FIELD_FADE_IN_MS, FIELD_FADE_OUT_MS, FIELD_IDLE_FRAMES, FIELD_SETTLE_MS, FIELD_TEXEL_BUDGET } from '../../src/liquid-glass/field-cache'
 import { parseGlassOptions } from '../../src/liquid-glass/options'
-import { createFieldBakeShader, FIELD_TARGETS } from '../../src/liquid-glass/volume-field-shader'
+import { createFieldBakeShader, FIELD_FORMATS, FIELD_TARGETS, FIELD_TEXEL_BYTES } from '../../src/liquid-glass/volume-field-shader'
 import { createHybridVolumeShader } from '../../src/liquid-glass/volume-hybrid-shader'
 import { createVolumeShader, VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS, VOLUME_TEXTURES } from '../../src/liquid-glass/volume-shader'
 import { VolumeGroups } from '../../src/liquid-glass/VolumeGroups.hot'
@@ -134,7 +134,7 @@ function setup() {
     .map(result => result.value)
     .filter((texture, index) => {
       const [descriptor] = createTexture.mock.calls[index]!
-      return descriptor.format === TARGET_FORMAT && descriptor.usage === FIELD_USAGE && (texture.width === 1) === empty
+      return FIELD_FORMATS.includes(descriptor.format as GPUTextureFormat) && descriptor.usage === FIELD_USAGE && (texture.width === 1) === empty
     })
   const bindGroups = fake.device.createBindGroup as unknown as { mock: { calls: [{ entries: { resource: unknown }[] }][] } }
   /** 一组的 uniform 里折射场的四个数：缓存左上角、倍率、求交结果的比例。 */
@@ -172,6 +172,28 @@ function scene(dx = 0, dy = 0): VolumeSurface[] {
 const SETTLE_FRAMES = Math.ceil((FIELD_SETTLE_MS + FIELD_FADE_IN_MS) / TICK) + 3
 
 describe('折射场缓存的着色器', () => {
+  it('三张纹理合计不超过 WebGPU 缺省的每个样本 32 字节的颜色附件上限', () => {
+    const bytes: Record<string, number> = { rgba32float: 16, rgba16float: 8 }
+    expect(FIELD_FORMATS.reduce((sum, format) => sum + bytes[format]!, 0)).toBe(FIELD_TEXEL_BYTES)
+    expect(FIELD_TEXEL_BYTES).toBeLessThanOrEqual(32)
+  })
+
+  it('单精度的折射场按不可过滤的纹理绑定，管线布局与绑定布局一致', () => {
+    const { device, run } = setup()
+    run(SETTLE_FRAMES, scene())
+    const layouts = (device.createBindGroupLayout as unknown as { mock: { calls: [{ entries: { texture?: { sampleType: string } }[] }][] } }).mock.calls
+    // 只看纹理绑定布局（第 0 组是 uniform 与取样器）。
+    const field = layouts
+      .filter(([descriptor]) => descriptor.entries.every(entry => entry.texture))
+      .map(([descriptor]) => descriptor.entries.map(entry => entry.texture!.sampleType))
+      .filter(types => types.length === VOLUME_TEXTURES + 1 + FIELD_TARGETS)
+    expect(field).toHaveLength(1)
+    expect(field[0]!.slice(VOLUME_TEXTURES + 1)).toEqual(FIELD_FORMATS.map(format => format === 'rgba32float'
+      ? 'unfilterable-float'
+      : 'float'))
+    expect(field[0]!.slice(0, VOLUME_TEXTURES + 1).every(type => type === 'float')).toBe(true)
+  })
+
   it('写入缓存的着色器同时输出三张纹理，只追踪光路、不取样背景', () => {
     const code = createFieldBakeShader(2)
     expect(FIELD_TARGETS).toBe(3)
@@ -246,7 +268,8 @@ describe('折射场缓存', () => {
     // 清成“没有光路”。
     expect(passes[0]!.clear[FIELD_TARGETS - 1]).toMatchObject({ a: -1 })
     const bake = pipelines.find(pipeline => pipeline.label === 'volume-bake:2')!
-    expect([...bake.fragment!.targets].map(target => target!.format)).toEqual([TARGET_FORMAT, TARGET_FORMAT, TARGET_FORMAT])
+    // 绿色光路的偏移与法线用单精度：几百像素的偏移在半精度下只有半个像素的精度。
+    expect([...bake.fragment!.targets].map(target => target!.format)).toEqual(['rgba32float', 'rgba16float', 'rgba16float'])
     expect(groups.settling).toBe(true)
 
     // 之后的帧不再写入，只读缓存。
@@ -264,7 +287,7 @@ describe('折射场缓存', () => {
     expect(texture.width).toBeGreaterThan(0)
     expect(texture.width).toBeLessThan(820)
     expect(texture.height).toBeLessThanOrEqual(288)
-    expect(texture.width * texture.height).toBeLessThan(FIELD_TEXEL_BUDGET / 8)
+    expect(texture.width * texture.height).toBeLessThan(FIELD_TEXEL_BUDGET / 4)
   })
 
   it('写入缓存用的 uniform 把成员位置换成相对缓存左上角的坐标', () => {
@@ -530,15 +553,15 @@ describe('折射场缓存', () => {
 
   it('纹素总数超过上限时释放最久没有出现的组', () => {
     const { run, encode, fieldOf, fieldTextures, groups } = setup()
-    // 每组的连接处横跨 1500 像素：@2 时一份缓存约 90 万纹素，三份超过上限。
+    // 每组的连接处横跨 1000 像素：@2 时一份缓存约 60 万纹素，三份超过上限。
     const pair = (id: number): VolumeSurface[] => [
       {
         ...surface(id, 0, 100),
-        width: 1500,
+        width: 1000,
       },
       {
         ...surface(id + 1, 0, 210),
-        width: 1500,
+        width: 1000,
       },
     ]
     const shading = { ...SHADING, cssWidth: 1600, pixelWidth: 3200 }
@@ -549,6 +572,7 @@ describe('折射场缓存', () => {
         .filter(texture => texture.destroy.mock.calls.length === 0)
         .reduce((sum, texture) => sum + texture.width * texture.height, 0) / FIELD_TARGETS
       expect(texels).toBeLessThanOrEqual(FIELD_TEXEL_BUDGET)
+      expect(texels).toBeGreaterThan(0)
     }
     expect(texels).toBeGreaterThan(FIELD_TEXEL_BUDGET / 2)
     // 最早的一组已经被释放（纹理在之后的一帧销毁）。
