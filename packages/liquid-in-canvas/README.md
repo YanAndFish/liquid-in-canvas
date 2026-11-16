@@ -127,16 +127,16 @@ Add `data-liquid-glass` to the element you want to render as glass. Give the ele
 | `data-glass-fusion` | Fusion distance. Set to 0 to disable fusion. | 32 |
 | `data-glass-elevation` | Distance from the bottom of the glass to the backdrop | 16 |
 | `data-glass-anchor` | Selector for the ancestor used to position the glass | `offsetParent` |
-| `data-glass-morph` | An empty value or `true` animates changes to the element's own position or size. Any other value also names the morph so elements can share it. `false` turns it off. | Off |
+| `data-glass-morph` | An empty value or `true` animates changes to the element's own position or size. Any other value also names the morph so elements can share it. `false` turns it off. The `true` / `false` switch requires 0.3.0+. | Off |
 | `data-glass-morph-stretch` | Stretch during a morph, 0–2. At 0 the glass moves as a single piece. Higher values pull the front and rear farther apart and lengthen the trail. | 1 |
 | `data-glass-morph-bounce` | Bounce during a morph, 0–1. At 0 the front edge stops at the destination. | 0.33 |
 | `data-glass-morph-wobble` | Wobble during a morph, 0–1. The glass compresses on arrival, then alternates between compressing and stretching. At 0 it settles without wobbling. | 0.35 |
-| `data-glass-morph-content` | How the glass content behaves during a morph. `static` keeps it at the element's position and reveals it as the glass expands during a size change. `clip` keeps it in place and clips it to the volume, like `overflow: hidden`. `follow` stretches, bounces, and wobbles it with the volume. | `static` |
-| `data-glass-materialize` | Appearance and removal transition. When the glass first appears or becomes visible, it starts by bending light, then becomes frosted and briefly overshoots. When hidden or removed, it fades in place. Set to `none` or `false` to disable it. | On |
+| `data-glass-morph-content` (0.3.0+) | How the glass content behaves during a morph. `static` keeps it at the element's position and reveals it as the glass expands during a size change. `clip` keeps it in place and clips it to the volume, like `overflow: hidden`. `follow` stretches, bounces, and wobbles it with the volume. | `static` |
+| `data-glass-materialize` | Appearance and removal transition. When the glass first appears or becomes visible, it starts by bending light, then becomes frosted and briefly overshoots. When hidden or removed, it fades in place. Set to `none` or `false` (0.3.0+) to disable it. | On |
 
 Lengths are in CSS pixels. When two defaults are listed, the order is `regular / clear`. The lens, morph, and materialization attributes require canvas mode. Use canvas for lens magnification and canvas or SVG for edge refraction and dispersion.
 
-### Option scopes
+### Option scopes (0.3.0+)
 
 Add `data-glass-scope` to an ancestor to make its `data-glass-*` options the defaults for all glass inside it, much like a UI library's `ThemeProvider`. Each option is looked up on the glass element first, then on scopes from the nearest outward, then in the global defaults, so scopes can nest and an inner scope overrides only the options it sets. The scope element doesn't need to be glass. Give a pure wrapper `display: contents` to keep it out of the layout.
 
@@ -180,7 +180,7 @@ import type { LiquidGlassAttributes } from 'liquid-in-canvas'
 const pill: LiquidGlassAttributes = { 'data-liquid-glass': '', 'data-glass-variant': 'clear', 'data-glass-blur': 1 }
 ```
 
-You can bind switch attributes to booleans. Frameworks render `false` as the string `"false"`, and the stage treats a contract attribute set to `"false"` as absent, the same as binding `undefined` or `null`.
+Since 0.3.0, you can bind switch attributes to booleans. Frameworks render `false` as the string `"false"`, and the stage treats a contract attribute set to `"false"` as absent, the same as binding `undefined` or `null`.
 
 ```tsx
 <button data-liquid-glass={active} data-glass-morph={active && 'tabs'}>All</button>
