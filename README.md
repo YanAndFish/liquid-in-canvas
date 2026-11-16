@@ -1,81 +1,134 @@
-# STILL · Liquid Glass in Canvas
+<p align="center">
+  <img src="docs/images/logo.svg" width="96" height="96" alt="liquid-in-canvas">
+</p>
 
-[![Netlify Status](https://api.netlify.com/api/v1/badges/5ad79257-b157-4b6d-86f2-cf0880c58eb2/deploy-status)](https://app.netlify.com/projects/liquid-in-canvas/deploys)
+<h1 align="center">liquid-in-canvas</h1>
 
-用 **HTML-in-Canvas + WebGPU** 在 Web 上渲染 iOS 风格的液态玻璃。仓库包含可单独发布的渲染库 `liquid-in-canvas`，和一个用它搭建的交互商店作为演示。页面与控件都是可点击、可聚焦的实时 HTML；浏览器把页面与玻璃控件分别上传为纹理，再合成到同一张画布。 [Live Demo](https://liquid-in-canvas.netlify.app/)
+<p align="center">
+  iOS-style Liquid Glass for live HTML, rendered with <b>HTML-in-Canvas + WebGPU</b>.
+</p>
 
-视觉依据包括 Apple 的 Liquid Glass 演示，以及 iOS 26 用户指南中的照片和 Safari 实际 UI。参考截图、观察结果和实现范围见 [视觉依据](docs/APPLE_LIQUID_GLASS_REFERENCE.md)。
+<p align="center">
+  <a href="https://liquid-in-canvas.netlify.app/"><img src="https://img.shields.io/badge/demo-live-ff5a5f" alt="Live demo"></a>
+  <a href="https://github.com/YanAndFish/liquid-in-canvas/actions/workflows/ci.yml"><img src="https://github.com/YanAndFish/liquid-in-canvas/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://app.netlify.com/projects/liquid-in-canvas/deploys"><img src="https://api.netlify.com/api/v1/badges/5ad79257-b157-4b6d-86f2-cf0880c58eb2/deploy-status" alt="Netlify Status"></a>
+  <img src="https://img.shields.io/badge/runtime%20deps-0-2ea44f" alt="Zero runtime dependencies">
+  <img src="https://img.shields.io/badge/TypeScript-ready-3178c6" alt="TypeScript">
+</p>
 
-## 仓库结构
+<p align="center">
+  <b>English</b> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
+<p align="center">
+  <a href="https://liquid-in-canvas.netlify.app/"><img src="docs/images/hero-en.webp" alt="The STILL demo: a liquid glass navigation bar, call-to-action and scene switcher over a playing video"></a>
+</p>
+
+Add an attribute to an ordinary element and it becomes a piece of glass that refracts, magnifies and disperses whatever is behind it — video, images, text, other glass. The page stays real HTML: clickable, focusable and accessible. The browser uploads the page and the glass controls as textures, and the library composites them into one canvas with WebGPU.
+
+## Features
+
+- **Physically inspired optics**: refraction through a 3D glass body with a configurable bevel, convex lens magnification, chromatic dispersion, directional rim highlights and shadows.
+- **Liquid behaviour**: glass on the same layer fuses like liquid when it gets close; the active item of a tab group flows to its new position; glass deforms slightly when pressed.
+- **Correct layering**: page content can sit above or below glass, and stacked glass layers refract each other.
+- **Fallbacks built in**: one set of `data-glass-*` attributes drives three renderers — WebGPU canvas, an SVG displacement filter (Chromium) and plain `backdrop-filter`.
+- **Adaptive quality**: canvas resolution (text sharpness) and glass shading resolution are controlled separately; sustained frame drops lower the cheapest setting first and restore it when things are smooth again.
+- **Small and framework-agnostic**: no runtime dependencies. The WebGPU renderer is loaded only after the capability check passes. Typed attributes for Vue templates and React JSX.
+
+| Same-layer fusion | Liquid morph |
+| :---: | :---: |
+| <img src="docs/images/fusion-drag.webp" alt="Dragging a glass button: it fuses with the nearby call-to-action and leaves a liquid trail" width="420"> | <img src="docs/images/morph-tabs-en.webp" alt="The active tab flows between filter tabs" width="420"> |
+| Drag a glass button: it trails a droplet and fuses with nearby glass. | The active tab stretches, flows to the new tab and settles. |
+
+## Quick start
+
+```sh
+pnpm add liquid-in-canvas
 ```
-packages/liquid-in-canvas   渲染库，可单独发布为 npm 包
-apps/demo                   演示商店 STILL
-docs                        设计记录、视觉依据与性能记录
+
+Mark the elements that should be glass:
+
+```html
+<div id="app">
+  <div style="position: relative">
+    <button data-liquid-glass data-glass-radius="999">Shop the collection</button>
+  </div>
+</div>
 ```
 
-在其他项目中使用液态玻璃，见[渲染库的 README](packages/liquid-in-canvas/README.md)：安装、`mountLiquidGlass()`、`data-glass-*` 属性、全局默认参数、分辨率与回退实现。
+Mount the stage on the root element:
 
-## 运行
+```ts
+import { mountLiquidGlass } from 'liquid-in-canvas'
 
-本地开发需要 Node.js `>=20.19`，包管理器使用项目指定的 pnpm `12.9.1`。
+const glass = await mountLiquidGlass({
+  root: document.querySelector('#app')!,
+  canvasClass: 'stage',
+})
+
+console.log(glass.mode) // 'canvas', 'svg' or 'css'
+```
+
+In canvas mode the root is moved into a `<canvas content="drawable">`, so size the canvas yourself and scroll inside the root instead of `window`:
+
+```css
+.stage { position: fixed; inset: 0; width: 100dvw; height: 100dvh; display: block; }
+#app[drawable] { width: 100dvw; height: 100dvh; overflow: clip; }
+```
+
+`mode` defaults to `'auto'`, which tries `canvas` → `svg` → `css` and falls back at runtime if the GPU faults. With a framework, mount your app in `beforeStart`.
+
+The [library README](packages/liquid-in-canvas/README.md) (in Chinese) covers the rest: render modes and `onFault`, every `data-glass-*` attribute, nested glass and liquid morph, global defaults (`setGlassDefaults()`), resolution and performance options, and the TypeScript entry points for Vue and React.
+
+## Browser support
+
+| Renderer | What you get | Where |
+| --- | --- | --- |
+| `canvas` | Everything above | Browsers with HTML-in-Canvas, WebGPU and `GPUQueue.drawElementImageToTexture()` (developed against Chrome 157) |
+| `svg` | Blur, tint, edge refraction, dispersion and rim highlight. No fusion, occlusion or press deformation | Chromium-based browsers |
+| `css` | Blur, tint, rim highlight and shadow | Any browser with `backdrop-filter` |
+
+## The demo: STILL
+
+[STILL](https://liquid-in-canvas.netlify.app/) is a small bilingual storefront built on the library: video backgrounds behind glass navigation, product filters with liquid tabs, a cart drawer, light and dark themes, and reduced-motion / reduced-transparency support. No real orders are created.
+
+The round button in the bottom-right corner opens a **glass tuner**. It switches renderers and resolution limits and edits the global defaults live (materials, bevel profile, fusion, liquid motion). **Copy JSON** produces an object you can pass straight to `setGlassDefaults()`.
+
+| Glass tuner | Light theme |
+| :---: | :---: |
+| <img src="docs/images/tuner-en.webp" alt="The glass tuner panel open over the hero video"> | <img src="docs/images/collection-en.webp" alt="The product collection in light theme with glass filter tabs"> |
+
+## Development
+
+Requires Node.js `>=20.19` and pnpm `12.9.1`.
 
 ```sh
 pnpm install
-pnpm dev
+pnpm dev        # demo at http://localhost:5173
 ```
-
-打开终端显示的本地地址，默认是 http://localhost:5173。演示商店直接引用库的源码，修改库后不需要先构建。
 
 ```sh
-pnpm typecheck
-pnpm test
-pnpm lint
-pnpm build
+pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
 
-`pnpm build` 依次构建库（`packages/liquid-in-canvas/dist`）和演示商店。只构建库用 `pnpm build:lib`。发布使用 `pnpm publish`，它会把 `package.json` 中指向源码的 `exports` 换成 `publishConfig` 里指向 `dist` 的版本；`npm publish` 不做这一步。
+```
+packages/liquid-in-canvas   the renderer library
+apps/demo                   the STILL demo (Vue 3), uses the library source directly
+docs                        architecture, visual references and performance records
+```
 
-完整效果需要支持 HTML-in-Canvas、WebGPU 和 `GPUQueue.drawElementImageToTexture()` 的浏览器，开发检查使用 Chrome 157 对应的 API。启动时逐项检查能力；缺少能力时显示说明页，页面上的按钮可以改用回退版本继续浏览：Chromium 内核使用带折射的 SVG 滤镜，其他浏览器使用纯 CSS。
+Publish the library with `pnpm publish`, not `npm publish`: only pnpm swaps the source `exports` for the `dist` ones in `publishConfig`. See [ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing the renderer.
 
-## 体验
+## Known issues
 
-- 首页可切换花间、器物和光影三种背景。视频可以暂停，离开可见区域时也会暂停。
-- 右上角外观按钮展开为材质设置，可以对比通透和柔和两种材质。
-- 按住玻璃控件可看到轻微形变。菜单使用阻尼弹簧。
-- 场景选择和商品筛选的激活项是一块嵌套的通透玻璃，切换时像液体一样被拉长、流到新位置再收拢。
-- 玻璃像凸透镜一样轻微放大背后的内容，通透材质更明显。
-- 顶栏、主物信息牌、商品加入按钮与媒体控件使用三维玻璃。同层控件靠近时可融合。
-- 支持中英文、深浅主题、商品详情、分类、购物袋持久化与演示结算。不会创建真实订单。
-- 跟随系统的减少动态效果、减少透明度和增强对比度设置。菜单支持 Escape，购物袋支持键盘焦点循环。
+- At high pixel ratios the full-page snapshot alone can exceed the frame budget. Adaptive quality lowers the canvas resolution last, which softens text. See the performance records on [fill rate](docs/performance/2026-11-13-fill-rate/README.md) and [adaptive canvas resolution](docs/performance/2026-11-15-adaptive-canvas/README.md); not yet measured on real devices.
+- The SVG fallback only works in Chromium, and glass larger than 120,000 CSS px² gets blur only.
+- The first scroll after a cold start can drop frames while the browser rasterizes for the first time.
+- After pausing the video and scrolling, text on some glass can go missing. Reproduced locally, not yet fixed.
+- Opening the cart drawer has been reported to make other glass render incorrectly or disappear. Cause not yet found.
 
-### 调参面板
+## Scope and credits
 
-右下角的圆形按钮可以拖动，点击展开调参面板：
+This is a web approximation of Apple's Liquid Glass, not the native material. Fusion uses a smooth 3D signed distance field to approximate surface tension; content-aware adaptation and device-motion lighting are not implemented. The visual references and their limits are recorded in [APPLE_LIQUID_GLASS_REFERENCE.md](docs/APPLE_LIQUID_GLASS_REFERENCE.md) (in Chinese).
 
-- **渲染方式**：在画布、SVG 滤镜回退和纯 CSS 回退之间切换。浏览器不支持的方式不可选。
-- **画布倍率上限**、**玻璃着色倍率上限**与**自动降低玻璃着色倍率**：只对画布有效，面板显示当前两个实际倍率。画布倍率决定文字清晰度，自动降低只作用于玻璃着色。
-- **材质**：柔和（`regular`）与通透（`clear`）两种材质在当前主题下的模糊、色散、透镜放大、染色、高光和阴影。切换主题后调整的是另一组值。
-- **截面**：当前材质的厚度与边缘倒角（宽度、高度、曲线指数、底面倒角），上方的截面图按实际比例画出玻璃边缘、悬浮高度和穿过玻璃的折射光路。
-- **形体**：融合距离、悬浮高度、圆角。
-- **液体流动**：液体迁移的拉伸、回弹、晃动。作用于分类标签切换和右下角的调参按钮：拖动按钮时玻璃紧跟按钮，后面沿拖动方向拖出一团液滴，松手后回弹、晃动着停下。
-- **恢复默认**与**复制参数**：复制出的 JSON 可以直接传给 `setGlassDefaults()`。
-
-面板修改的是全局默认参数，只影响没有单独声明对应 `data-glass-*` 属性的玻璃。顶栏、分类筛选、商品按钮和展示区的玻璃都使用默认的光学参数；主物信息牌、购物袋和面板自己为了保证文字可读，固定了染色或模糊。
-
-收起时把圆形按钮拖到其他玻璃附近，可以观察融合与遮挡。
-
-## 已知问题
-
-- 高分辨率下整页快照本身就超出预算。在桌面 GPU 上模拟 DPR 3（4689 × 3039）时，完全不画玻璃也只有约 47–50 帧。文字默认按设备倍率绘制；掉帧时自动降级先试光路与玻璃着色分辨率，不见效就撤回，最后才降低画布分辨率（文字变软，可用 `minPixelRatio` 限制或关闭），也可以用 `maxPixelRatio` 或 `maxPixels` 直接限制。数据见性能记录（[填充率](docs/performance/2026-11-13-fill-rate/README.md)、[画布倍率的自适应降级](docs/performance/2026-11-15-adaptive-canvas/README.md)），没有在真机上测量过。
-- SVG 滤镜回退只在 Chromium 内核上生效，面积超过 12 万 CSS 像素的玻璃（调参面板、购物袋）只有模糊；展开调参面板时有几帧卡顿。
-- 展开调参面板的约 0.8 秒内会掉到 50 帧左右。面板用布局尺寸做动画，每帧都要重新生成内容纹理。
-- 冷启动后第一次滚动仍会因浏览器首次栅格化而掉帧，见[上一轮记录](docs/performance/2026-11-11-scroll/README.md)。
-- 暂停视频后滚动，部分玻璃上的文字可能缺失。该问题已在本地调查中复现，尚未解决。
-- 打开购物袋后，其他玻璃效果异常和内容偶发消失的问题已有用户反馈，原因尚待定位。
-
-## 范围与来源
-
-这是对 Apple 视觉行为的 Web 近似实现，不是 Apple 原生材质。同层融合使用三维平滑距离场近似表面张力。背景语义适配、设备姿态光照和不同玻璃层间的递归折射尚未实现。详细限制见 [视觉依据](docs/APPLE_LIQUID_GLASS_REFERENCE.md)。
-
-[liquid-glass-studio](https://github.com/iyinchao/liquid-glass-studio) 提供了折射、色散、SDF 和多遍模糊的研究参考。花朵视频使用该项目引用的 Pixabay / Pexels 素材，商品图保存在 `apps/demo/public/products/`。Apple 参考截图只在研究文档中引用，不作为商店素材。
+[liquid-glass-studio](https://github.com/iyinchao/liquid-glass-studio) was a research reference for refraction, dispersion, SDFs and multi-pass blur. The flower video comes from Pixabay / Pexels footage referenced by that project; product photos live in `apps/demo/public/products/`. Apple reference screenshots are used only in the research notes, never as demo assets.
