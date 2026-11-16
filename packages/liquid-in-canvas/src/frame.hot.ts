@@ -1,6 +1,6 @@
 import type { DrawItem, UniformBinding } from './frame'
 import type { PassTimer } from './gpu'
-import { CLEAR_BLACK, createDrawItem, createUniformBinding, growFloat32, UNIFORM_ALIGN_FLOATS, UNIFORM_WINDOW } from './frame'
+import { CLEAR_BLACK, createDrawItem, createFieldAttachments, createUniformBinding, growFloat32, UNIFORM_ALIGN_FLOATS, UNIFORM_WINDOW } from './frame'
 
 /**
  * 一遍绘制的绘制项列表。对象在列表里复用，每帧 `reset()` 后重新填写。
@@ -61,6 +61,9 @@ export class FrameEncoder {
   private readonly offsets = new Uint32Array(1)
   private readonly attachment: GPURenderPassColorAttachment
   private readonly pass: GPURenderPassDescriptor
+  /** 同时写三张纹理的一遍（折射场缓存），附件在构造时创建。 */
+  private readonly fieldAttachments: GPURenderPassColorAttachment[]
+  private readonly fieldPass: GPURenderPassDescriptor
   private readonly commands: GPUCommandBuffer[] = []
   private readonly uploadSize = { width: 1, height: 1 }
   private readonly uploadSource: GPUElementImageSource
@@ -79,6 +82,10 @@ export class FrameEncoder {
     }
     this.pass = {
       colorAttachments: [this.attachment],
+    }
+    this.fieldAttachments = createFieldAttachments()
+    this.fieldPass = {
+      colorAttachments: this.fieldAttachments,
     }
     this.uploadSource = { source: null as unknown as Element }
     this.uploadTarget = {
@@ -174,7 +181,25 @@ export class FrameEncoder {
     if (clear)
       attachment.clearValue = clear
     this.pass.timestampWrites = this.timing.writes(label, width, height)
-    const pass = encoder.beginRenderPass(this.pass)
+    this.drawList(encoder.beginRenderPass(this.pass), uniforms, list)
+  }
+
+  /**
+   * 编码写入折射场缓存的一遍：同时写 `views` 里的三张纹理，先清成“没有光路”。
+   */
+  encodeFieldPass(encoder: GPUCommandEncoder, views: readonly GPUTextureView[], width: number, height: number, list: DrawList): void {
+    const uniforms = this.binding?.group
+    if (!uniforms)
+      throw new Error('FrameEncoder.beginEncoding() must be called before encodeFieldPass()')
+    const attachments = this.fieldAttachments
+    for (let i = 0; i < attachments.length; i++)
+      attachments[i]!.view = views[i]!
+    this.fieldPass.timestampWrites = this.timing.writes('field', width, height)
+    this.drawList(encoder.beginRenderPass(this.fieldPass), uniforms, list)
+  }
+
+  /** 按绘制顺序画完一遍里的全部绘制项并结束这一遍。 */
+  private drawList(pass: GPURenderPassEncoder, uniforms: GPUBindGroup, list: DrawList): void {
     list.arrange()
     const items = list.items
     const offsets = this.offsets

@@ -192,8 +192,8 @@ const OPTICS: readonly { id: GlassOptics, zh: string, en: string, hintZh: string
     id: 'hybrid',
     zh: '混合',
     en: 'Hybrid',
-    hintZh: '混合光路：融合连接处与裁剪边附近逐步求交，其余像素查表。',
-    hintEn: 'Hybrid optics: ray-marched near fused joints and clip edges, looked up elsewhere.',
+    hintZh: '混合光路：融合连接处与裁剪边附近静止后求交一次并缓存，运动中与其余像素查表。',
+    hintEn: 'Hybrid optics: fused joints and clip edges are ray-marched once at rest and cached; looked up while moving and elsewhere.',
   },
   {
     id: 'raymarch',

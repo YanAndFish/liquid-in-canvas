@@ -12,6 +12,7 @@ import type { VolumeBand, VolumeGroupPlan } from './VolumeGroups.hot'
 import { DrawList } from '../frame.hot'
 import { RenderTarget } from '../gpu'
 import { CoverBuilder } from './cover.hot'
+import { FieldCache } from './field-cache.hot'
 import { ProfileTable } from './optics-lut'
 import { MAX_STACK_LEVELS } from './stack.hot'
 
@@ -105,4 +106,9 @@ export function growInt32(count: number): Int32Array<ArrayBuffer> {
 /** 剖面光学与混合光路的查找表，第一次切换到这两种光路时创建。 */
 export function createProfileTable(gpu: StageGpu): ProfileTable {
   return new ProfileTable(gpu)
+}
+
+/** 混合光路的折射场缓存，第一次以混合光路绘制时创建。 */
+export function createFieldCache(gpu: StageGpu): FieldCache {
+  return new FieldCache(gpu)
 }

@@ -25,6 +25,8 @@ export interface LiquidGlassLayerOptions {
   theme?: GlassTheme | null
   /** 光路计算方式，缺省为 `profile`。 */
   optics?: GlassOptics
+  /** 混合光路是否使用折射场缓存，缺省为 true。 */
+  fieldCache?: boolean
   onInvalidate: () => void
   onFault: (cause: unknown) => void
 }
@@ -107,6 +109,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
   private frame: GlassFrame | null = null
   private shadingScale = 1
   private optics: GlassOptics
+  private fieldCache: boolean
   private shadingSplit = Infinity
   private started = false
   private disposed = false
@@ -120,6 +123,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.onInvalidate = options.onInvalidate
     this.onFault = options.onFault
     this.optics = options.optics ?? 'profile'
+    this.fieldCache = options.fieldCache ?? true
   }
 
   start(): void {
@@ -131,6 +135,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.started = true
     this.frame = new GlassFrame(this.canvas, this.root, this.gpu, this)
     this.frame.setShading(this.shadingScale, this.shadingSplit)
+    this.frame.setFieldCache(this.fieldCache)
     this.frame.setOptics(this.optics)
     this.frame.warm(WARM_VOLUME_COUNTS, WARM_OCCLUDER_COUNTS)
     this.observer = new MutationObserver(records => this.handleMutations(records))
@@ -202,6 +207,12 @@ export class LiquidGlassLayer implements GlassFrameHost {
   setOptics(optics: GlassOptics): void {
     this.optics = optics
     this.frame?.setOptics(optics)
+  }
+
+  /** 打开或关闭混合光路的折射场缓存，下一帧生效。 */
+  setFieldCache(enabled: boolean): void {
+    this.fieldCache = enabled
+    this.frame?.setFieldCache(enabled)
   }
 
   /**
