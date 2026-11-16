@@ -126,6 +126,30 @@ describe('显示帧探针与自适应降级', () => {
     return changes
   }
 
+  /**
+   * 逐显示帧绘制，每一帧的长度由负载决定：跟得上时 16.7 ms，跟不上时等于这一帧的开销。
+   * 开销是 `fixed` 加上与玻璃着色像素数成正比的 `glass`（光路没有降为查表时再乘 `optics`）。
+   */
+  function loaded(
+    adaptive: AdaptiveScale,
+    probe: FrameProbe,
+    clock: { now: number },
+    load: { fixed: number, glass: number, optics?: number },
+    count: number,
+  ): number {
+    let changes = 0
+    for (let frame = 0; frame < count; frame++) {
+      const optics = adaptive.relaxed
+        ? 1
+        : load.optics ?? 1
+      clock.now += Math.max(16.7, load.fixed + load.glass * optics * adaptive.scale ** 2)
+      displayFrame()
+      if (adaptive.sample(clock.now, probe.mark()))
+        changes++
+    }
+    return changes
+  }
+
   it('同样是 33 ms 的绘制间隔：按视频帧绘制不降级，跟不上显示器才降级', () => {
     // 60 Hz 的屏幕、30 帧的视频：每隔一个显示帧绘制一次。
     const paced = new AdaptiveScale()
@@ -134,12 +158,12 @@ describe('显示帧探针与自适应降级', () => {
     expect(paced.scale).toBe(1)
     expect(paced.relaxed).toBe(false)
 
-    // 浏览器每 33 ms 才出一帧，每一帧都在绘制：滚动或动画跟不上。
+    // 每一帧都在绘制、浏览器跟不上：逐步求交 44 ms，查表 26 ms，查表且着色倍率 0.75 时 18.1 ms。
     const slow = new AdaptiveScale()
     slow.setRelaxable(true)
-    expect(simulate(slow, new FrameProbe(), { now: 0 }, 33.4, 400, () => true)).toBeGreaterThan(0)
+    expect(loaded(slow, new FrameProbe(), { now: 0 }, { fixed: 8, glass: 18, optics: 2 }, 800)).toBe(2)
     expect(slow.relaxed).toBe(true)
-    expect(slow.scale).toBeLessThan(1)
+    expect(slow.scale).toBeCloseTo(0.75)
   })
 
   it('24 帧的视频与时快时慢的视频帧都不降级', () => {
@@ -160,8 +184,8 @@ describe('显示帧探针与自适应降级', () => {
     const probe = new FrameProbe()
     const clock = { now: 0 }
     simulate(adaptive, probe, clock, 16.7, 600, frame => frame % 2 === 0)
-    // 开始滚动，每一帧都绘制，浏览器 28 ms 才出一帧。
-    simulate(adaptive, probe, clock, 28, 120, () => true)
+    // 开始滚动，每一帧都绘制，浏览器 22 ms 才出一帧；着色倍率降一级后跟得上，这一级通过检验后保留。
+    expect(loaded(adaptive, probe, clock, { fixed: 8, glass: 14 }, 400)).toBe(1)
     expect(adaptive.scale).toBeCloseTo(0.75)
     // 停止滚动、只剩视频：不再降，也不凭视频节拍升回。
     expect(simulate(adaptive, probe, clock, 16.7, 2400, frame => frame % 2 === 0)).toBe(0)

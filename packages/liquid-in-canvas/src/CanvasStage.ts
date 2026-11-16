@@ -7,7 +7,7 @@ import { attr, STAGE_OVERLAY_ATTR } from './contract'
 import { FrameProbe } from './frame-probe.hot'
 import { createElementTexture, createStageDevice, disposeElementTexture, StageGpu } from './gpu'
 import { LiquidGlassLayer } from './liquid-glass/LiquidGlassLayer'
-import { DEFAULT_STAGE_RESOLUTION, resolveGlassPixelRatio, resolvePixelRatio } from './resolution'
+import { DEFAULT_STAGE_RESOLUTION, resolveCanvasScaleFloor, resolveGlassPixelRatio, resolvePixelRatio } from './resolution'
 import { StageFrame } from './stage-frame.hot'
 import { VideoClock } from './video-clock'
 
@@ -29,6 +29,9 @@ export interface CanvasStageOptions {
    */
   fieldCache?: boolean
 }
+
+/** 开始绘制或修改分辨率限制后这么多毫秒内不做自适应判定：页面刚开始绘制时图片解码、字体加载会拖慢几帧，不代表常态。 */
+const ADAPTIVE_WARMUP = 2000
 
 function sameSize(a: StageMetrics, b: StageMetrics): boolean {
   return a.cssWidth === b.cssWidth
@@ -57,6 +60,8 @@ export class CanvasStage {
   private readonly frameProbe = new FrameProbe()
   /** 有新的视频帧时请求重绘。 */
   private readonly videoClock = new VideoClock(() => this.invalidate())
+  /** 这个时间之前不把绘制间隔交给自适应降级。 */
+  private adaptiveAfter = 0
   private theme: GlassTheme | null
   private optics: GlassOptics
   private fieldCache: boolean
@@ -134,6 +139,7 @@ export class CanvasStage {
       ...resolution,
     }
     this.adaptive.reset()
+    this.adaptiveAfter = performance.now() + ADAPTIVE_WARMUP
     this.glass?.setOptics(this.effectiveOptics())
     this.requestResize()
     this.invalidate()
@@ -174,6 +180,7 @@ export class CanvasStage {
       throw new Error('CanvasStage root must be a descendant of the stage canvas')
 
     this.root = root
+    this.adaptiveAfter = performance.now() + ADAPTIVE_WARMUP
     root.setAttribute('drawable', '')
     this.canvas.addEventListener('paint', this.handlePaint)
     root.addEventListener('scroll', this.handleInvalidate, { capture: true, passive: true })
@@ -275,6 +282,17 @@ export class CanvasStage {
     if (this.failed || this.disposed)
       return
 
+    // 自适应降级可能改变光路、玻璃着色倍率或画布倍率；画布尺寸的变化与其他来源的一样，在这一帧里应用。
+    // 探针在预热期间也要计数，预热结束后的第一次取样才知道它是否紧接着上一个显示帧。
+    const now = performance.now()
+    if (this.root && this.resolution.adaptive) {
+      const continuous = this.frameProbe.mark()
+      if (now >= this.adaptiveAfter && this.adaptive.sample(now, continuous)) {
+        this.glass?.setOptics(this.effectiveOptics())
+        this.requestResize()
+      }
+    }
+
     const pending = this.pendingSize
     // Resize inside paint so the canvas is not cleared in a separate frame.
     if (pending && this.applySize(pending))
@@ -285,9 +303,6 @@ export class CanvasStage {
     const root = this.root
     if (!frame || !page || !root)
       return
-
-    if (this.resolution.adaptive && this.adaptive.sample(performance.now(), this.frameProbe.mark()))
-      this.glass?.setOptics(this.effectiveOptics())
 
     try {
       const dpr = this.metrics?.dpr ?? 1
@@ -357,18 +372,24 @@ export class CanvasStage {
     const devicePixelRatio = typeof window === 'undefined'
       ? 1
       : window.devicePixelRatio || 1
-    const dpr = resolvePixelRatio({
+    const base = resolvePixelRatio({
       devicePixelRatio,
       cssWidth: width,
       cssHeight: height,
       resolution: this.resolution,
     })
+    // 静态上限给出的倍率再乘以自适应降级的系数；系数的下限随设备倍率与窗口尺寸变化，每次重新计算。
+    this.adaptive.setCanvasFloor(resolveCanvasScaleFloor(devicePixelRatio, base, this.resolution.minPixelRatio))
+    const dpr = this.resolution.adaptive
+      ? base * this.adaptive.canvasScale
+      : base
     return {
       cssWidth: width,
       cssHeight: height,
       pixelWidth: Math.max(1, Math.round(width * dpr)),
       pixelHeight: Math.max(1, Math.round(height * dpr)),
       dpr,
+      targetDpr: base,
       glassDpr: this.glassPixelRatio(dpr),
       optics: this.effectiveOptics(),
     }

@@ -4,6 +4,8 @@
 
 同一台机器上还有别的会话在用 GPU 测量，本文的数字都是在独占 GPU 时取的（测量前 `ioreg` 显示的 GPU 利用率为 0%）；并发时每帧 GPU 时间会高出三四倍，绘制间隔也会变长，那些轮次已丢弃。
 
+> 合并 [#11](https://github.com/YanAndFish/liquid-in-canvas/pull/11)（自适应降级的见效判断与画布倍率一级）之后，连续性判断照原样接进了新的 `AdaptiveScale`，单元测试改用 #11 的负载模型；本文的浏览器测量都是在合并之前做的，合并后没有重测。
+
 ## 做了什么
 
 - **视频时钟**（`src/video-clock.ts`）：原来有视频在播放时用 `requestAnimationFrame` 每个显示帧请求重绘，现在对每个正在播放的视频登记 `requestVideoFrameCallback()`，有新的视频帧才请求重绘。浏览器没有这个接口时退回原来的做法。
