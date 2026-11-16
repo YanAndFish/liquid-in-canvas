@@ -26,7 +26,6 @@ describe('截面光路查找表', () => {
     expect(Math.abs(flat.shift[1])).toBeLessThan(1e-3)
     expect(Math.abs(flat.slope[1])).toBeLessThan(1e-3)
     expect(flat.normal[1]).toBeCloseTo(1, 3)
-    // 倒角中段：法线朝外倾斜，取样位置向内（外法向的负方向）。
     const middle = samples[Math.round(LUT_SAMPLES * 0.6)]!
     expect(middle.hit).toBe(1)
     expect(middle.normal[0]).toBeGreaterThan(0.05)
@@ -126,7 +125,6 @@ describe('剖面光学', () => {
   })
 
   it('一帧中途扩容时，本帧已绑定的旧纹理在下一帧开始前不释放', () => {
-    // 17 块互不融合的玻璃各用不同的倒角曲线：第 17 行超出初始容量 16，在本帧中途扩容。
     const count = 17
     const surfaces = Array.from({ length: count }, (_, i) => {
       const element = document.createElement('div')
@@ -172,7 +170,6 @@ describe('剖面光学', () => {
     groups.plan(surfaces, count, {} as GPUTextureView, shading, new DrawList())
     const textures = lutTextures()
     expect(textures.map(texture => texture.height)).toEqual([16 * LUT_ROWS_PER_PROFILE, 32 * LUT_ROWS_PER_PROFILE])
-    // 本帧提交之前，前面几组仍绑定着旧纹理。
     expect(textures[0]!.destroy.mock.calls).toHaveLength(0)
 
     fake.gpu.frame.begin()

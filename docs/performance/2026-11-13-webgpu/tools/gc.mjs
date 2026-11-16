@@ -1,4 +1,3 @@
-// 用法: node gc.mjs <页面地址>  在第二轮 8 秒滚动期间记录 GC 与分配
 const [url] = process.argv.slice(2)
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const list = await (await fetch('http://127.0.0.1:9333/json/list')).json()
@@ -35,7 +34,6 @@ await send('Tracing.end')
 await done
 const result = JSON.parse(await evaluate(`document.querySelector('#scroll-result').textContent`))
 const paints = result.draw.count
-// GC 停顿：只统计渲染进程主线程上的事件
 const gcs = {}
 for (const e of events) {
   if (e.ph !== 'X' || !/^(MinorGC|MajorGC|V8\.GC_SCAVENGER|V8\.GC_MC_BACKGROUND|V8\.GCScavenger|V8\.GCFinalizeMC|V8\.GCIncrementalMarking)$/.test(e.name)) continue
@@ -43,7 +41,6 @@ for (const e of events) {
   g.n++; g.totalMs += e.dur / 1000; g.maxMs = Math.max(g.maxMs, e.dur / 1000)
 }
 for (const g of Object.values(gcs)) { g.totalMs = +g.totalMs.toFixed(2); g.maxMs = +g.maxMs.toFixed(2) }
-// 分配：按调用栈中是否经过渲染器分块归类
 let total = 0; let renderer = 0
 const byFn = new Map()
 function walk(node, inRenderer, path) {

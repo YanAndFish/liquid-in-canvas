@@ -4,7 +4,6 @@ import { prefersReducedMotion } from 'liquid-in-canvas/motion'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { registerSharedLayer } from '@/composables/sharedTransition'
 
-/** 飞行中的商品图盖住导航等低层玻璃，又被第 10 层的购物袋盖住。 */
 const OVERLAY_LAYER = 5
 
 const host = ref<HTMLDivElement | null>(null)

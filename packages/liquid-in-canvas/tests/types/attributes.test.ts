@@ -16,7 +16,6 @@ import {
 } from '../../src/contract'
 import { GLASS_OPTION_ATTRS } from '../../src/liquid-glass/options'
 
-// 类型检查（`pnpm typecheck`）负责这些断言；运行时只确认清单本身。
 const CONTRACT_ATTRS = [
   GLASS_ATTR,
   GLASS_CLIP_ATTR,
@@ -45,7 +44,6 @@ describe('data-* 属性的类型', () => {
     expectTypeOf<{ 'data-glass-radius': '20 20 0 0' }>().toExtend<LiquidGlassAttributes>()
     expectTypeOf<{ 'data-glass-variant': 'frosted' }>().not.toExtend<LiquidGlassAttributes>()
     expectTypeOf<{ 'data-glass-tint': 'fff' }>().not.toExtend<LiquidGlassAttributes>()
-    // 框架把 false 渲染成 "false"，舞台把它当作没有这个属性。
     expectTypeOf<{ 'data-liquid-glass': false }>().toExtend<LiquidGlassAttributes>()
     expectTypeOf<{ 'data-liquid-glass': boolean }>().toExtend<LiquidGlassAttributes>()
     expectTypeOf<{ 'data-glass-morph': boolean }>().toExtend<LiquidGlassAttributes>()

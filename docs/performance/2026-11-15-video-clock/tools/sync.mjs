@@ -1,6 +1,3 @@
-// 视频停住之后，画布上留下的是不是最新的视频帧：先截一张“停住后留在屏幕上的画面”，
-// 再强制舞台重绘一次截第二张。两张逐像素相同，说明最后一帧已经画出来，玻璃里的折射与视频本身是同一帧。
-// 用法: node sync.mjs <url> <输出目录>，随后 python3 ../../2026-11-13-webgpu/tools/diff.py <输出目录>/shown <输出目录>/redrawn 0
 import { mkdirSync, writeFileSync } from 'node:fs'
 
 const [url, out] = process.argv.slice(2)
@@ -25,7 +22,6 @@ async function shot(group, name) {
   const r = await send('Page.captureScreenshot', { format: 'png' })
   writeFileSync(`${out}/${group}/${name}.png`, Buffer.from(r.result.data, 'base64'))
 }
-/** 截下停住后的画面，再强制重绘两次各截一张（第二次用来确认重绘本身是确定的）。 */
 async function capture(name) {
   await sleep(600)
   await shot('shown', name)
@@ -44,7 +40,6 @@ await send('Page.navigate', { url })
 await sleep(5000)
 const times = []
 const video = `document.querySelector('video')`
-// 播放一段后暂停，重复三次：暂停的时刻相对视频帧是随机的。
 for (let i = 1; i <= 3; i++) {
   await evaluate(`${video}.play().then(() => 1)`)
   await sleep(900 + i * 370)
@@ -52,12 +47,10 @@ for (let i = 1; i <= 3; i++) {
   await capture(`pause-${i}`)
   times.push(await evaluate(`${video}.currentTime`))
 }
-// 暂停状态下跳转。
 for (const time of [1, 4.2]) {
   await evaluate(`new Promise((resolve) => { ${video}.addEventListener('seeked', resolve, { once: true }); ${video}.currentTime = ${time} })`)
   await capture(`seek-${time}`)
 }
-// 循环回绕之后暂停。
 await evaluate(`new Promise((resolve) => { ${video}.addEventListener('seeked', resolve, { once: true }); ${video}.currentTime = ${video}.duration - 0.5 })`)
 await evaluate(`${video}.play().then(() => 1)`)
 await sleep(1200)

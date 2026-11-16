@@ -228,7 +228,6 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-/** 把三位或六位十六进制颜色规范为小写六位；格式不符时返回 null。 */
 export function normalizeHex(raw: string): string | null {
   const hex = raw.trim().toLowerCase()
   if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/.test(hex))

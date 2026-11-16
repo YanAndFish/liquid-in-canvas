@@ -4,7 +4,6 @@ import { CoverBuilder } from '../../src/liquid-glass/cover.hot'
 
 const builder = new CoverBuilder()
 
-/** 复制结果：构建器里的矩形对象会在下一次构建时复用。 */
 function disjointCover(rects: CoverRect[]): CoverRect[] {
   builder.build(rects, rects.length)
   return builder.rects.slice(0, builder.count).map(rect => ({ ...rect }))
@@ -18,7 +17,6 @@ function area(rects: readonly CoverRect[]): number {
   return rects.reduce((sum, r) => sum + (r.right - r.left) * (r.bottom - r.top), 0)
 }
 
-/** 任意两个矩形的内部都不相交。 */
 function disjoint(rects: readonly CoverRect[]): boolean {
   return rects.every((a, i) => rects.slice(i + 1).every(b => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top))
 }
@@ -39,7 +37,6 @@ describe('不重叠覆盖', () => {
       rect(5, 5, 15, 15),
     ])
     expect(disjoint(cover)).toBe(true)
-    // 两个 100 的矩形重叠 25。
     expect(area(cover)).toBe(175)
   })
 

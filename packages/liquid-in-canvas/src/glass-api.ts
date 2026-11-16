@@ -62,7 +62,6 @@ function apply(element: HTMLElement, options: GlassAttributeOptions): void {
   }
 }
 
-/** 把 `root` 里的 `element` 声明为玻璃，见 `LiquidGlassMount.addGlass`。 */
 export function addGlass(root: HTMLElement, element: HTMLElement, options: GlassAttributeOptions = {}): GlassHandle {
   if (!root.contains(element))
     throw new Error('addGlass: the element must be inside the mounted root')
@@ -80,7 +79,6 @@ export function addGlass(root: HTMLElement, element: HTMLElement, options: Glass
   }
 }
 
-/** 移除 `element` 上的玻璃，见 `LiquidGlassMount.removeGlass`。 */
 export function removeGlass(element: HTMLElement): void {
   element.removeAttribute(GLASS_ATTR)
   const names = written.get(element)

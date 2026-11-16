@@ -4,22 +4,16 @@ import { createTester } from './setup.js'
 
 createTester().run('no-alloc', rule, {
   valid: [
-    // 模块顶层只执行一次。
     'const TABLE = { a: [1, 2, 3] }; const RE = /x/g; const s = `${TABLE}`; new Map()',
-    // 构造函数与类字段只在创建实例时执行。
     'class A { pool = []; scratch = { x: 0 }; constructor(...args) { this.list = new Array(4); this.o = { ...args } } }',
     'class A { static { const x = [1] } }',
-    // 出错路径。
     'function f(x) { if (!x) throw new Error(`bad ${x}`) }',
-    // 不分配的写法。
     'function f(data, items) { let sum = 0; for (let i = 0; i < items.length; i++) sum += items[i].value; data[0] = sum; data.set(items[0].clip, 4); return Math.max(sum, 1) }',
     'function f(list) { for (const item of list) item.count++ }',
     'function f(a) { const { x, y } = a; return x + y }',
     'function f(map, key) { return map.get(key) ?? fallback(key) }',
     'function f(s) { return s.label === "canvas" ? 1 : 0 }',
-    // 带标签的模板交给标签函数处理。
     'function f(x) { return wgsl`${x}` }',
-    // 类型断言不会分配。
     'function f(x) { return (x as unknown as number) + 1 }',
   ],
   invalid: [
@@ -146,14 +140,12 @@ createTester().run('no-alloc', rule, {
         },
       ],
     },
-    // 构造函数里定义的函数，函数体仍然是热路径。
     {
       code: 'class A { constructor() { this.run = () => ({ x: 1 }) } }',
       errors: [
         { messageId: 'object' },
       ],
     },
-    // 类字段里的箭头函数只创建一次，但每次调用都会执行函数体。
     {
       code: 'class A { handle = () => { use([1]) } }',
       errors: [

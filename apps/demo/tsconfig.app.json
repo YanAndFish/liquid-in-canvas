@@ -9,7 +9,6 @@
     "allowArbitraryExtensions": true,
 
     "noFallthroughCasesInSwitch": true,
-    /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true

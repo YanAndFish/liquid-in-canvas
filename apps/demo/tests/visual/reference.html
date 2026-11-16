@@ -16,11 +16,9 @@
     .glass { position: absolute; display: flex; align-items: center; justify-content: center; }
     .glass svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-    /* 两色胶囊：上浅下深，分界线由脚本定位。 */
     #capsule .light { inset: 0; background: #eef1f4; }
     #capsule .dark { left: 0; right: 0; bottom: 0; background: #262c36; }
 
-    /* 工具条：细网格。 */
     #toolbar {
       background-color: #f4f4f2;
       background-image:
@@ -30,11 +28,9 @@
     }
     #toolbar .glass { gap: 44px; color: #1d1d1f; }
 
-    /* 圆形通透玻璃：斜向明暗分界线，暗色半平面由脚本旋转定位。 */
     #disc .light { inset: 0; background: #f2f2f0; }
     #disc .dark { width: 6000px; height: 3000px; background: #1b1d22; transform-origin: 3000px 0; transform: rotate(-45deg); }
 
-    /* 照片上的三颗圆形按钮。 */
     #buttons .photo { inset: 0; background: url(/media/liquid-glass-flower-poster.jpg) center / cover; }
     #buttons .glass { color: #ffffff; }
     #buttons .glass svg { width: 30px; height: 30px; fill: currentColor; stroke: none; }

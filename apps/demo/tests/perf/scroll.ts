@@ -2,24 +2,16 @@ import { CanvasStage } from 'liquid-in-canvas/canvas'
 import { getStageScroller } from '../../src/shared/scroll'
 import { applyGlassQuery, applyStageQuery } from '../query'
 
-/** 一遍绘制的 GPU 时间，由舞台的计时器读回。 */
 interface PassTiming {
-  /** 这一遍的用途：`backdrop`、`blur`、`band` 或 `canvas`。 */
   label: string
-  /** 绘制目标的像素尺寸。 */
   target: [number, number]
-  /** 从开始到结束的时间，毫秒。 */
   ms: number
-  /** 开始与结束相对本帧第一遍开始的时间，毫秒。 */
   begin: number
   end: number
 }
 
-/** 供独立测试入口观察的绘制方法与 GPU 上下文。 */
 interface ObservedStage {
-  /** 上传页面并提交这一帧的绘制命令。 */
   draw: (event?: Event) => void
-  /** 初始化后的 GPU 上下文，尚未初始化时为 null。 */
   gpu: {
     device: GPUDevice
     timing: {
@@ -27,21 +19,14 @@ interface ObservedStage {
       onFrame: ((passes: PassTiming[]) => void) | null
     }
   } | null
-  /** 修改分辨率限制。 */
   setResolution: CanvasStage['setResolution']
-  /** 切换光路计算方式。 */
   setOptics: CanvasStage['setOptics']
-  /** 打开或关闭混合光路的折射场缓存。 */
   setFieldCache: CanvasStage['setFieldCache']
-  /** 当前画布尺寸、倍率与实际使用的光路。 */
   getMetrics: CanvasStage['getMetrics']
 }
 
-/** 将 GPU 时间对应到绘制目标。 */
 interface PassInfo {
-  /** 这一遍的用途。 */
   scene: string
-  /** 离屏目标尺寸；null 表示输出到画布。 */
   target: number[] | null
 }
 
@@ -49,7 +34,6 @@ const prototype = CanvasStage.prototype as unknown as ObservedStage
 const draw = prototype.draw
 const query = new URLSearchParams(location.search)
 const gpuDiagnostic = query.has('gpu')
-/** `?maxPixelRatio=3&maxGlassPixelRatio=1&adaptive=0` 用于在固定倍率下对比，缺省使用库的默认限制。 */
 const resolutionOverride = {
   ...(query.has('maxPixelRatio')
     ? {
@@ -70,12 +54,10 @@ const resolutionOverride = {
       }
     : {}),
 }
-/** `?hold=600` 在八秒里停在给定的滚动位置，用于测量某个画面持续重绘时的开销（需要视频或动画保持重绘）。 */
 const hold = query.has('hold')
   ? Number(query.get('hold'))
   : null
 const configured = new WeakSet<object>()
-/** 读取舞台的实际倍率与光路（自适应降级后的结果），测量结束时调用。 */
 let readMetrics: (() => ReturnType<CanvasStage['getMetrics']>) | null = null
 const errors: string[] = []
 let active = false
@@ -88,15 +70,12 @@ let gpuPassSums: number[] = []
 let gpuPassTimes: number[][] = []
 let gpuPassInfo: PassInfo[][] = []
 let positions: number[] = []
-/** 自适应降级的变化记录：`[距测量开始的毫秒数, 画布倍率, 玻璃着色倍率, 光路]`，第一项是测量开始时的状态。 */
 let adaptation: [number, number, number, string][] = []
 let measurementStart = 0
 let lastState = ''
-/** 自页面加载起的全部变化：`[距页面加载的毫秒数, 画布倍率, 玻璃着色倍率, 光路]`，不随测量重置。 */
 const adaptationLog: [number, number, number, string][] = []
 let lastLoggedState = ''
 
-/** 记录舞台当前的实际倍率与光路，有变化时追加到两份记录里。 */
 function recordAdaptation(stage: ObservedStage, now: number): void {
   const metrics = stage.getMetrics()
   const state = `${metrics.dpr.toFixed(3)} ${metrics.glassDpr.toFixed(3)} ${metrics.optics}`
@@ -123,7 +102,6 @@ let adapterInfo: Record<string, string | boolean> | null = null
 
 applyGlassQuery(query)
 
-// `?glass=0` 去掉页面上所有玻璃声明，只测量整页快照与页面绘制的开销。
 if (query.get('glass') === '0') {
   const strip = (): void => {
     for (const element of document.querySelectorAll('[data-liquid-glass]'))
@@ -166,7 +144,6 @@ prototype.draw = function (event) {
         frameMeasurement = measurement
         return
       }
-      // 同一命令缓冲里的遍相互重叠，整帧时间取第一遍开始到最后一遍结束；逐遍相加会重复计算等待。
       gpuTimes.push(Math.max(...passes.map(pass => pass.end)))
       gpuPassSums.push(passes.reduce((sum, pass) => sum + pass.ms, 0))
       gpuPassTimes.push(passes.map(pass => pass.ms))
@@ -192,7 +169,6 @@ prototype.draw = function (event) {
 window.addEventListener('error', event => errors.push(event.message))
 window.addEventListener('unhandledrejection', event => errors.push(String(event.reason)))
 
-/** 汇总毫秒数据，空数组只报告零个样本。 */
 function distribution(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b)
   return {
@@ -206,7 +182,6 @@ function distribution(values: number[]) {
   }
 }
 
-/** 返回相邻时间点的间隔。 */
 function intervals(values: number[]) {
   return values.slice(1).map((value, index) => value - values[index]!)
 }
@@ -220,7 +195,6 @@ output.id = 'scroll-result'
 panel.append(button, output)
 document.body.append(panel)
 
-/** 暂停视频，在相同八秒路径中向下滚动 2200 像素，再回到顶部；带 `?hold` 时停在给定位置。 */
 button.onclick = () => {
   const scroller = getStageScroller()
   if (active || !scroller)

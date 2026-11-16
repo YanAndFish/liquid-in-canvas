@@ -30,7 +30,6 @@ export interface CanvasStageOptions {
   fieldCache?: boolean
 }
 
-/** 开始绘制或修改分辨率限制后这么多毫秒内不做自适应判定：页面刚开始绘制时图片解码、字体加载会拖慢几帧，不代表常态。 */
 const ADAPTIVE_WARMUP = 2000
 
 function sameSize(a: StageMetrics, b: StageMetrics): boolean {
@@ -44,9 +43,7 @@ export class CanvasStage {
   private readonly canvas: HTMLCanvasElement
   private readonly onFault: (cause: unknown) => void
   private gpu: StageGpu | null = null
-  /** 每帧的绘制，见 `stage-frame.hot.ts`。 */
   private frame: StageFrame | null = null
-  /** 整页快照，同时作为玻璃折射与模糊的背景。 */
   private page: ElementTexture | null = null
   private observer: ResizeObserver | null = null
   private root: HTMLElement | null = null
@@ -56,11 +53,8 @@ export class CanvasStage {
   private pendingSize: StageMetrics | null = null
   private resolution: StageResolution
   private readonly adaptive = new AdaptiveScale()
-  /** 区分“按页面自己的节拍绘制”与“跟不上显示器”，供自适应降级取样。 */
   private readonly frameProbe = new FrameProbe()
-  /** 有新的视频帧时请求重绘。 */
   private readonly videoClock = new VideoClock(() => this.invalidate())
-  /** 这个时间之前不把绘制间隔交给自适应降级。 */
   private adaptiveAfter = 0
   private theme: GlassTheme | null
   private optics: GlassOptics
@@ -97,13 +91,11 @@ export class CanvasStage {
     }
     this.gpu = new StageGpu(device, format)
     this.frame = new StageFrame(this.gpu, context, this.canvas)
-    // 设备丢失或出现校验错误后画面不再可信，交给调用方决定是否改用回退实现。
     void device.lost.then((info) => {
       if (info.reason !== 'destroyed')
         this.fail(new Error(`WebGPU device lost: ${info.message}`))
     })
     device.addEventListener('uncapturederror', (event) => {
-      // GPUError 不是 Error 的子类，包一层，接入方拿到的 onFault 原因才有可读的消息。
       const error = (event as GPUUncapturedErrorEvent).error
       this.fail(new Error(`WebGPU ${error.constructor.name}: ${error.message}`, { cause: error }))
     })
@@ -262,7 +254,6 @@ export class CanvasStage {
     }
   }
 
-  /** 记录不可恢复的错误并停止绘制，只通知一次。 */
   private fail(cause: unknown): void {
     if (this.failed || this.disposed)
       return
@@ -282,8 +273,6 @@ export class CanvasStage {
     if (this.failed || this.disposed)
       return
 
-    // 自适应降级可能改变光路、玻璃着色倍率或画布倍率；画布尺寸的变化与其他来源的一样，在这一帧里应用。
-    // 探针在预热期间也要计数，预热结束后的第一次取样才知道它是否紧接着上一个显示帧。
     const now = performance.now()
     if (this.root && this.resolution.adaptive) {
       const continuous = this.frameProbe.mark()
@@ -294,7 +283,6 @@ export class CanvasStage {
     }
 
     const pending = this.pendingSize
-    // Resize inside paint so the canvas is not cleared in a separate frame.
     if (pending && this.applySize(pending))
       this.pendingSize = null
 
@@ -322,7 +310,6 @@ export class CanvasStage {
     this.requestResize()
   }
 
-  /** 按当前 CSS 尺寸与分辨率限制重新计算画布尺寸，有变化时在下一次绘制中应用。 */
   private requestResize(): void {
     if (!this.initialized || this.disposed)
       return
@@ -348,7 +335,6 @@ export class CanvasStage {
     if (this.metrics && sameSize(this.metrics, size))
       return true
 
-    // 画布尺寸变化后浏览器会换一张画布纹理，配置保持不变。
     this.canvas.width = size.pixelWidth
     this.canvas.height = size.pixelHeight
 
@@ -378,7 +364,6 @@ export class CanvasStage {
       cssHeight: height,
       resolution: this.resolution,
     })
-    // 静态上限给出的倍率再乘以自适应降级的系数；系数的下限随设备倍率与窗口尺寸变化，每次重新计算。
     this.adaptive.setCanvasFloor(resolveCanvasScaleFloor(devicePixelRatio, base, this.resolution.minPixelRatio))
     const dpr = this.resolution.adaptive
       ? base * this.adaptive.canvasScale
@@ -395,14 +380,12 @@ export class CanvasStage {
     }
   }
 
-  /** 实际使用的光路：自适应降级把光路降为查表时是 `profile`，否则是配置的光路。 */
   private effectiveOptics(): GlassOptics {
     return this.resolution.adaptive && this.adaptive.relaxed
       ? 'profile'
       : this.optics
   }
 
-  /** 玻璃体积当前的着色倍率。 */
   private glassPixelRatio(dpr: number): number {
     return resolveGlassPixelRatio(dpr, this.resolution.maxGlassPixelRatio, this.resolution.adaptive
       ? this.adaptive.scale

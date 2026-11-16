@@ -1,7 +1,3 @@
-// 在画面检查页上逐步改变两块融合玻璃的间距，再用裁剪容器切开一块玻璃，每一步截图。
-// 用法: OPTICS=hybrid node sweep.mjs <站点根地址> <输出目录>
-// 对每种光路各跑一次，再用 sweep_diff.py 比较两个目录：间距变化时连接处是否始终与三维求交一致，
-// 裁剪边附近是否一致。
 import { mkdir, writeFile } from 'node:fs/promises'
 
 const [base, outDir] = process.argv.slice(2)
@@ -43,13 +39,11 @@ await sleep(300)
 await send('Page.navigate', { url: `${base}/tests/visual/liquid-glass.html?optics=${optics}` })
 await sleep(4500)
 const set = (id, value) => `(() => { const el = document.getElementById('${id}'); el.value = '${value}'; el.dispatchEvent(new Event('input', { bubbles: true })) })()`
-// 间距从重叠到刚好分开（融合距离 48）：两块玻璃的相对位置每步移动 8 像素。
 for (let gap = -80; gap <= 56; gap += 8) {
   await evaluate(set('gap', gap))
   await shot(`gap-${String(gap + 80).padStart(3, '0')}`)
 }
 await evaluate(set('gap', 12))
-// 把彩条上的玻璃放进裁剪容器：先切左右两侧，再切掉上沿的倒角。
 const clip = (top, height, name) => `(() => {
   let box = document.getElementById('clip-box')
   const glass = document.querySelector('.anchor.c')

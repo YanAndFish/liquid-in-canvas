@@ -38,23 +38,18 @@ export interface GlassProfile {
   bottomBevel: number
 }
 
-/** 倒角的最小尺寸。底面倒角为 0 时也保留这个尺寸，距离场不会除以零。 */
 export const MIN_BEVEL = 0.5
 
-/** 缺省折射率（绿色光路），`data-glass-ior` 不写时取这个值。 */
 export const BASE_IOR = 1.45
 
-/** 半厚度：`refraction` 受控件短边限制。 */
 export function profileHalfDepth(refraction: number, width: number, height: number): number {
   return Math.max(2, Math.min(refraction, width * 0.3, height * 0.3))
 }
 
-/** 顶面倒角的水平宽度，尚未按控件尺寸限制。 */
 export function profileBevelWidth(halfDepth: number, ratio: number): number {
   return Math.max(MIN_BEVEL, halfDepth * ratio)
 }
 
-/** 顶面倒角的垂直高度，不超过半厚度。 */
 export function profileBevelHeight(halfDepth: number, ratio: number): number {
   return Math.min(halfDepth, Math.max(MIN_BEVEL, halfDepth * ratio))
 }

@@ -19,7 +19,6 @@ type FakeRenderer = GlassTunerRenderer & {
   setOptics: ReturnType<typeof vi.fn>
 }
 
-/** 创建不接触 GPU 的渲染器，记录面板发出的调用。 */
 function createRenderer(canvasSupported = true, svgSupported = true, dpr = 2): FakeRenderer {
   const renderer: FakeRenderer = {
     mode: canvasSupported
@@ -93,7 +92,6 @@ function setValue(input: HTMLInputElement, value: string | boolean): void {
   }
 }
 
-/** 元素自己或祖先被隐藏。 */
 function isHidden(element: Element): boolean {
   return element.closest('[hidden]') !== null
 }
@@ -227,7 +225,6 @@ describe('调参面板', () => {
     setValue($('input[data-field="blur"]'), '30')
     expect(getGlassDefaults().materials.regular.light.blur).toBe(30)
     document.documentElement.dataset.theme = 'dark'
-    // MutationObserver 在微任务里回调。
     await Promise.resolve()
     expect(tuner.element.dataset.theme).toBe('dark')
     expect($('[data-section="material"] h3').textContent).toContain('深色主题')
@@ -245,7 +242,6 @@ describe('渲染方式开关', () => {
     expect(renderer.setMode).toHaveBeenCalledWith('css')
     await Promise.resolve()
     expect($('button[data-mode="css"]').getAttribute('aria-pressed')).toBe('true')
-    // 分辨率只对画布有意义，切到回退后隐藏。
     expect(isHidden($('input[data-field="adaptive"]'))).toBe(true)
     click($('button[data-mode="svg"]'))
     expect(renderer.setMode).toHaveBeenCalledWith('svg')
@@ -377,7 +373,6 @@ describe('渲染方式开关', () => {
     create()
     tuner.open()
     expect($('[data-role="ratios"]').textContent).not.toContain('光路已自动降为剖面')
-    // 配置为混合光路，舞台实际仍在用剖面：说明处于自动降级。
     click($('[data-optics="hybrid"]'))
     expect($('[data-role="ratios"]').textContent).toContain('光路已自动降为剖面')
   })
@@ -463,7 +458,6 @@ describe('从挂载创建', () => {
     }
     expect(renderer.mode).toBe('svg')
     expect(renderer.metrics()).toBeNull()
-    // 回退实现下仍然记住设置，供下次挂载画布时使用。
     renderer.setResolution({ maxGlassPixelRatio: 1 })
     expect(renderer.resolution.maxGlassPixelRatio).toBe(1)
   })

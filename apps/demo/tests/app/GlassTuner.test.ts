@@ -12,7 +12,6 @@ vi.mock('@/composables/useLocale', () => ({
   useLocale: () => ({ locale }),
 }))
 
-/** 创建不接触 GPU 的渲染控制器，记录面板发出的调用。 */
 function createRenderer(): RendererController {
   const mode = ref<GlassRenderMode>('canvas')
   const resolution = ref({ ...DEFAULT_STAGE_RESOLUTION })

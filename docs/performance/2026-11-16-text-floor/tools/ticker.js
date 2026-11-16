@@ -1,5 +1,3 @@
-// 在页面里执行：每个显示帧改一次左上角的小方块，统计 3 秒内画布 paint 事件的平均间隔。
-// window.__HIDE__ = 'media' 隐藏视频与图片，'all' 隐藏根元素的全部子元素（只剩根元素背景）。
 (async () => {
   const hide = window.__HIDE__
   const app = document.querySelector('#app') ?? document.querySelector('[drawable]')

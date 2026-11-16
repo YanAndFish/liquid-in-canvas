@@ -1,6 +1,3 @@
-// 页面静止、只有视频在播放时，四秒里的 paint 事件、视频帧回调、requestAnimationFrame 回调各有多少次，
-// 以及渲染进程主线程的任务时间；随后暂停视频，确认两秒里不再有绘制与回调。
-// 用法: node frames.mjs <url> [轮数]。不点测量页的按钮，页面上没有测量用的逐帧循环。
 const [url, runsArg = '1'] = process.argv.slice(2)
 const port = process.env.CDP_PORT ?? '9333'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -31,7 +28,6 @@ const out = []
 for (let i = 0; i < Number(runsArg); i++) {
   await send('Page.navigate', { url })
   await sleep(5000)
-  // 计数器：paint 事件、视频帧回调（连带相邻两次回调之间呈现的视频帧数）、页面上所有的 requestAnimationFrame 回调。
   await evaluate(`(() => {
     const counts = window.__counts = { paint: 0, video: 0, frame: 0, sameFrame: 0, skipped: 0 }
     const canvas = document.querySelector('#stage')
@@ -39,7 +35,6 @@ for (let i = 0; i < Number(runsArg); i++) {
     let videoAt = -1
     canvas.addEventListener('paint', () => {
       counts.paint++
-      // 视频帧回调与它引起的绘制在同一个显示帧里时，相隔只有几毫秒。
       if (videoAt >= 0 && performance.now() - videoAt < 12)
         counts.sameFrame++
       videoAt = -1

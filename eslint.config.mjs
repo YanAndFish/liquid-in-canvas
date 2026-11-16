@@ -26,7 +26,6 @@ export default antfu(
     },
   },
   {
-    // 热路径：每帧执行的函数不得分配堆内存，见 tools/eslint-plugin-hot/README.md。
     name: 'liquid-in-canvas/hot-path',
     files: ['**/*.hot.ts'],
     plugins: { hot },

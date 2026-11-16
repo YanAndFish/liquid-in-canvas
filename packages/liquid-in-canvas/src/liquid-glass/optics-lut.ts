@@ -1,63 +1,29 @@
-/**
- * 剖面光学的查找表：沿玻璃截面预先追踪光路，体积着色器按到轮廓的距离直接查表。
- *
- * 三维实体是“平面距离 → 截面高度”的旋转体：法线只在 (平面距离梯度, z) 平面内倾斜，
- * 正交入射的光线折射后也留在这个平面里。所以一条截面上的二维追踪就给出了任意位置的出射偏移，
- * 每个像素不再需要逐步求交。这里的追踪逐条照搬 `volume-shader.ts` 的求交、法线与出射，
- * 单块玻璃上两条路径的结果一致；融合连接处与小圆角拐角里光线会离开截面平面，那里是近似。
- *
- * 本文件是冷路径：只在出现新的截面参数时追踪并上传一行。
- */
 import type { StageGpu } from '../gpu'
 import { TEXTURE_USAGE } from '../gpu'
 import { BASE_IOR } from './profile'
 
-/** 每行的采样数。 */
 export const LUT_SAMPLES = 128
-/** 每行在纹理里占的纹素行数：位移、斜率、有效度、玻璃内的横向范围各一行。 */
 export const LUT_ROWS_PER_PROFILE = 4
-/** 纹理按这个行数扩容。 */
 const LUT_CAPACITY_STEP = 16
-/** 色散在折射率上的跨度，与体积着色器一致。 */
 export const DISPERSION_SPREAD = 0.055
-/** 追踪时使用的参考半厚度，结果再按它归一化。阈值与步长以像素为单位，和着色器保持一致。 */
 const REFERENCE_HALF_DEPTH = 24
-/** 平板之外的取样偏移被限制在这个距离以内，与着色器的 `min(travel, 800)` 一致。 */
 export const MAX_TRAVEL = 800
 
-/** 决定一行查找表的截面参数，长度都按半厚度归一化。 */
 export interface ProfileKey {
-  /** 实际倒角宽度与半厚度之比（已按控件尺寸限制）。 */
   bevelWidth: number
-  /** 实际倒角高度与半厚度之比。 */
   bevelHeight: number
-  /** 倒角曲线的超椭圆指数。 */
   curve: number
-  /** 底面倒角比例。 */
   bottomBevel: number
-  /** 色散强度。 */
   dispersion: number
-  /** 绿色光路的折射率，红蓝两条按色散在两侧展开。 */
   ior: number
 }
 
-/**
- * 截面上一个位置的追踪结果，长度按半厚度归一化。
- *
- * 取样位置 = 像素 + 外法向 ×（半厚度 × `shift` + 底面高度 × `slope`），三条光路分别给出。
- */
 export interface ProfileSample {
-  /** 玻璃内与底面以下（到底面平面为止）的横向位移，向外为正。 */
   shift: [number, number, number]
-  /** 出射光线每下降一个单位的横向位移，向外为正。 */
   slope: [number, number, number]
-  /** 光路有效度，与着色器的 `smoothstep(0.02, 0.14, -outgoing.z)` 相同。 */
   valid: [number, number, number]
-  /** 入射点法线在外法向与 z 上的分量。 */
   normal: [number, number]
-  /** 入射求交是否命中。 */
   hit: number
-  /** 三条光路在玻璃内离开入射位置的最大横向距离（含全内反射途中），供混合光路判断其余成员是否够远。 */
   reach: number
 }
 
@@ -66,7 +32,6 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t)
 }
 
-/** 截面上的二维距离场：u 是到轮廓的有向距离（向外为正），z 是到底面的高度，单位为像素。 */
 function sectionDistance(u: number, z: number, halfDepth: number, bevelWidth: number, bevelHeight: number, power: number, bottom: number): number {
   const height = z - halfDepth
   const scale = height > 0
@@ -93,10 +58,6 @@ function refract(ix: number, iz: number, nx: number, nz: number, eta: number): [
   return [eta * ix - factor * nx, eta * iz - factor * nz]
 }
 
-/**
- * 沿截面追踪 `LUT_SAMPLES` 个位置。第 i 个样本到轮廓的距离是倒角宽度的 (i / (N − 1))² 倍，
- * 在陡峭的轮廓附近采得更密；着色器按平方根换算回查表坐标。
- */
 export function traceProfile(key: ProfileKey): ProfileSample[] {
   const hd = REFERENCE_HALF_DEPTH
   const bevelWidth = Math.max(0.5, key.bevelWidth * hd)
@@ -117,7 +78,6 @@ export function traceProfile(key: ProfileKey): ProfileSample[] {
   for (let i = 0; i < LUT_SAMPLES; i++) {
     const s = (i / (LUT_SAMPLES - 1)) ** 2
     const u0 = -s * bevelWidth
-    // 入射：正交光线自上而下。
     let z = hd * 2 + 4
     let hit = 0
     for (let step = 0; step < 64; step++) {
@@ -165,7 +125,6 @@ export function traceProfile(key: ProfileKey): ProfileSample[] {
           }
           if (bounced)
             break
-          // 全内反射一次。
           const dot = du * ou + dz * oz
           du -= 2 * dot * ou
           dz -= 2 * dot * oz
@@ -190,7 +149,6 @@ export function traceProfile(key: ProfileKey): ProfileSample[] {
   return samples
 }
 
-/** 单精度浮点转半精度，用于写入 `rgba16float` 纹理。 */
 export function toHalf(value: number): number {
   const f32 = new Float32Array(1)
   const u32 = new Uint32Array(f32.buffer)
@@ -206,10 +164,6 @@ export function toHalf(value: number): number {
   return sign | (exponent << 10) | (mantissa >>> 13)
 }
 
-/**
- * 把一行的追踪结果编成四行半精度纹素：位移、斜率、有效度，第四个分量依次是法线的两个分量与命中；
- * 最后一行的第一个分量是玻璃内的横向范围，取相邻三个样本的最大值，线性插值后仍不低于两侧样本。
- */
 export function encodeProfile(samples: readonly ProfileSample[]): Uint16Array {
   const data = new Uint16Array(LUT_SAMPLES * 4 * LUT_ROWS_PER_PROFILE)
   const row = LUT_SAMPLES * 4
@@ -230,30 +184,17 @@ export function encodeProfile(samples: readonly ProfileSample[]): Uint16Array {
   return data
 }
 
-/** 截面参数量化后的整数键。 */
 function keyOf(key: ProfileKey): number {
   const q = (value: number, scale: number, max: number): number => Math.min(max, Math.max(0, Math.round(value * scale)))
   return ((((q(key.bevelWidth, 64, 4095) * 4096 + q(key.bevelHeight, 64, 127)) * 128 + q(key.curve, 16, 255)) * 256 + q(key.bottomBevel, 32, 63)) * 64 + q(key.dispersion, 32, 63)) * 128 + q(key.ior - 1, 64, 127)
 }
 
-/**
- * 查找表纹理：每种截面参数一行（三条纹素行），按需追踪并上传。
- *
- * `rowOf()` 在每帧写 uniform 时调用：参数已有对应行时只是一次 Map 查询，
- * 出现新参数时追踪一行并写入纹理，容量不够时换一张更大的纹理（`generation` 加一）。
- *
- * 扩容可能发生在一帧的中途：同一帧里已经排进绘制列表的组仍绑定着旧纹理，
- * 旧纹理要等这一帧提交之后才能释放，否则提交时会因为使用已销毁的纹理而校验失败。
- */
 export class ProfileTable {
-  /** 纹理被重新创建时加一，绑定需要随之重建。 */
   generation = 0
   private readonly gpu: StageGpu | null
   private readonly rows = new Map<number, number>()
   private readonly encoded: Uint16Array[] = []
-  /** 每行里光线在玻璃内的最大横向位移，与半厚度之比。 */
   private readonly reaches: number[] = []
-  /** 被换下、但可能仍被本帧绑定引用的纹理，下一帧开始时由 `release()` 释放。 */
   private readonly retired: GPUTexture[] = []
   private texture: GPUTexture | null = null
   private textureView: GPUTextureView | null = null
@@ -267,24 +208,20 @@ export class ProfileTable {
     ior: BASE_IOR,
   }
 
-  /** 没有 GPU（单元测试）时只记录行号。 */
   constructor(gpu: StageGpu | null) {
     this.gpu = gpu
   }
 
-  /** 当前纹理视图；还没有任何一行时先创建一张空纹理。 */
   get view(): GPUTextureView {
     if (!this.textureView)
       this.grow(LUT_CAPACITY_STEP)
     return this.textureView!
   }
 
-  /** 已经追踪的行数。 */
   get size(): number {
     return this.encoded.length
   }
 
-  /** 取得截面参数对应的行号，没有时追踪并上传。 */
   rowOf(bevelWidth: number, bevelHeight: number, curve: number, bottomBevel: number, dispersion: number, ior = BASE_IOR): number {
     const key = this.scratch
     key.bevelWidth = bevelWidth
@@ -300,15 +237,10 @@ export class ProfileTable {
     return this.add(id, key)
   }
 
-  /**
-   * 第 `row` 行的光线在玻璃内离开入射位置的最大横向距离，与半厚度之比。
-   * 混合光路据此判断一个像素的光路是否可能碰到其余成员或裁剪边。
-   */
   reachOf(row: number): number {
     return this.reaches[row]!
   }
 
-  /** 释放之前各帧换下的纹理。在一帧开始排绘制之前调用，那时它们所在的帧都已提交。 */
   release(): void {
     for (let i = 0; i < this.retired.length; i++)
       this.retired[i]!.destroy()

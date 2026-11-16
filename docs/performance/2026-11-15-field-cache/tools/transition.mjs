@@ -1,8 +1,3 @@
-// 录制“滚动 → 停下 → 再次滚动”过程中的每一帧，用来衡量折射场缓存在查表与求交之间切换时画面的跳变。
-// 用法: [CDP_PORT=9333] [FROM=560] [TO=600] [STEP=2] [HOLD=700] [ROI=x,y,w,h] node transition.mjs <页面地址> <输出目录>
-// 页面是 tests/perf/scroll.html 的构建结果，带 ?adaptive=0&optics=…。滚动由帧序号驱动：每个动画帧移动 STEP 像素，
-// 从 FROM 到 TO，停 HOLD 毫秒，再同样移动一段。每次画布绘制之后截取画布的 ROI（画布像素，缺省整幅），
-// 连同时间与滚动位置写进输出目录：frames.json 与 NNN.png。对每种光路各录一次，再用 transition_diff.py 比较。
 import { mkdir, writeFile } from 'node:fs/promises'
 
 const [url, outDir] = process.argv.slice(2)
@@ -37,7 +32,6 @@ await send('Page.navigate', { url: 'about:blank' })
 await sleep(300)
 await send('Page.navigate', { url })
 await sleep(4500)
-// 暂停视频并定位到第 1 秒，隐藏测量面板：背景不变，帧与帧之间的差别只来自玻璃。
 const ready = await evaluate(`(async () => {
   document.querySelector('aside')?.style.setProperty('display', 'none')
   for (const video of document.querySelectorAll('video')) {
@@ -55,7 +49,6 @@ const count = await evaluate(`(async () => {
   const roi = ${JSON.stringify(roi)} ?? [0, 0, canvas.width, canvas.height]
   const frames = []
   let recording = true
-  // 舞台的绘制监听先注册，这里在它画完之后截取。
   canvas.addEventListener('paint', () => {
     if (recording)
       frames.push({ time: performance.now(), top: scroller.scrollTop, bitmap: createImageBitmap(canvas, roi[0], roi[1], roi[2], roi[3]) })

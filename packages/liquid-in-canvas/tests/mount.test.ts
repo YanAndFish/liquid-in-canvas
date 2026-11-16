@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GLASS_CSS_ATTR } from '../src/css/CssGlassStage'
 import { mountLiquidGlass, StageUnsupportedError } from '../src/mount'
 
-// jsdom 没有 HTML-in-Canvas 与 WebGPU，这里覆盖的是不支持时的行为。
 let root: HTMLElement
 let element: HTMLElement
 
@@ -36,7 +35,6 @@ describe('mountLiquidGlass', () => {
     expect(faults).toHaveLength(1)
     expect(faults[0]!.kind).toBe('unsupported')
     expect(element.hasAttribute(GLASS_CSS_ATTR)).toBe(true)
-    // 回退不改变页面结构。
     expect(root.parentElement).toBe(document.body)
     expect(document.querySelector('canvas')).toBeNull()
     mount.dispose()
@@ -102,9 +100,7 @@ describe('通过 API 开关玻璃', () => {
     expect(button.hasAttribute('data-liquid-glass')).toBe(false)
     expect(button.hasAttribute('data-glass-variant')).toBe(false)
     expect(button.hasAttribute('data-glass-blur')).toBe(false)
-    // 不是 API 写上的参数保留。
     expect(button.getAttribute('data-glass-layer')).toBe('2')
-    // 移除之后的修改不再生效。
     handle.update({ blur: 8 })
     expect(button.hasAttribute('data-glass-blur')).toBe(false)
     await new Promise(resolve => setTimeout(resolve, 0))

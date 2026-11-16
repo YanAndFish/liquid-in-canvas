@@ -24,10 +24,6 @@
   <button id="api">addGlass</button>
 </div>
 <script type="module">
-  /**
-   * 左边的色块是玻璃的普通子元素，画在玻璃之上；右边的色块写了 `data-glass-place="below"`，被玻璃折射与模糊。
-   * 下方的按钮由 `mount.addGlass()` 声明为玻璃。查询参数：`ior` 写到两块卡片上，`optics` 选择光路。
-   */
   import { mountLiquidGlass } from 'liquid-in-canvas'
 
   const query = new URLSearchParams(location.search)

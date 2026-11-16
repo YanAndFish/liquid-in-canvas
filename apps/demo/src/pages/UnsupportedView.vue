@@ -10,7 +10,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** 用户选择用 CSS 回退版本继续浏览。 */
   continue: []
 }>()
 

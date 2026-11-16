@@ -108,7 +108,6 @@ export async function mountLiquidGlass(options: MountLiquidGlassOptions): Promis
     backend.canvas.remove()
   }
 
-  /** 启动回退实现并返回它实际的方式。指定 `css` 时不使用折射滤镜。 */
   function createFallback(): CssGlassStage {
     cssBackend = new CssGlassStage({
       root,
@@ -136,19 +135,16 @@ export async function mountLiquidGlass(options: MountLiquidGlassOptions): Promis
       onFault?.(fault)
       return
     }
-    // 错误在绘制回调中抛出，等当前帧结束后再拆除画布。
     queueMicrotask(() => {
       if (disposed || !canvasBackend)
         return
       releaseCanvas()
-      // 页面已经挂载过，这里不再调用 beforeStart。
       createFallback().start()
       onFault?.(fault)
     })
   }
 
   async function startCanvas(): Promise<void> {
-    // 画布渲染器在这里才加载，用不到画布的浏览器不会下载它。
     const { CanvasStage } = await import('./CanvasStage')
     const canvas = document.createElement('canvas')
     if (canvasId)

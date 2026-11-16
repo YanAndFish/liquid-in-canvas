@@ -1,5 +1,3 @@
-// 最小 CDP 驱动：连接远程调试端口的页面，执行测量并输出 JSON。
-// 用法: node cdp.mjs <url> <runs> [extra]
 const [url, runsArg = '1', mode = ''] = process.argv.slice(2)
 const port = process.env.CDP_PORT ?? '9333'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -50,7 +48,6 @@ if (!support.stage) {
 }
 const runs = Number(runsArg)
 const results = []
-// 第一轮预热，不计入。
 for (let i = 0; i <= runs; i++) {
   await evaluate(`document.querySelector('aside button').click()`)
   await sleep(9000)

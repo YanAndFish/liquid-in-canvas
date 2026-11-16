@@ -22,12 +22,6 @@
   <div class="label" id="label"></div>
 </div>
 <script type="module">
-  /**
-   * 融合检查：厚方块（200 × 200，半厚度 60，圆角比倒角窄）与调参入口按钮，复现按钮拖到方块旁边、角上和中间的画面。
-   *
-   * 查询参数：`optics` 选择光路（profile / hybrid / raymarch），`x`、`y` 是入口按钮左上角的视口坐标，
-   * `cache=0` 关闭混合光路的折射场缓存。按钮可以直接拖动，面板里也可以切换光路。
-   */
   import { mountLiquidGlass } from 'liquid-in-canvas'
   import { createGlassTuner } from 'liquid-in-canvas/tuner'
 

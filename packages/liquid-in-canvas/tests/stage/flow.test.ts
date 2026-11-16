@@ -23,7 +23,6 @@ function rectOf(flow: LiquidFlow) {
   return out
 }
 
-/** 以 120 Hz 推进，返回每帧的矩形。 */
 function run(flow: LiquidFlow, seconds: number) {
   const frames = []
   for (let t = 0; t < seconds; t += 1 / 120) {
@@ -121,7 +120,6 @@ describe('液体迁移', () => {
     let top = 600
     let lag = 0
     let tailAngle = 0
-    // 以 1500 像素每秒朝右上方拖动半秒，指针事件 60 Hz、画面 120 Hz。
     for (let frame = 0; frame < 60; frame++) {
       if (frame % 2 === 0) {
         left += 1500 / 60 * 0.6
@@ -138,7 +136,6 @@ describe('液体迁移', () => {
       }
     }
     expect(lag).toBeLessThan(20)
-    // 拖动方向是 (0.6, -0.8)，拖尾在相反方向 (-0.6, 0.8)。
     expect(tailAngle).toBeCloseTo(Math.atan2(0.8, -0.6), 1)
     for (let frame = 0; frame < 360; frame++)
       flow.advance(1 / 120)

@@ -3,7 +3,6 @@ import { colorLuminance, cssGlassProperties, CssGlassStage, FALLBACK_MIN_BLUR, F
 import { getGlassDefaults, resetGlassDefaults, setGlassDefaults } from '../../src/liquid-glass/defaults'
 import { parseGlassOptions } from '../../src/liquid-glass/options'
 
-/** MutationObserver 的回调在微任务中执行。 */
 function flush(): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, 0))
 }
@@ -48,7 +47,6 @@ describe('cssGlassProperties', () => {
   })
 })
 
-/** 十六进制颜色的相对亮度。 */
 function hexLuminance(hex: string): number {
   const value = Number.parseInt(hex.slice(1), 16)
   return colorLuminance(`rgb(${value >> 16 & 255}, ${value >> 8 & 255}, ${value & 255})`)!

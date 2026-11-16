@@ -18,7 +18,6 @@ function options(attributes: Record<string, string> = {}) {
   return parseGlassOptions(element, 'dark')
 }
 
-/** 让 jsdom 看起来像支持把 SVG 滤镜用作背景滤镜的 Chromium。 */
 function stubChromium(): void {
   vi.stubGlobal('CSS', {
     supports: (property: string, value: string) => property === 'backdrop-filter' && value.startsWith('url('),
@@ -33,7 +32,6 @@ function stubChromium(): void {
   })
 }
 
-/** jsdom 没有二维画布，这里提供只记录像素、不真正绘制的替身。 */
 function stubCanvas(): { images: ImageData[] } {
   const images: ImageData[] = []
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
@@ -55,7 +53,6 @@ function stubCanvas(): { images: ImageData[] } {
   return { images }
 }
 
-/** jsdom 不做布局，这里给元素一个固定的布局尺寸。 */
 function sized(width: number, height: number): HTMLElement {
   const element = document.createElement('div')
   element.setAttribute('data-liquid-glass', '')
@@ -84,7 +81,6 @@ describe('supportsSvgBackdropFilter', () => {
   it('只在 Chromium 内核上启用', () => {
     stubChromium()
     expect(supportsSvgBackdropFilter()).toBe(true)
-    // 能解析写法但不是 Chromium 内核的浏览器不启用。
     vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 Version/26.0 Safari/605.1.15' })
     expect(supportsSvgBackdropFilter()).toBe(false)
     vi.stubGlobal('navigator', {
@@ -105,14 +101,12 @@ describe('refractionShape', () => {
     const pill = refractionShape(options({ 'data-glass-radius': '999' }), 160, 44)!
     expect(wide.offset).toBeGreaterThan(pill.offset)
     expect(pill.band).toBeLessThanOrEqual(22)
-    // 圆角不超过短边的一半。
     expect(pill.radius).toEqual([22, 22, 22, 22])
   })
 
   it('没有厚度、尺寸过小或过大时不使用滤镜', () => {
     expect(refractionShape(options({ 'data-glass-refraction': '0' }), 200, 60)).toBeNull()
     expect(refractionShape(options(), 4, 60)).toBeNull()
-    // 大面板的滤镜开销过高。
     expect(refractionShape(options(), 360, 620)).toBeNull()
   })
 
@@ -138,23 +132,19 @@ describe('refractionSample', () => {
     expect(edge.y).toBeCloseTo(0)
     expect(inner.x).toBeGreaterThan(0)
     expect(inner.x).toBeLessThan(edge.x)
-    // 右边和下边方向相反。
     expect(refractionSample(shape, 199.5, 40).x).toBeLessThan(-0.8)
     expect(refractionSample(shape, 100, 79.5).y).toBeLessThan(-0.8)
   })
 
   it('圆角处的偏移指向圆心', () => {
-    // 左上角圆心在 (20, 20)，取圆弧 45° 方向上的一点。
     const sample = refractionSample(shape, 20 - 13, 20 - 13)
     expect(sample.x).toBeGreaterThan(0)
     expect(sample.x).toBeCloseTo(sample.y)
   })
 
   it('倒角宽于圆角时，偏移方向跨过对角线连续转过', () => {
-    // 演示页设置面板的尺寸：圆角 26，倒角约 64。
     const panel = refractionShape(options({ 'data-glass-radius': '26' }), 292, 244)!
     expect(panel.band).toBeGreaterThan(panel.radius[0] * 2)
-    // 左上角对角线两侧各 1 像素、深度约 40 的两点：普通的有向距离在这里法线从水平跳到竖直。
     const a = refractionSample(panel, 41, 39)
     const b = refractionSample(panel, 39, 41)
     const angle = (s: { x: number, y: number }) => Math.atan2(s.y, s.x)
@@ -163,7 +153,6 @@ describe('refractionSample', () => {
   })
 
   it('倒角不比圆角宽时距离场不变', () => {
-    // 圆角 20、倒角远小于它：45° 方向的偏移仍指向圆心，直边上仍垂直于边。
     expect(shape.band).toBeLessThanOrEqual(shape.radius[0] * 2)
     const straight = refractionSample(shape, 30, 6)
     expect(straight.x).toBeCloseTo(0)
@@ -195,14 +184,12 @@ describe('折射滤镜', () => {
     expect(maps.shine).not.toBeNull()
     expect(images).toHaveLength(3)
     for (const image of images) {
-      // 小控件的贴图是元素的两倍大。
       expect([image.width, image.height]).toEqual([400, 120])
       for (let i = 0; i < image.data.length; i += 4) {
         if (image.data[i] !== image.data[i + 1] || image.data[i] !== image.data[i + 2] || image.data[i + 3] !== 255)
           throw new Error(`pixel ${i / 4} is not opaque gray`)
       }
     }
-    // 水平偏移贴图：左边缘大于中性值，右边缘小于中性值，中心为中性值。
     const row = 60 * 400 * 4
     expect(images[0]!.data[row]).toBeGreaterThan(200)
     expect(images[0]!.data[row + 399 * 4]).toBeLessThan(55)
@@ -299,7 +286,6 @@ describe('带折射的回退', () => {
     const root = document.createElement('div')
     root.append(sized(200, 60))
     document.body.append(root)
-    // 不支持时请求 svg 得到 css。
     const plain = await mountLiquidGlass({ root, mode: 'svg' })
     expect(plain.mode).toBe('css')
     plain.dispose()
@@ -313,7 +299,6 @@ describe('带折射的回退', () => {
     expect(auto.mode).toBe('svg')
     expect(modes).toEqual(['svg'])
     auto.dispose()
-    // 明确指定 css 时不使用滤镜。
     const css = await mountLiquidGlass({ root, mode: 'css' })
     expect(css.mode).toBe('css')
     css.dispose()

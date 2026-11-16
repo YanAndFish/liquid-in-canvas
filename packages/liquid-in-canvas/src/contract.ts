@@ -1,15 +1,3 @@
-/**
- * 页面与渲染舞台之间的 DOM 约定。
- *
- * 页面用这些属性声明元素在舞台中的角色；舞台只认这些钩子，
- * 不依赖具体组件的类名或 ID。新增约定时在此登记，并同步 docs/ARCHITECTURE.md。
- */
-
-/**
- * 约定属性取这个值时视为不存在。JSX 与 Vue 模板会把 `false` 渲染成字符串 `"false"`，
- * 这样 `data-liquid-glass={enabled}` 可以直接按布尔值开关。
- * @since 0.3.0
- */
 export const ATTR_OFF = 'false'
 
 /** 声明一块液态玻璃。参数使用 `data-glass-*`，见 `liquid-glass/options.ts`。 */

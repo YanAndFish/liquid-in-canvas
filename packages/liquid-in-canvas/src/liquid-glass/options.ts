@@ -12,7 +12,6 @@ export type GlassRadius = readonly [number, number, number, number]
  */
 export type GlassMorphContent = 'static' | 'clip' | 'follow'
 
-/** 所有会影响玻璃参数的属性名，供属性监听使用。 */
 export const GLASS_OPTION_ATTRS = [
   'data-glass-layer',
   'data-glass-fusion',
@@ -109,13 +108,8 @@ export interface GlassOptions {
 
 const SCOPE_SELECTOR = attr(GLASS_SCOPE_ATTR)
 
-/** 作用域不向下传递的参数：迁移名字标识单块玻璃，传下去会让作用域里的玻璃全都同名。 */
 const UNSCOPED = new Set<string>(['data-glass-morph'])
 
-/**
- * 玻璃参数的来源：先看元素自身，再由近及远看外围的 `[data-glass-scope]`。
- * 元素自身也带 `data-glass-scope` 时，它的属性已经在第一步读到。
- */
 export class GlassAttributeSource {
   private readonly element: HTMLElement
   private readonly scopes: HTMLElement[] = []
@@ -209,10 +203,6 @@ function parseAnchor(raw: string | null): string | null {
   return raw?.trim() || null
 }
 
-/**
- * 液体迁移：不写或 `"false"` 关闭；空值或 `"true"`（JSX 里不写值时得到的字符串）只对自身生效；
- * 其他值是迁移的名字。
- */
 export function parseMorph(raw: string | null): string | null {
   const value = raw?.trim()
   if (value === undefined || value.toLowerCase() === ATTR_OFF)
@@ -234,10 +224,6 @@ function parseMaterialize(raw: string | null): boolean {
   return value !== 'none' && value !== ATTR_OFF
 }
 
-/**
- * 读取元素的玻璃参数。元素自身未声明的属性取外围作用域（`data-glass-scope`）的值，
- * 仍未声明时取 `defaults`，缺省为当前的全局默认值，见 `setGlassDefaults()`。
- */
 export function parseGlassOptions(
   element: HTMLElement,
   theme: GlassTheme,

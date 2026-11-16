@@ -28,25 +28,20 @@ describe('体积着色器', () => {
     const body = /fn glass_distance\(p: vec3f\) -> f32 \{([^}]*)\}/.exec(code)?.[1] ?? ''
     expect(body).toContain('glass_body(p.xy)')
     expect(body.match(/glass_section\(/g)).toHaveLength(1)
-    // 不再逐成员求三维实体后合并：倒角会在连接处相交出折痕。
     expect(code).not.toContain('glass_solid')
-    // 截面参数与外观都由较厚成员主导：按顶面次序依次并入，权重只看较厚成员轮廓附近的距离。
     const fused = /fn glass_body\(xy: vec2f\) -> Body \{([\s\S]*?)\n\}/.exec(code)?.[1] ?? ''
     const material = /fn glass_material\(p: vec3f\) -> Material \{([\s\S]*?)\n\}/.exec(code)?.[1] ?? ''
     for (const part of [fused, material]) {
       expect(part).toContain('fusion_order()')
       expect(part).toContain('fusion_ramp(dist[index], min(m.depth.z, reach) * (1.0 + m.extra.w))')
     }
-    // 平面平滑合并的权重只用来合并距离与裁剪，不再混合厚度。
     expect(fused).not.toMatch(/b\.half_depth = mix\([^)]*, h\)/)
-    // 每名成员的轮廓距离只算一次。
     expect(fused.match(/glass_outline\(/g)).toHaveLength(3)
   })
 
   it('斜着走的出射光线按方向缩小步长，竖直的入射光线与到达表面的判断仍用原值', () => {
     const code = createVolumeShader(2)
     expect(code).toContain('return vec2f(d, d / (abs(direction.z) + b.lipschitz * length(direction.xy)));')
-    // 截面对高度的导数不超过 1：竖直的入射光线按原距离前进。
     const entry = /fn glass_entry\(xy: vec2f\) -> vec4f \{([\s\S]*?)\n\}/.exec(code)?.[1] ?? ''
     expect(entry).toContain('let d = glass_distance(p);')
     expect(entry).toContain('max(d * 0.85, 0.025)')
@@ -54,7 +49,6 @@ describe('体积着色器', () => {
     expect(exit).toContain('let d = glass_march(p, direction);')
     expect(exit).toContain('if (d.x > -0.025)')
     expect(exit).toContain('max(-d.y * 0.85, 0.035)')
-    // 法线仍按原距离场的有限差分求。
     expect(code).toMatch(/fn glass_normal[\s\S]*?glass_distance\(p \+ vec3f\(e, 0\.0, 0\.0\)\)/)
   })
 
@@ -64,7 +58,6 @@ describe('体积着色器', () => {
     expect(code).toContain('order[select(0, 1, t1 < t0) + select(0, 1, t2 < t0)] = 0;')
     expect(code).toContain('order[select(0, 1, t0 <= t1) + select(0, 1, t2 < t1)] = 1;')
     expect(code).toContain('order[select(0, 1, t0 <= t2) + select(0, 1, t1 <= t2)] = 2;')
-    // 只有一名成员时不需要排序。
     expect(createVolumeShader(1)).toContain('order[0] = 0;')
   })
 
@@ -80,12 +73,9 @@ describe('体积着色器', () => {
     for (const part of [fused, field, shadow]) {
       expect(part).toContain('smooth_order()')
       expect(part).toContain('let k = max(m.depth.z * 2.0, 0.001);')
-      // 不再取“之前成员的最大融合距离与自己的较小值”：融合距离很小的拖尾排在前面时，按钮会按大的融合距离与它合并、整圈鼓出去。
       expect(part).not.toContain('min(fusion, m.depth.z)')
     }
-    // 剖面光学的外法向随距离一起合并。
     expect(field).toContain('f.gradient = mix(grads[index], f.gradient, h);')
-    // 只有一名成员时直接用它的距离。
     expect(createVolumeShader(1)).toContain('distance = d0;')
   })
 

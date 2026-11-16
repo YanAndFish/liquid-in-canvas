@@ -14,7 +14,6 @@ interface Member {
   bevel?: number
 }
 
-/** 按 `Member` 的布局写几名成员，返回 uniform 数组。 */
 function members(list: Member[]): Float32Array {
   const data = new Float32Array(list.length * VOLUME_MEMBER_FLOATS)
   list.forEach((member, i) => {
@@ -35,7 +34,6 @@ function members(list: Member[]): Float32Array {
 const proximity = (data: Float32Array, i: number): number => data[i * VOLUME_MEMBER_FLOATS + MEMBER_PROXIMITY]!
 
 describe('融合成员的接近程度', () => {
-  /** 200 × 200 的厚方块，与下方间距 `gap` 的 64 像素圆形调参按钮。 */
   const pair = (gap: number): Float32Array => members([
     {
       x: 180,
@@ -59,11 +57,9 @@ describe('融合成员的接近程度', () => {
     const values = [40, 32, 24, 16, 8, 0, -10].map((gap) => {
       const data = pair(gap)
       writeFusionProximity(data, 0, 2)
-      // 较薄的圆形没有更薄的成员可以让给。
       expect(proximity(data, 1)).toBe(0)
       return proximity(data, 0)
     })
-    // 间距不小于两者较小的融合距离（32）时为 0：分组前后画面不跳变。
     expect(values[0]).toBe(0)
     expect(values[1]).toBe(0)
     expect(values[3]).toBeCloseTo(0.5)
@@ -139,7 +135,6 @@ describe('融合成员的接近程度', () => {
   })
 
   it('取与各个较薄成员的最大值', () => {
-    // 厚方块两侧各有一个较薄的圆形：右边隔着 18 像素，左边隔着 14 像素；两个圆形相距很远。
     const data = members([
       {
         x: 0,
@@ -169,7 +164,6 @@ describe('融合成员的接近程度', () => {
     expect(near).toBeLessThan(1)
     expect(proximity(data, 1)).toBe(0)
     expect(proximity(data, 2)).toBe(0)
-    // 右边的圆形贴上来之后取它的 1。
     data[VOLUME_MEMBER_FLOATS] = 132
     writeFusionProximity(data, 0, 3)
     expect(proximity(data, 0)).toBe(1)
@@ -195,9 +189,7 @@ describe('拐角里截面查表不准确的成员', () => {
     expect(cornered(48, 48)).toBe(false)
     expect(cornered(48.2, 48.5)).toBe(false)
     expect(cornered(60, 48)).toBe(false)
-    // 胶囊：圆角就是短边的一半，倒角不超过它。
     expect(cornered(999, 18, 146, 38)).toBe(false)
-    // 倒角按短边的一半限制：短边 40 的控件倒角最多 20。
     expect(cornered(24, 48, 100, 20)).toBe(false)
   })
 

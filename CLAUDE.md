@@ -13,7 +13,7 @@ tools/eslint-plugin-hot     Repo-internal ESLint plugin enforcing zero-allocatio
 docs                        Design notes, visual references, performance records
 ```
 
-`docs/ARCHITECTURE.md` is the authoritative, detailed architecture reference (frame pipeline, GPU structure, resolution, render order, DOM contract). Read it before non-trivial changes to the renderer. README, docs and code comments are written in Chinese; follow that convention when editing them.
+`docs/ARCHITECTURE.md` is the authoritative, detailed architecture reference (frame pipeline, GPU structure, resolution, render order, DOM contract). Read it before non-trivial changes to the renderer. README and docs are written in Chinese. Code carries no explanatory comments: only JSDoc on the public API (exports of the package entry points and their members, in Chinese, with `@since` on additions) and directive comments (`eslint-disable … -- reason`, `@ts-*`, `/* wgsl */`). Put rationale in `docs/ARCHITECTURE.md` instead.
 
 ## Commands
 

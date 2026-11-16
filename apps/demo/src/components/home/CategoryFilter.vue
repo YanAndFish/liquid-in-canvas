@@ -30,7 +30,6 @@ const options = computed(() => [
   })),
 ])
 
-/** 将商品数量显示为两位数。 */
 function pad(value: number) {
   return String(value).padStart(2, '0')
 }
