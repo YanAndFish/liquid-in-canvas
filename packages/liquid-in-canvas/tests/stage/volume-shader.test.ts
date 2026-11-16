@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BLUR_SIGMAS } from '../../src/liquid-glass/gaussian'
 import { createHybridVolumeShader } from '../../src/liquid-glass/volume-hybrid-shader'
+import { createProfileVolumeShader } from '../../src/liquid-glass/volume-profile-shader'
 import { createVolumeShader, VOLUME_MEMBER_FLOATS, VOLUME_TEXTURES } from '../../src/liquid-glass/volume-shader'
 
 describe('体积着色器', () => {
@@ -65,6 +66,27 @@ describe('体积着色器', () => {
     expect(code).toContain('order[select(0, 1, t0 <= t2) + select(0, 1, t1 <= t2)] = 2;')
     // 只有一名成员时不需要排序。
     expect(createVolumeShader(1)).toContain('order[0] = 0;')
+  })
+
+  it('轮廓按融合距离从大到小平滑合并，每名成员用自己的融合距离，与成员在组里的顺序无关', () => {
+    const code = createVolumeShader(3)
+    expect(code).toContain('fn smooth_order() -> array<i32, 3>')
+    expect(code).toContain('let t0 = -u.members[0].depth.z;')
+    expect(code).toContain('order[select(0, 1, t1 < t0) + select(0, 1, t2 < t0)] = 0;')
+    const profile = createProfileVolumeShader(3)
+    const field = /fn glass_field\(xy: vec2f\) -> Field \{([\s\S]*?)\n\}/.exec(profile)?.[1] ?? ''
+    const shadow = /fn glass_projection\(xy: vec2f\) -> f32 \{([\s\S]*?)\n\}/.exec(profile)?.[1] ?? ''
+    const fused = /fn glass_body\(xy: vec2f\) -> Body \{([\s\S]*?)\n\}/.exec(code)?.[1] ?? ''
+    for (const part of [fused, field, shadow]) {
+      expect(part).toContain('smooth_order()')
+      expect(part).toContain('let k = max(m.depth.z * 2.0, 0.001);')
+      // 不再取“之前成员的最大融合距离与自己的较小值”：融合距离很小的拖尾排在前面时，按钮会按大的融合距离与它合并、整圈鼓出去。
+      expect(part).not.toContain('min(fusion, m.depth.z)')
+    }
+    // 剖面光学的外法向随距离一起合并。
+    expect(field).toContain('f.gradient = mix(grads[index], f.gradient, h);')
+    // 只有一名成员时直接用它的距离。
+    expect(createVolumeShader(1)).toContain('distance = d0;')
   })
 
   it('混合光路的投影距离与三维求交用同一个合并截面', () => {

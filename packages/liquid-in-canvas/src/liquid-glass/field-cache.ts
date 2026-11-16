@@ -15,12 +15,17 @@ export const FIELD_MAX_MEMBERS = 8
 export const FIELD_ENTRIES = 12
 /** 每名成员的几何特征占用的浮点数个数：相对位置、半宽高、圆角、厚度与融合、裁剪、色散、截面参数。 */
 export const FIELD_SIGNATURE_FLOATS = 20
-/** 几何特征的比较容差（CSS 像素）。弹簧收敛时的尾巴小于它，不会一再推迟求交。 */
+/** 几何特征的比较容差（CSS 像素）。 */
 export const FIELD_TOLERANCE = 0.01
-/** 几何保持不变这么久之后才求交并写入缓存，毫秒。期间这一组按剖面光学查表。 */
-export const FIELD_SETTLE_MS = 120
+/**
+ * 长度类几何特征一次变化不超过它（CSS 像素）时算小幅漂移：弹簧收敛的尾巴、很慢的拖动。
+ * 缓存有效时原地重新求交，不作废、不淡出，也不推迟求交。
+ */
+export const FIELD_DRIFT = 0.5
+/** 几何没有明显变化这么久之后才求交并写入缓存，毫秒。期间这一组按剖面光学查表。 */
+export const FIELD_SETTLE_MS = 50
 /** 从查表的画面淡入求交结果的时间，毫秒。 */
-export const FIELD_FADE_IN_MS = 160
+export const FIELD_FADE_IN_MS = 100
 /** 几何开始变化后，从上一次的求交结果淡出到查表的时间，毫秒。 */
 export const FIELD_FADE_OUT_MS = 80
 /** 两帧之间计入淡化的最长时间，毫秒。画面静止很久之后的第一帧不会直接跳到终点。 */
@@ -59,10 +64,12 @@ export interface FieldEntry {
   frame: number
   /** 最近一次出现的时间，毫秒。 */
   seenAt: number
-  /** 几何特征最近一次变化的时间，毫秒。 */
+  /** 几何特征最近一次明显变化（超过 `FIELD_DRIFT`）的时间，毫秒。 */
   changedAt: number
   /** 求交结果（缓存，或没有缓存时的逐帧求交）对应当前的几何。 */
   live: boolean
+  /** 缓存有效，但几何在那之后小幅漂移过，要按当前的几何重新求交。 */
+  stale: boolean
   /** 求交结果在画面里的比例：0 是查表的画面，1 是求交的画面。 */
   fade: number
   /** 第一名成员的中心在本帧视口中的位置。 */
@@ -98,6 +105,7 @@ export function createFieldEntry(): FieldEntry {
     seenAt: 0,
     changedAt: 0,
     live: false,
+    stale: false,
     fade: 0,
     anchorX: 0,
     anchorY: 0,

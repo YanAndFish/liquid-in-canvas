@@ -155,7 +155,7 @@ export interface SurfaceInit {
 
 /** 创建一块玻璃的状态。每帧使用的对象在这里一次创建。 */
 export function createSurface(init: SurfaceInit): GlassSurface {
-  return {
+  const surface: GlassSurface = {
     ...init,
     flow: null,
     snapFlow: true,
@@ -245,6 +245,9 @@ export function createSurface(init: SurfaceInit): GlassSurface {
     backdropOccluders: [],
     backdropOccluderCount: 0,
   }
+  // 拖尾是本体流出来的一部分，厚度与截面跟本体一致（见 `VolumeSurface.depthFrom`）。
+  surface.tail.depthFrom = surface.volume
+  return surface
 }
 
 /** 一个祖先元素在本帧的矩形与透明度，同一帧内被多块玻璃共用。 */

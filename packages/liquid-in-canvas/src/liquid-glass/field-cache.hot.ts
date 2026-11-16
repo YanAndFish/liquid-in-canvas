@@ -8,6 +8,7 @@ import {
   createFieldEntry,
   createFieldTextures,
   FIELD_CLIP_FAR,
+  FIELD_DRIFT,
   FIELD_ENTRIES,
   FIELD_FADE_IN_MS,
   FIELD_FADE_OUT_MS,
@@ -34,12 +35,23 @@ export interface FieldGroup {
   readonly count: number
 }
 
-/** 写入一项几何特征，返回它是否超出容差地变了。没有写过的位置是 NaN，一定算变化。 */
-function put(signature: Float32Array, index: number, value: number): boolean {
-  if (Math.abs(signature[index]! - value) <= FIELD_TOLERANCE)
-    return false
+/** 几何特征没有变化、小幅漂移与明显变化，见 `put()`。 */
+const STILL = 0
+const DRIFT = 1
+const MOVED = 2
+
+/**
+ * 写入一项几何特征，返回变化的程度：不超过容差是 `STILL`，不超过 `drift` 是 `DRIFT`，更大是 `MOVED`。
+ * 没有写过的位置是 NaN，一定算 `MOVED`。没有长度单位的特征（色散、曲线指数）传 0，任何变化都算 `MOVED`。
+ */
+function put(signature: Float32Array, index: number, value: number, drift: number): number {
+  const delta = Math.abs(signature[index]! - value)
+  if (delta <= FIELD_TOLERANCE)
+    return STILL
   signature[index] = value
-  return true
+  return delta <= drift
+    ? DRIFT
+    : MOVED
 }
 
 /** 一条裁剪边在几何特征里的值：切进玻璃时是它的相对位置，否则是固定的远处。 */
@@ -55,10 +67,12 @@ function edge(near: boolean, position: number, far: number): number {
  * 每个条目对应一组玻璃（按成员编号认），记录这组成员相对第一名成员的几何特征。每帧写完
  * 这一组的 uniform 之后 `track()` 比较特征：
  *
- * - 有变化（成员相对运动、尺寸、圆角、厚度、截面、按压与材质化、裁剪切进玻璃的位置、色散）：
+ * - 明显变化（成员相对运动、尺寸、圆角、厚度、截面、按压与材质化、裁剪切进玻璃的位置、色散）：
  *   缓存作废，这一组改用剖面管线查表，上一次的求交结果在 `FIELD_FADE_OUT_MS` 里淡出。
- * - 保持不变满 `FIELD_SETTLE_MS`：`prepare()` 安排求交一次、写进缓存，之后用读缓存的管线，
+ * - 没有明显变化满 `FIELD_SETTLE_MS`：`prepare()` 安排求交一次、写进缓存，之后用读缓存的管线，
  *   求交结果在 `FIELD_FADE_IN_MS` 里淡入。整组平移（随页面滚动）不改变特征，缓存一直有效。
+ * - 长度类特征每次变化不超过 `FIELD_DRIFT`（弹簧收敛的尾巴、很慢的拖动）：不算明显变化，
+ *   缓存有效时在同一帧按新的几何重新求交，不淡出；停下之后不必等尾巴完全收敛才对上求交的画面。
  *
  * 缓存只覆盖可能落在求交档的范围：两名成员都在“平滑合并范围 + 横向位移”之内的地方，
  * 以及裁剪边切进玻璃的一条。纹素与着色像素对齐，按着色倍率分配；倍率变化后重新求交。
@@ -131,7 +145,7 @@ export class FieldCache {
     entry.anchorX = anchorX
     entry.anchorY = anchorY
     const signature = entry.signature
-    let changed = false
+    let change = STILL
     let s = 0
     for (let i = 0; i < count; i++) {
       const m = members + i * VOLUME_MEMBER_FLOATS
@@ -140,13 +154,13 @@ export class FieldCache {
       const halfWidth = data[m + 2]!
       const halfHeight = data[m + 3]!
       const halfDepth = data[m + 8]!
-      changed = put(signature, s++, x - anchorX) || changed
-      changed = put(signature, s++, y - anchorY) || changed
-      changed = put(signature, s++, halfWidth) || changed
-      changed = put(signature, s++, halfHeight) || changed
+      change = Math.max(change, put(signature, s++, x - anchorX, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, y - anchorY, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, halfWidth, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, halfHeight, FIELD_DRIFT))
       // 圆角、半厚度、底面高度、融合距离。
       for (let k = 4; k < 11; k++)
-        changed = put(signature, s++, data[m + k]!) || changed
+        change = Math.max(change, put(signature, s++, data[m + k]!, FIELD_DRIFT))
       // 裁剪边离玻璃足够远时不改变距离场（与 `writeVolumeGroup` 判断裁剪是否切进玻璃的条件相同），
       // 记成固定的远处：玻璃在裁剪容器里滚动时缓存仍然有效。
       const pad = hybridLateral(profiles.reachOf(data[m + 28]!), halfDepth) + halfDepth + HYBRID_CLIP_PAD
@@ -154,19 +168,26 @@ export class FieldCache {
       const clipTop = data[m + 13]!
       const clipRight = data[m + 14]!
       const clipBottom = data[m + 15]!
-      changed = put(signature, s++, edge(clipLeft > x - halfWidth - pad, clipLeft - anchorX, -FIELD_CLIP_FAR)) || changed
-      changed = put(signature, s++, edge(clipTop > y - halfHeight - pad, clipTop - anchorY, -FIELD_CLIP_FAR)) || changed
-      changed = put(signature, s++, edge(clipRight < x + halfWidth + pad, clipRight - anchorX, FIELD_CLIP_FAR)) || changed
-      changed = put(signature, s++, edge(clipBottom < y + halfHeight + pad, clipBottom - anchorY, FIELD_CLIP_FAR)) || changed
+      change = Math.max(change, put(signature, s++, edge(clipLeft > x - halfWidth - pad, clipLeft - anchorX, -FIELD_CLIP_FAR), FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, edge(clipTop > y - halfHeight - pad, clipTop - anchorY, -FIELD_CLIP_FAR), FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, edge(clipRight < x + halfWidth + pad, clipRight - anchorX, FIELD_CLIP_FAR), FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, edge(clipBottom < y + halfHeight + pad, clipBottom - anchorY, FIELD_CLIP_FAR), FIELD_DRIFT))
       // 色散决定红蓝两条光路。
-      changed = put(signature, s++, data[m + 17]!) || changed
-      // 倒角的宽度与高度、曲线指数、底面倒角。
-      for (let k = 24; k < 28; k++)
-        changed = put(signature, s++, data[m + k]!) || changed
+      change = Math.max(change, put(signature, s++, data[m + 17]!, 0))
+      // 倒角的宽度与高度、曲线指数（没有长度单位）、底面倒角。
+      change = Math.max(change, put(signature, s++, data[m + 24]!, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, data[m + 25]!, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, data[m + 26]!, 0))
+      change = Math.max(change, put(signature, s++, data[m + 27]!, FIELD_DRIFT))
     }
-    if (changed) {
+    if (change === MOVED) {
       entry.live = false
+      entry.stale = false
       entry.changedAt = this.now
+    }
+    else if (change === DRIFT) {
+      // 弹簧收敛的尾巴、慢慢拖动：缓存不作废也不淡出，本帧按新的几何重新求交（见 prepare）。
+      entry.stale = true
     }
     const step = Math.min(Math.max(this.now - entry.seenAt, 0), FIELD_FADE_STEP_MS)
     entry.seenAt = this.now
@@ -179,29 +200,38 @@ export class FieldCache {
       : fade < 0.001
         ? 0
         : fade
-    if (!entry.live || entry.fade < 1)
+    if (!entry.live || entry.stale || entry.fade < 1)
       this.settling = true
     return entry
   }
 
   /**
-   * 在主绘制里调用：几何静止够久、上一次的结果已经淡出之后，为这一组准备缓存。
+   * 在主绘制里调用：几何静止够久之后，或者缓存有效而几何小幅漂移时，为这一组准备缓存。
    * `ratio` 是绘制目标每个 CSS 像素的像素数。返回 true 时调用方要把求交的绘制加入 `list`；
    * 一帧最多写一组，其余的顺延到下一帧。
    */
   prepare(entry: FieldEntry, data: Float32Array, group: number, count: number, profiles: ReachSource, ratio: number): boolean {
+    if (this.baking !== null)
+      return false
     if (entry.live) {
       // 着色倍率变了（自适应降级、分辨率设置）：纹素不再与像素对齐，重新求交。
       if (entry.textures !== null && Math.abs(entry.ratio - ratio) > 1e-4) {
         entry.live = false
+        entry.stale = false
         entry.changedAt = this.now
         this.settling = true
+        return false
       }
+      // 几何只是小幅漂移：原地重新求交，淡化进度不变。
+      if (!entry.stale)
+        return false
+    }
+    else if (this.now - entry.changedAt < FIELD_SETTLE_MS) {
       return false
     }
-    if (entry.fade > 0 || this.now - entry.changedAt < FIELD_SETTLE_MS || this.baking !== null)
-      return false
+    // 上一次的结果还没淡完也直接覆盖：新结果对应当前的几何，从当前的比例接着淡入。
     entry.live = true
+    entry.stale = false
     this.measure(data, group, count, profiles)
     if (this.right <= this.left || this.bottom <= this.top) {
       // 没有需要求交的范围。
@@ -426,6 +456,7 @@ export class FieldCache {
       // 它再出现时从查表开始，静止后重新求交。
       this.drop(victim)
       victim.live = false
+      victim.stale = false
       victim.fade = 0
       victim.changedAt = this.now
     }
@@ -450,6 +481,7 @@ export class FieldCache {
     entry.used = false
     entry.count = 0
     entry.live = false
+    entry.stale = false
     entry.fade = 0
   }
 }
