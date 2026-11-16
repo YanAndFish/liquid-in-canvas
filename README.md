@@ -131,7 +131,7 @@ Release with `pnpm release`: [bumpp](https://github.com/antfu-collective/bumpp) 
 
 ## Known issues
 
-- At high pixel ratios the full-page snapshot alone can exceed the frame budget. Adaptive quality lowers the canvas resolution last, which softens text. See the performance records on [fill rate](docs/performance/2026-11-13-fill-rate/README.md) and [adaptive canvas resolution](docs/performance/2026-11-15-adaptive-canvas/README.md); not yet measured on real devices.
+- At high pixel ratios, the browser drawing the page into the canvas can exceed the frame budget on its own (about 1 ms per megapixel per frame on an M1, even for a blank page). By default, adaptive quality keeps the canvas resolution so text stays sharp, and the frame rate drops below 60. To trade text sharpness for frame rate, set `minPixelRatio`. See the performance records on [fill rate](docs/performance/2026-11-13-fill-rate/README.md) and [keeping text sharp](docs/performance/2026-11-16-text-floor/README.md); not yet measured on real devices.
 - The SVG fallback only works in Chromium, and glass larger than 120,000 CSS px² gets blur only.
 - The first scroll after a cold start can drop frames while the browser rasterizes for the first time.
 

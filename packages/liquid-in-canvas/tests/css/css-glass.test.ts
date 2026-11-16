@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { cssGlassProperties, CssGlassStage, GLASS_CSS_ATTR } from '../../src/css/CssGlassStage'
+import { colorLuminance, cssGlassProperties, CssGlassStage, FALLBACK_MIN_BLUR, FALLBACK_MIN_VEIL, GLASS_CSS_ATTR, legibleOptions } from '../../src/css/CssGlassStage'
 import { getGlassDefaults, resetGlassDefaults, setGlassDefaults } from '../../src/liquid-glass/defaults'
 import { parseGlassOptions } from '../../src/liquid-glass/options'
 
@@ -48,6 +48,37 @@ describe('cssGlassProperties', () => {
   })
 })
 
+/** 十六进制颜色的相对亮度。 */
+function hexLuminance(hex: string): number {
+  const value = Number.parseInt(hex.slice(1), 16)
+  return colorLuminance(`rgb(${value >> 16 & 255}, ${value >> 8 & 255}, ${value & 255})`)!
+}
+
+describe('legibleOptions', () => {
+  it('模糊与衬底不低于下限，已经足够的参数不变', () => {
+    const regular = parseGlassOptions(glass(), 'dark')
+    expect(legibleOptions(regular, 'rgb(255, 255, 255)', 'dark')).toBe(regular)
+    const clear = parseGlassOptions(glass({ 'data-glass-variant': 'clear' }), 'dark')
+    const legible = legibleOptions(clear, 'rgb(255, 255, 255)', 'dark')
+    expect(legible.blur).toBe(FALLBACK_MIN_BLUR)
+    expect(legible.tintAlpha).toBe(FALLBACK_MIN_VEIL)
+  })
+
+  it('衬底按文字明暗选择：白字配深色，深色字配浅色', () => {
+    const clear = parseGlassOptions(glass({ 'data-glass-variant': 'clear' }), 'light')
+    const onWhiteText = legibleOptions(clear, 'rgb(255, 255, 255)', 'light')
+    const onDarkText = legibleOptions(clear, 'rgb(25, 32, 41)', 'light')
+    expect(hexLuminance(onWhiteText.tint)).toBeLessThan(0.05)
+    expect(hexLuminance(onDarkText.tint)).toBeGreaterThan(0.8)
+  })
+
+  it('文字颜色无法解析时按主题选择衬底', () => {
+    const clear = parseGlassOptions(glass({ 'data-glass-variant': 'clear' }), 'dark')
+    expect(legibleOptions(clear, null, 'dark').tint).not.toBe(legibleOptions(clear, null, 'light').tint)
+    expect(colorLuminance('color(display-p3 1 1 1)')).toBeNull()
+  })
+})
+
 describe('cssGlassStage', () => {
   it('为已有的玻璃写入样式并安装样式表', () => {
     const element = glass()
@@ -73,10 +104,10 @@ describe('cssGlassStage', () => {
   it('跟随后来加入、修改和取消声明的元素', async () => {
     stage = new CssGlassStage({ root })
     stage.start()
-    const element = glass({ 'data-glass-blur': '6' })
+    const element = glass({ 'data-glass-blur': '14' })
     root.append(element)
     await flush()
-    expect(element.style.getPropertyValue('--lg-blur')).toBe('6px')
+    expect(element.style.getPropertyValue('--lg-blur')).toBe('14px')
 
     element.setAttribute('data-glass-blur', '30')
     await flush()
@@ -90,7 +121,7 @@ describe('cssGlassStage', () => {
 
   it('全局默认参数变化时更新未单独声明的属性', () => {
     const plain = glass()
-    const explicit = glass({ 'data-glass-blur': '6' })
+    const explicit = glass({ 'data-glass-blur': '14' })
     root.append(plain, explicit)
     stage = new CssGlassStage({ root })
     stage.start()
@@ -103,7 +134,7 @@ describe('cssGlassStage', () => {
     })
     expect(getGlassDefaults().materials.regular.dark.blur).toBe(40)
     expect(plain.style.getPropertyValue('--lg-blur')).toBe('40px')
-    expect(explicit.style.getPropertyValue('--lg-blur')).toBe('6px')
+    expect(explicit.style.getPropertyValue('--lg-blur')).toBe('14px')
   })
 
   it('主题变化时改用对应的材质', async () => {

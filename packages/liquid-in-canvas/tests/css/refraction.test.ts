@@ -150,6 +150,25 @@ describe('refractionSample', () => {
     expect(sample.x).toBeCloseTo(sample.y)
   })
 
+  it('倒角宽于圆角时，偏移方向跨过对角线连续转过', () => {
+    // 演示页设置面板的尺寸：圆角 26，倒角约 64。
+    const panel = refractionShape(options({ 'data-glass-radius': '26' }), 292, 244)!
+    expect(panel.band).toBeGreaterThan(panel.radius[0] * 2)
+    // 左上角对角线两侧各 1 像素、深度约 40 的两点：普通的有向距离在这里法线从水平跳到竖直。
+    const a = refractionSample(panel, 41, 39)
+    const b = refractionSample(panel, 39, 41)
+    const angle = (s: { x: number, y: number }) => Math.atan2(s.y, s.x)
+    expect(Math.abs(angle(a) - angle(b))).toBeLessThan(0.2)
+    expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeLessThan(0.05)
+  })
+
+  it('倒角不比圆角宽时距离场不变', () => {
+    // 圆角 20、倒角远小于它：45° 方向的偏移仍指向圆心，直边上仍垂直于边。
+    expect(shape.band).toBeLessThanOrEqual(shape.radius[0] * 2)
+    const straight = refractionSample(shape, 30, 6)
+    expect(straight.x).toBeCloseTo(0)
+  })
+
   it('朝向左上光源的边比背光的边亮', () => {
     const top = refractionSample(shape, 100, 0.5).highlight
     const bottom = refractionSample(shape, 100, 79.5).highlight

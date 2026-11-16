@@ -55,7 +55,7 @@ export function rendererFromMount(
   let resolution: StageResolution = {
     ...(current()?.stage?.getResolution() ?? DEFAULT_STAGE_RESOLUTION),
   }
-  let optics: GlassOptics = current()?.stage?.getOptics() ?? 'profile'
+  let optics: GlassOptics = current()?.stage?.getOptics() ?? 'hybrid'
   const svgSupported = supportsSvgBackdropFilter()
   return {
     get mode() {

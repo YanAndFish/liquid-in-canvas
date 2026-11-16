@@ -2,14 +2,15 @@ import type { StageResolution } from './types'
 
 /**
  * 缺省的分辨率限制：画布倍率不超过 3、不限制总像素，文字按设备倍率绘制；
- * 玻璃着色倍率不超过 2；帧率不足时自动降级，画布倍率最低降到 1。
+ * 玻璃着色倍率不超过 2；帧率不足时自动降级，但不降低画布倍率：文字清晰度是底线，
+ * 需要时由接入方用 `minPixelRatio` 显式允许。
  */
 export const DEFAULT_STAGE_RESOLUTION: Readonly<StageResolution> = Object.freeze({
   maxPixelRatio: 3,
   maxPixels: Infinity,
   maxGlassPixelRatio: 2,
   adaptive: true,
-  minPixelRatio: 1,
+  minPixelRatio: Infinity,
 })
 
 interface PixelRatioInput {

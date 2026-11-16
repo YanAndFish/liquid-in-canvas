@@ -320,17 +320,18 @@ describe('渲染方式开关', () => {
     expect(text).toContain('2.00×')
   })
 
-  it('可以禁止自适应降级降低画布倍率', () => {
+  it('自适应降级缺省不降低画布倍率，可以显式允许', () => {
     const renderer = createRenderer()
     create({ renderer })
     tuner.open()
     const box = $<HTMLInputElement>('[data-field="adaptiveCanvas"]')
+    expect(box.checked).toBe(false)
+    setValue(box, true)
+    expect(renderer.setResolution).toHaveBeenCalledWith({ minPixelRatio: 1 })
     expect(box.checked).toBe(true)
     setValue(box, false)
     expect(renderer.setResolution).toHaveBeenCalledWith({ minPixelRatio: Infinity })
     expect(box.checked).toBe(false)
-    setValue(box, true)
-    expect(renderer.setResolution).toHaveBeenCalledWith({ minPixelRatio: 1 })
   })
 
   it('不支持画布的浏览器禁用画布选项', () => {

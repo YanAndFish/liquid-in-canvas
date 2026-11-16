@@ -42,9 +42,11 @@ const renderer: GlassTunerRenderer | null = controller && {
 
 onMounted(() => {
   // 面板插入应用的 DOM 之内，画布模式下随根元素一起进入画布。主题跟随 <html data-theme>。
+  // 第 1 层是顶栏，面板展开时放在第 2 层，拖到顶栏附近也不会与它融合。
   tuner = createGlassTuner({
     container: host.value,
     renderer,
+    layer: 2,
     locale: locale.value,
     hidden: props.disabled,
     zIndex: 44,
