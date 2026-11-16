@@ -1,7 +1,11 @@
+import type { GlassSurface } from '../../src/liquid-glass/surface'
+import type { VolumeGroupPlan } from '../../src/liquid-glass/VolumeGroups.hot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DrawList } from '../../src/frame.hot'
 import { createElementTexture } from '../../src/gpu'
 import { LiquidGlassLayer } from '../../src/liquid-glass/LiquidGlassLayer'
+import { VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from '../../src/liquid-glass/volume-shader'
+import { writeVolumeGroup } from '../../src/liquid-glass/VolumeGroups.hot'
 import { createFakeGpu } from '../helpers/fake-gpu'
 
 /** 创建可以移动位置的玻璃控件。每帧的代码真实运行，GPU 由记录调用的假设备代替。 */
@@ -263,6 +267,73 @@ describe('玻璃内容纹理', () => {
     finally { layer.dispose() }
   })
 
+  // 页面把玻璃属性从旧按钮移到新按钮时，两条变更记录在同一批里，先后取决于框架的更新顺序。
+  for (const order of ['旧按钮先注销', '新按钮先注册'] as const) {
+    it(`激活玻璃换到另一个按钮的那一帧仍然绘制完整的体积（${order}）`, async () => {
+      const { layer, element, anchor, sync } = setup()
+      const frame = (layer as unknown as {
+        frame: {
+          advanceMotion: (seconds: number, pressed: HTMLElement | null, reduced: boolean) => boolean
+          volumes: { groups: { planOf: (surface: unknown) => VolumeGroupPlan | null } }
+        }
+      }).frame
+      /** 本帧画进体积组的这名成员的不透明度（材质化接近零时整块淡出）。 */
+      const drawnOpacity = (surface: GlassSurface) => {
+        const plan = frame.volumes.groups.planOf(surface.volume)
+        if (!plan)
+          return 0
+        const data = new Float32Array(VOLUME_GROUP_FLOATS + VOLUME_MEMBER_FLOATS * plan.count)
+        writeVolumeGroup(data, 0, plan)
+        const index = plan.members.indexOf(surface.volume)
+        return data[VOLUME_GROUP_FLOATS + VOLUME_MEMBER_FLOATS * index + 23]!
+      }
+      try {
+        const first = nestedButton(element, anchor, 6)
+        const second = nestedButton(element, anchor, 90)
+        first.dataset.liquidGlass = ''
+        first.dataset.glassMorph = 'tabs'
+        await flush()
+        sync()
+        for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++)
+          sync()
+        const before = layer.surfaces.find(surface => surface.element === first)!
+        expect(before.materialize.value).toBe(1)
+        expect(drawnOpacity(before)).toBe(1)
+
+        if (order === '旧按钮先注销') {
+          delete first.dataset.liquidGlass
+          second.dataset.glassMorph = 'tabs'
+          second.dataset.liquidGlass = ''
+        }
+        else {
+          second.dataset.glassMorph = 'tabs'
+          second.dataset.liquidGlass = ''
+          delete first.dataset.liquidGlass
+        }
+        await flush()
+        sync()
+        const moved = layer.surfaces.find(surface => surface.element === second)!
+        expect(layer.surfaces.some(surface => surface.element === first)).toBe(false)
+        // 体积从旧按钮接手，已经是完整的玻璃：不重新材质化，这一帧就以原有的不透明度绘制在旧位置附近。
+        expect(moved.flow?.active).toBe(true)
+        expect(moved.volume.left).toBeLessThan(150)
+        expect(moved.materialize.value).toBe(1)
+        expect(drawnOpacity(moved)).toBe(1)
+
+        // 迁移途中的每一帧都画着体积。
+        for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++) {
+          sync()
+          expect(drawnOpacity(moved)).toBeGreaterThan(0.99)
+        }
+        sync()
+        expect(moved.flow?.active).toBe(false)
+        expect(moved.volume.left).toBe(190)
+        expect(drawnOpacity(moved)).toBe(1)
+      }
+      finally { layer.dispose() }
+    })
+  }
+
   it('同名玻璃仍在页面上时，新玻璃从它里面流出来；移除后体积流回它并被吸收', async () => {
     const { layer, element, anchor, sync } = setup()
     const advance = (seconds: number) => (layer as unknown as { frame: { advanceMotion: (s: number, p: null, r: boolean) => boolean } })
@@ -288,6 +359,11 @@ describe('玻璃内容纹理', () => {
       // 从按钮的位置出发，融合距离从接近零开始，两块玻璃不会一起鼓起来。
       expect(grown.volume.left).toBeLessThan(110)
       expect(grown.volume.fusion).toBeLessThan(grown.options.fusion)
+      // 长出来的体积已经是完整的玻璃，内容从按钮的位置展开，而不是从视口原点。
+      expect(grown.materialize.value).toBe(1)
+      expect(grown.revealGrowing).toBe(true)
+      expect(grown.revealX).toBeCloseTo(136, 0)
+      expect(grown.revealClip[0]).toBeCloseTo(106, 0)
       // 按钮下一帧仍在页面上，不算交出体积。
       sync()
       expect(source.handedOver).toBe(false)

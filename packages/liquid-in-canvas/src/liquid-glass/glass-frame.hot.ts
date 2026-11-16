@@ -95,6 +95,10 @@ const REVEAL_SWELL = 0.3
 const REVEAL_SECONDS = 0.45
 /** 目标面积比当前体积大这么多倍时算作展开，内容重新显现。 */
 const GROW_RATIO = 1.2
+/** 本帧由隐藏变为显示时内容如何显现：不显现、原地出现、从交接的起点展开。 */
+const REVEAL_NONE = 0
+const REVEAL_APPEAR = 1
+const REVEAL_GROW = 2
 
 function centerDistance(a: Rect, b: Rect): number {
   return Math.hypot(a.left + a.width / 2 - b.left - b.width / 2, a.top + a.height / 2 - b.top - b.height / 2)
@@ -432,13 +436,15 @@ export class GlassFrame {
     }
 
     const shown = this.shown(element)
+    let reveal = REVEAL_NONE
     if (shown !== surface.shown) {
       surface.shown = shown
       const animate = surface.options.materialize && !host.reducedMotion()
       if (shown) {
         // 出现或由隐藏变为显示：重新材质化。滚动进入视口不会经过这里。
         // 从同名玻璃流出来的体积已经是完整的玻璃，只让内容显现。
-        const handover = surface.flow !== null && surface.flow.active
+        const handover = surface.inherited || (surface.flow !== null && surface.flow.active)
+        surface.inherited = false
         surface.hiding = false
         // 隐藏期间元素可能移动过：直接在新位置出现，不从隐藏前的位置流过去。
         if (!handover && surface.everShown)
@@ -449,7 +455,10 @@ export class GlassFrame {
           : 1
         surface.materialize.velocity = 0
         if (animate) {
-          this.startReveal(surface, handover)
+          // 等本帧的体积算出来再开始：新登记的玻璃此时还没有体积，交接的起点是旧玻璃的位置。
+          reveal = handover
+            ? REVEAL_GROW
+            : REVEAL_APPEAR
           host.startAnimation()
         }
       }
@@ -513,6 +522,8 @@ export class GlassFrame {
       this.flow(surface)
     else
       surface.hasTail = false
+    if (reveal !== REVEAL_NONE)
+      this.startReveal(surface, reveal === REVEAL_GROW)
     surface.hasVolume = visible
     if (visible) {
       const volume = surface.volume
