@@ -8,6 +8,7 @@ export type GlassRadius = readonly [number, number, number, number]
 /**
  * 液体迁移期间玻璃上的 HTML 内容：`static` 停在元素位置，尺寸过渡时随玻璃展开显露；
  * `clip` 停在元素位置并裁剪在体积之内；`follow` 映射到体积上，随拉伸、回弹和晃动一起变形。
+ * @since 0.3.0
  */
 export type GlassMorphContent = 'static' | 'clip' | 'follow'
 
@@ -97,7 +98,7 @@ export interface GlassOptions {
   morphBounce: number
   /** 液体迁移的晃动，0–1。0 表示到达后不晃动。 */
   morphWobble: number
-  /** 液体迁移期间内容的表现，见 `GlassMorphContent`。 */
+  /** 液体迁移期间内容的表现，见 `GlassMorphContent`。0.3.0 起。 */
   morphContent: GlassMorphContent
   /** 出现与移除时以材质化过渡：光线先弯折再成为磨砂。`data-glass-materialize="none"` 关闭。 */
   materialize: boolean
