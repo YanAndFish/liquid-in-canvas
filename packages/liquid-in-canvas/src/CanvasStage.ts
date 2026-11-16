@@ -20,6 +20,12 @@ export interface CanvasStageOptions {
   theme?: GlassTheme
   /** 光路计算方式，缺省为 `profile`，见 `GlassOptics`。 */
   optics?: GlassOptics
+  /**
+   * `hybrid` 光路是否缓存连接处的折射场，缺省为 true。打开时，几何静止的融合组只求交一次，
+   * 之后每帧读回折射场再取样背景；成员相对运动、按压或迁移期间这一组改用查表，停下约 0.1 秒后求交并淡入。
+   * 关闭后连接处每帧逐步求交，运动中也与 `raymarch` 一致，开销随连接处的面积增加。
+   */
+  fieldCache?: boolean
 }
 
 /** 开始绘制或修改分辨率限制后这么多毫秒内不做自适应判定：页面刚开始绘制时图片解码、字体加载会拖慢几帧，不代表常态。 */
@@ -52,6 +58,7 @@ export class CanvasStage {
   private adaptiveAfter = 0
   private theme: GlassTheme | null
   private optics: GlassOptics
+  private fieldCache: boolean
   private cssSize = { width: 0, height: 0 }
   private playingVideos = new Set<HTMLVideoElement>()
   private videoFrame: number | null = null
@@ -68,6 +75,7 @@ export class CanvasStage {
     }
     this.theme = options.theme ?? null
     this.optics = options.optics ?? 'profile'
+    this.fieldCache = options.fieldCache ?? true
     this.adaptive.setRelaxable(this.optics !== 'profile')
   }
 
@@ -146,6 +154,13 @@ export class CanvasStage {
     this.invalidate()
   }
 
+  /** 打开或关闭 `hybrid` 光路的折射场缓存，下一帧生效。见 `CanvasStageOptions.fieldCache`。 */
+  setFieldCache(enabled: boolean): void {
+    this.fieldCache = enabled
+    this.glass?.setFieldCache(enabled)
+    this.invalidate()
+  }
+
   /** 固定玻璃主题，传入 null 恢复跟随页面。 */
   setTheme(theme: GlassTheme | null): void {
     this.theme = theme
@@ -183,6 +198,7 @@ export class CanvasStage {
         getBackdrop: () => this.page,
         theme: this.theme,
         optics: this.effectiveOptics(),
+        fieldCache: this.fieldCache,
         onInvalidate: () => this.invalidate(),
         onFault: cause => this.fail(cause),
       })

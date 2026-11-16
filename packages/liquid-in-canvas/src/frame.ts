@@ -26,6 +26,9 @@ export const CLEAR_BLACK: GPUColorDict = { r: 0, g: 0, b: 0, a: 1 }
 /** 清成全透明，离屏目标里按普通混合叠加后得到预乘颜色。 */
 export const CLEAR_TRANSPARENT: GPUColorDict = { r: 0, g: 0, b: 0, a: 0 }
 
+/** 折射场缓存里没有光路的纹素：入射高度（最后一个通道）为负，见 `liquid-glass/volume-field-shader.ts`。 */
+export const CLEAR_FIELD: GPUColorDict = { r: 0, g: 0, b: 0, a: -1 }
+
 /** 画布遍或离屏遍中的一次矩形绘制。对象由 `DrawList` 复用，不要在列表之外保留引用。 */
 export interface DrawItem {
   /** 绘制顺序，见 `render-order.ts`。同一遍内按从小到大绘制。 */
@@ -42,6 +45,16 @@ export interface UniformBinding {
   buffer: GPUBuffer
   group: GPUBindGroup
   size: number
+}
+
+/** 折射场缓存那一遍的三个颜色附件，每帧只改写视图。 */
+export function createFieldAttachments(): GPURenderPassColorAttachment[] {
+  return Array.from({ length: 3 }, () => ({
+    view: null as unknown as GPUTextureView,
+    loadOp: 'clear' as const,
+    storeOp: 'store' as const,
+    clearValue: CLEAR_FIELD,
+  }))
 }
 
 /** 冷路径：为绘制列表扩容时创建一个空的绘制项。 */

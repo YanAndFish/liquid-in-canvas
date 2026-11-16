@@ -1,11 +1,12 @@
 import type { StageGpu } from '../gpu'
-import { BLEND_NORMAL, PipelineTable, shaderPrelude, SLOT_CANVAS, SLOT_TARGET, wgslFloat } from '../gpu'
+import { BLEND_NORMAL, PipelineTable, shaderPrelude, SLOT_CANVAS, SLOT_TARGET, TARGET_FORMAT, wgslFloat } from '../gpu'
 import { BLUR_SIGMAS } from './gaussian'
+import { createFieldBakeShader, FIELD_FORMATS, FIELD_TARGETS } from './volume-field-shader'
 import { createHybridVolumeShader } from './volume-hybrid-shader'
 import { createProfileVolumeShader } from './volume-profile-shader'
 
-/** 体积组 uniform 中矩形与目标尺寸之后、成员之前的浮点数个数：`params`、`shadow` 与 `valid`。 */
-export const VOLUME_GROUP_FLOATS = 12
+/** 体积组 uniform 中矩形与目标尺寸之后、成员之前的浮点数个数：`params`、`shadow`、`valid` 与 `field`。 */
+export const VOLUME_GROUP_FLOATS = 16
 /** 每个成员占用的浮点数个数，对应着色器里的 `Member`。 */
 export const VOLUME_MEMBER_FLOATS = 32
 /** 体积着色器取样的纹理数量：背景加各级模糊。 */
@@ -62,6 +63,9 @@ export function volumeCommon(count: number): string {
   shadow: vec4f,
   // 背景取样坐标的有效范围（归一化）：左、上、右、下。多层玻璃的上层背景只在这个范围内画好。
   valid: vec4f,
+  // 折射场缓存（混合光路读写缓存的管线）：缓存左上角的纹素位置、缓存倍率与目标倍率之比、
+  // 缓存结果相对查表近似的比例（切换时交叉淡化）。
+  field: vec4f,
   members: array<Member, ${count}>,`, /* wgsl */`
 struct Member {
   // 中心坐标与半宽高。
@@ -271,25 +275,42 @@ fn glass_material(p: vec3f) -> Material {
   return material;
 }
 
-// 逐步求交并着色：返回颜色与融合后的不透明度；光线没有碰到实体时不透明度为 -1。
-fn glass_trace(xy: vec2f, screen_uv: vec2f) -> vec4f {
-  let viewport = u.screen.zw;
-  let entry = glass_entry(xy);
-  if (entry.w <= 0.5) { return vec4f(0.0, 0.0, 0.0, -1.0); }
-  let normal = glass_normal(entry.xyz);
-  let material = glass_material(entry.xyz);
-  let spread = material.optics.y * 0.055;
-  let green = glass_exit(entry.xyz, normal, 1.45);
+// 一条视线的光路，与背景无关：入射点的高度与法线，三条光路落在背景平面上的位置（xy）与有效程度（z）。
+// 折射场缓存保存的就是这些量。
+struct Paths {
+  height: f32,
+  normal: vec3f,
+  red: vec3f,
+  green: vec3f,
+  blue: vec3f,
+}
+
+// 从入射点追踪三条光路。spread 是红蓝两条光路的折射率偏移。
+fn glass_paths(entry: vec3f, spread: f32) -> Paths {
+  var paths: Paths;
+  paths.height = entry.z;
+  paths.normal = glass_normal(entry);
+  let green = glass_exit(entry, paths.normal, 1.45);
   var red = green;
   var blue = green;
   // 没有色散时三条光路重合，只追踪一次。
   if (spread > 0.00001) {
-    red = glass_exit(entry.xyz, normal, 1.45 - spread);
-    blue = glass_exit(entry.xyz, normal, 1.45 + spread);
+    red = glass_exit(entry, paths.normal, 1.45 - spread);
+    blue = glass_exit(entry, paths.normal, 1.45 + spread);
   }
-  let red_uv = clamp((red.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
-  let green_uv = clamp((green.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
-  let blue_uv = clamp((blue.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
+  paths.red = red.xyw;
+  paths.green = green.xyw;
+  paths.blue = blue.xyw;
+  return paths;
+}
+
+// 按光路取样背景并着色：返回颜色与融合后的不透明度。
+fn glass_shade(screen_uv: vec2f, material: Material, paths: Paths) -> vec4f {
+  let viewport = u.screen.zw;
+  let normal = paths.normal;
+  let red_uv = clamp((paths.red.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
+  let green_uv = clamp((paths.green.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
+  let blue_uv = clamp((paths.blue.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
   let transmitted = glass_tone(sample_blur_rgb(red_uv, green_uv, blue_uv, material.optics.x), material.tone);
   // 反射方向由三维法线决定；有限距离的页面环境近似用柔化采样表示表面粗糙度。
   let reflection = reflect(vec3f(0.0, 0.0, -1.0), normal);
@@ -297,7 +318,7 @@ fn glass_trace(xy: vec2f, screen_uv: vec2f) -> vec4f {
   let environment = sample_blur(environment_uv, material.optics.x + ${wgslFloat(REFLECTION_VARIANCE)});
   let fresnel = 0.034 + pow(1.0 - clamp(normal.z, 0.0, 1.0), 5.0) * 0.966;
   let tinted = mix(transmitted, material.color, material.optics.z);
-  let valid = vec3f(red.w, green.w, blue.w);
+  let valid = vec3f(paths.red.z, paths.green.z, paths.blue.z);
   var refracted = tinted;
   // 求交次数耗尽或光线朝向屏幕外时，使用本地柔化背景，避免连接处出现远处亮色碎边。
   if (min(valid.x, min(valid.y, valid.z)) < 1.0) {
@@ -309,6 +330,14 @@ fn glass_trace(xy: vec2f, screen_uv: vec2f) -> vec4f {
   let edge = pow(1.0 - clamp(normal.z, 0.0, 1.0), 3.0);
   let highlight = (light * 0.035 * edge + edge * 0.035) * material.optics.w;
   return vec4f(reflected + vec3f(highlight * u.params.z), material.colored.a);
+}
+
+// 逐步求交并着色：返回颜色与融合后的不透明度；光线没有碰到实体时不透明度为 -1。
+fn glass_trace(xy: vec2f, screen_uv: vec2f) -> vec4f {
+  let entry = glass_entry(xy);
+  if (entry.w <= 0.5) { return vec4f(0.0, 0.0, 0.0, -1.0); }
+  let material = glass_material(entry.xyz);
+  return glass_shade(screen_uv, material, glass_paths(entry.xyz, material.optics.y * 0.055));
 }
 `
 }
@@ -390,28 +419,67 @@ export interface VolumeTextures {
 }
 
 /**
- * 冷路径：背景视图、模糊纹理或查找表变化后，重新创建体积着色器的纹理绑定。
- * `lut` 只有剖面光学需要，放在最后一个绑定。
+ * 读取折射场缓存的管线里不可过滤的绑定（单精度的折射场纹理），按位记录，见 `PipelineSpec.unfilterable`。
+ * 写成函数：这几个着色器模块相互引用，模块初始化时 `FIELD_FORMATS` 可能还没有定义。
  */
-export function bindVolumeTextures(gpu: StageGpu, source: GPUTextureView, blurs: readonly GPUTextureView[], generation: number, lut: GPUTextureView | null = null): VolumeTextures {
+export function fieldUnfilterable(): number {
+  let mask = 0
+  for (let i = 0; i < FIELD_FORMATS.length; i++) {
+    if (FIELD_FORMATS[i] === 'rgba32float')
+      mask |= 1 << (VOLUME_TEXTURES + 1 + i)
+  }
+  return mask
+}
+
+/**
+ * 冷路径：背景视图、模糊纹理、查找表或折射场缓存变化后，重新创建体积着色器的纹理绑定。
+ * `lut` 只有剖面光学与混合光路需要，放在各级模糊之后；`fields` 是折射场缓存的几张纹理，放在查找表之后。
+ */
+export function bindVolumeTextures(
+  gpu: StageGpu,
+  source: GPUTextureView,
+  blurs: readonly GPUTextureView[],
+  generation: number,
+  lut: GPUTextureView | null = null,
+  fields: readonly GPUTextureView[] = [],
+): VolumeTextures {
   return {
     generation,
     group: gpu.textureGroupOf(lut
-      ? [source, ...blurs, lut]
-      : [source, ...blurs]),
+      ? [
+          source,
+          ...blurs,
+          lut,
+          ...fields,
+        ]
+      : [source, ...blurs], fields.length > 0
+      ? fieldUnfilterable()
+      : 0),
   }
 }
 
-/** 体积管线的种类：三维求交、剖面查表，或混合光路里逐像素在两者之间选择的着色器。 */
-export type VolumePipelineKind = 'raymarch' | 'profile' | 'hybrid'
+/**
+ * 体积管线的种类：三维求交、剖面查表、混合光路里逐像素在两者之间选择的着色器，
+ * 以及读取折射场缓存的混合着色器（`field`）。
+ */
+export type VolumePipelineKind = 'raymarch' | 'profile' | 'hybrid' | 'field'
 
 /** 生成一种管线在给定成员数量下的着色器。 */
 function volumeShaderOf(kind: VolumePipelineKind, count: number): string {
   if (kind === 'profile')
     return createProfileVolumeShader(count)
-  if (kind === 'hybrid')
-    return createHybridVolumeShader(count)
+  if (kind === 'hybrid' || kind === 'field')
+    return createHybridVolumeShader(count, kind === 'field')
   return createVolumeShader(count)
+}
+
+/** 一种管线取样的纹理数量：背景与各级模糊，查表的几种多一张查找表，读缓存的再多几张折射场。 */
+function volumeTexturesOf(kind: VolumePipelineKind): number {
+  if (kind === 'raymarch')
+    return VOLUME_TEXTURES
+  return kind === 'field'
+    ? VOLUME_TEXTURES + 1 + FIELD_TARGETS
+    : VOLUME_TEXTURES + 1
 }
 
 /**
@@ -426,10 +494,25 @@ export function createVolumePipelines(gpu: StageGpu, kind: VolumePipelineKind = 
   return [SLOT_CANVAS, SLOT_TARGET].map(slot => new PipelineTable(gpu, `${prefix}:${slot}`, count => ({
     code: volumeShaderOf(kind, count),
     entry: 'volume',
-    textures: kind === 'raymarch'
-      ? VOLUME_TEXTURES
-      : VOLUME_TEXTURES + 1,
+    textures: volumeTexturesOf(kind),
+    unfilterable: kind === 'field'
+      ? fieldUnfilterable()
+      : 0,
     format: gpu.formatOf(slot),
     blend: BLEND_NORMAL,
   })))
+}
+
+/**
+ * 写入折射场缓存的管线表，按成员数量取用。一次绘制同时写三张纹理，不混合；
+ * 绑定与混合光路相同（只读其中的查找表）。
+ */
+export function createFieldBakePipelines(gpu: StageGpu): PipelineTable {
+  return new PipelineTable(gpu, 'volume-bake', count => ({
+    code: createFieldBakeShader(count),
+    entry: 'bake',
+    textures: VOLUME_TEXTURES + 1,
+    format: TARGET_FORMAT,
+    formats: FIELD_FORMATS,
+  }))
 }
