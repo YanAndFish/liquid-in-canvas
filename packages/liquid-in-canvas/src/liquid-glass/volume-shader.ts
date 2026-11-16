@@ -172,62 +172,108 @@ ${each(count, i => `  {
 }
 
 /**
- * 三维求交：圆角实体的距离场、平滑合并、光线求交与着色。体积着色器与混合光路共用。
- *
- * 坐标使用视口的 CSS 像素，z 轴垂直于屏幕指向观察者，背景平面在 z = 0。
+ * 按成员顺序做平面平滑合并的循环体：与剖面光学的 `glass_field` 用同一个权重，`extra` 在每一步用这个权重混合附带的值。
+ * 要求作用域里已有 `var distance`（第一名成员的平面距离）与 `var fusion`，循环内可以用 `m`、`other` 与 `h`。
  */
-export function raymarchOptics(count: number): string {
-  /** 按成员顺序做平滑合并；`extra` 在每一步用同一个权重混合附带的值。 */
-  const fuse = (first: string, other: (i: number) => string, extra: (i: number) => string = () => ''): string => `
-  var distance = ${first};
-  var fusion = u.members[0].depth.z;
-${each(count, i => `  {
+export function fuseOutlines(count: number, other: (i: number) => string, extra: (i: number) => string = () => ''): string {
+  return each(count, i => `  {
+    let m = u.members[${i}];
     let other = ${other(i)};
-    let k = max(min(fusion, u.members[${i}].depth.z) * 2.0, 0.001);
+    let k = max(min(fusion, m.depth.z) * 2.0, 0.001);
     let h = clamp(0.5 + 0.5 * (other - distance) / k, 0.0, 1.0);
 ${extra(i)}
     distance = mix(other, distance, h) - k * h * (1.0 - h);
-    fusion = max(fusion, u.members[${i}].depth.z);
-  }`, 1)}`
-  const solid = (i: number, p: string): string => `glass_solid(${p}, u.members[${i}])`
+    fusion = max(fusion, m.depth.z);
+  }`, 1)
+}
 
+/**
+ * 开始合并截面（`Body`）：声明 `first`、`b`、`distance` 与 `fusion`，写入第一名成员的值。
+ * `planar` 与 `clipped` 是第一名成员的平面距离与裁剪距离的表达式，可以用 `first`。
+ *
+ * 裁剪距离按同一个权重混合，混合前截到不深于“半厚度 + 1”：截面的距离不小于负的半厚度，
+ * 更深的裁剪距离不起作用；截短后，没有裁剪的成员只把相邻成员的裁剪切面在融合范围内平滑地推开，
+ * 不会把它整个抹掉。所有成员共用同一个裁剪范围时结果与逐成员裁剪相同。
+ */
+export function bodyFirst(planar: string, clipped: string): string {
+  return /* wgsl */`  let first = u.members[0];
+  var b: Body;
+  b.clip = max(${clipped}, -first.depth.x - 1.0);
+  b.middle = first.depth.y + first.depth.x;
+  b.half_depth = first.depth.x;
+  b.bevel = vec2f(min(first.profile.x, min(first.box.z, first.box.w)), first.profile.y);
+  b.shape = first.profile.zw;
+  var distance = ${planar};
+  var fusion = first.depth.z;`
+}
+
+/** 在 `fuseOutlines()` 的循环里按权重 `h` 并入成员 `m` 的截面参数。`clipped` 是这名成员的裁剪距离。 */
+export function bodyMix(clipped: string): string {
+  return /* wgsl */`    b.clip = mix(max(${clipped}, -m.depth.x - 1.0), b.clip, h);
+    b.middle = mix(m.depth.y + m.depth.x, b.middle, h);
+    b.half_depth = mix(m.depth.x, b.half_depth, h);
+    b.bevel = mix(vec2f(min(m.profile.x, min(m.box.z, m.box.w)), m.profile.y), b.bevel, h);
+    b.shape = mix(m.profile.zw, b.shape, h);`
+}
+
+/**
+ * 三维求交：合并后实体的距离场、光线求交与着色。体积着色器与混合光路共用。
+ *
+ * 坐标使用视口的 CSS 像素，z 轴垂直于屏幕指向观察者，背景平面在 z = 0。
+ *
+ * 融合的实体不是各成员三维实体的平滑合并，而是先在平面上平滑合并轮廓，再按到合并轮廓的距离套截面：
+ * 截面参数（厚度、底面高度、倒角）与外观用同一个合并权重混合。各成员的倒角不会在连接处相交出折痕，
+ * 连接处与剖面查表一样是一整块玻璃，三种光路的轮廓与形体一致。
+ */
+export function raymarchOptics(count: number): string {
   return /* wgsl */`
-// 圆角实体的截面，planar 是到轮廓的平面距离，height 是相对实体中面的高度。
+// 平面平滑合并后的轮廓与截面：到合并轮廓的平面距离、裁剪距离、中面高度、半厚度、顶面倒角的宽高、
+// 倒角曲线的超椭圆指数与底面倒角比例。
+struct Body {
+  planar: f32,
+  clip: f32,
+  middle: f32,
+  half_depth: f32,
+  bevel: vec2f,
+  shape: vec2f,
+}
+
+fn glass_body(xy: vec2f) -> Body {
+${bodyFirst('glass_outline(xy, first)', 'glass_clip(xy, first.clip)')}
+${fuseOutlines(count, () => 'glass_outline(xy, m)', () => bodyMix('glass_clip(xy, m.clip)'))}
+  b.planar = distance;
+  return b;
+}
+
+// 截面，planar 是到轮廓的平面距离，height 是相对实体中面的高度。
 // 截面是一块平板，边缘按超椭圆弧倒角；指数大于 2 时曲率在平面接合处趋于零，
 // 折射压缩不会在固定内圈突然开始。顶面和底面的倒角分别取值，底面按比例缩小。
 //
 // 倒角在宽高各自归一化的坐标里求超椭圆距离，再乘较短的一边，得到不超过真实距离的下界；
 // 指数小于 2 时超椭圆范数的梯度可能大于 1，再按 2^(1/p - 1/2) 缩小。
 // 截面不超出平板，平板的距离同样是下界，两者取大，平面部分仍是精确距离，求交不会变慢。
-fn glass_section(planar: f32, height: f32, m: Member) -> f32 {
-  let scale = select(m.profile.w, 1.0, height > 0.0);
-  let bevel = max(vec2f(min(m.profile.x, min(m.box.z, m.box.w)), m.profile.y) * scale, vec2f(0.5));
-  let unit = vec2f(planar + bevel.x, abs(height) - m.depth.x + bevel.y) / bevel;
+fn glass_section(planar: f32, height: f32, b: Body) -> f32 {
+  let scale = select(b.shape.y, 1.0, height > 0.0);
+  let bevel = max(b.bevel * scale, vec2f(0.5));
+  let unit = vec2f(planar + bevel.x, abs(height) - b.half_depth + bevel.y) / bevel;
   let positive = max(unit, vec2f(0.0));
-  let power = m.profile.z;
+  let power = b.shape.x;
   let rounded = pow(pow(positive.x, power) + pow(positive.y, power), 1.0 / power);
   let lipschitz = min(1.0, exp2(0.5 - 1.0 / power));
   let curved = (rounded + min(max(unit.x, unit.y), 0.0) - 1.0) * min(bevel.x, bevel.y) * lipschitz;
-  return max(curved, max(planar, abs(height) - m.depth.x));
+  return max(curved, max(planar, abs(height) - b.half_depth));
 }
 
-// 圆角实体：截面再按裁剪范围切开。
-fn glass_solid(p: vec3f, m: Member) -> f32 {
-  let planar = glass_outline(p.xy, m);
-  return max(glass_section(planar, p.z - (m.depth.y + m.depth.x), m), glass_clip(p.xy, m.clip));
+// 合并后实体的距离：合并轮廓的截面，再按合并后的裁剪范围切开。
+fn glass_distance(p: vec3f) -> f32 {
+  let b = glass_body(p.xy);
+  return max(glass_section(b.planar, p.z - b.middle, b), b.clip);
 }
 
-// 所有成员平滑合并后的距离。
-fn glass_distance(p: vec3f) -> f32 {${fuse(solid(0, 'p'), i => solid(i, 'p'))}
-  return distance;
-}
-
-// 最宽截面处的投影距离。任意高度的距离都不小于它。
-fn glass_projection(xy: vec2f) -> f32 {${fuse(
-  solid(0, 'vec3f(xy, u.members[0].depth.y + u.members[0].depth.x)'),
-  i => solid(i, `vec3f(xy, u.members[${i}].depth.y + u.members[${i}].depth.x)`),
-)}
-  return distance;
+// 最宽截面（中面）处的投影距离。任意高度的距离都不小于它。
+fn glass_projection(xy: vec2f) -> f32 {
+  let b = glass_body(xy);
+  return max(glass_section(b.planar, 0.0, b), b.clip);
 }
 
 fn glass_normal(p: vec3f) -> vec3f {
@@ -288,15 +334,19 @@ struct Material {
   tone: vec2f,
 }
 
-// 外观与几何使用同一个平滑合并权重，过渡区域会随三维连接处移动。三个值共用一次距离计算。
+// 外观与截面使用同一个平面合并权重（与剖面光学的 \`glass_field\` 相同），过渡区域随合并轮廓移动。
 fn glass_material(p: vec3f) -> Material {
+  let xy = p.xy;
   var optics = u.members[0].appearance;
   var colored = u.members[0].color;
-  var lens = glass_lens(p.xy, u.members[0]);
-  var tone = u.members[0].extra.yz;${fuse(solid(0, 'p'), i => solid(i, 'p'), i => `    optics = mix(u.members[${i}].appearance, optics, h);
-    colored = mix(u.members[${i}].color, colored, h);
-    lens = mix(glass_lens(p.xy, u.members[${i}]), lens, h);
-    tone = mix(u.members[${i}].extra.yz, tone, h);`)}
+  var lens = glass_lens(xy, u.members[0]);
+  var tone = u.members[0].extra.yz;
+  var distance = glass_outline(xy, u.members[0]);
+  var fusion = u.members[0].depth.z;
+${fuseOutlines(count, () => 'glass_outline(xy, m)', () => `    optics = mix(m.appearance, optics, h);
+    colored = mix(m.color, colored, h);
+    lens = mix(glass_lens(xy, m), lens, h);
+    tone = mix(m.extra.yz, tone, h);`)}
   var material: Material;
   material.optics = optics;
   // 透明材质的染色值不应把不透明一端的颜色冲淡。

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>光路对照</title>
+  <style>
+    body { margin: 0; padding: 12px; font: 12px/1.5 system-ui, sans-serif; background: #222; color: #ddd; }
+    .grid { display: grid; grid-template-columns: repeat(2, max-content); gap: 8px; }
+    figure { margin: 0; }
+    figcaption { padding: 2px 0; }
+    canvas { display: block; image-rendering: pixelated; }
+    pre { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+<pre id="stats">渲染中…</pre>
+<div class="grid" id="grid"></div>
+<script type="module" src="./optics-diff.ts"></script>
+</body>
+</html>
