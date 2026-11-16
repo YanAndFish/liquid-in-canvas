@@ -13,7 +13,9 @@ export {
   GLASS_CLIP_ATTR,
   GLASS_FADE_ATTR,
   GLASS_MODAL_ATTR,
+  GLASS_SCOPE_ATTR,
   GLASS_SCRIM_ATTR,
+  hasAttr,
   STAGE_OVERLAY_ATTR,
 } from './contract'
 export { CssGlassStage } from './css/CssGlassStage'

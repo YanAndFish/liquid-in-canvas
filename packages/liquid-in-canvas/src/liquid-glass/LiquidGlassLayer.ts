@@ -5,7 +5,7 @@ import type { GlassTheme } from './defaults'
 import type { GlassFrameHost } from './glass-frame.hot'
 import type { GlassOptions } from './options'
 import type { GlassGhost, GlassSurface, Rect } from './surface'
-import { attr, GLASS_ATTR } from '../contract'
+import { attr, GLASS_ATTR, hasAttr } from '../contract'
 import { createElementTexture, disposeElementTexture } from '../gpu'
 import { reducedMotionQuery } from '../shared/motion'
 import { onGlassDefaultsChange } from './defaults'
@@ -630,7 +630,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
         const target = record.target as HTMLElement
         const name = record.attributeName ?? ''
         if (name === GLASS_ATTR) {
-          if (target.hasAttribute(GLASS_ATTR)) {
+          if (hasAttr(target, GLASS_ATTR)) {
             this.register(target)
           }
           else {
@@ -645,6 +645,8 @@ export class LiquidGlassLayer implements GlassFrameHost {
           const surface = this.byElement.get(target) ?? this.surfaceOwner(target)
           if (surface)
             this.refresh(surface)
+          // 作用域上的参数是其中玻璃的缺省值；签名不变的玻璃在 refresh 里直接跳过。
+          this.refreshWithin(target)
           invalidated = true
           continue
         }
@@ -745,6 +747,13 @@ export class LiquidGlassLayer implements GlassFrameHost {
   private refreshAll(): void {
     for (const surface of this.surfaces)
       this.refresh(surface)
+  }
+
+  private refreshWithin(element: HTMLElement): void {
+    for (const surface of this.surfaces) {
+      if (surface.element !== element && element.contains(surface.element))
+        this.refresh(surface)
+    }
   }
 
   private resolveAnchor(element: HTMLElement, options: GlassOptions): HTMLElement | null {

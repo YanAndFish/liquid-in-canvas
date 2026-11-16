@@ -117,13 +117,26 @@ await mountLiquidGlass({
 | `data-glass-fusion` | 融合距离，0 表示关闭 | 32 |
 | `data-glass-elevation` | 玻璃底面到背景的距离 | 16 |
 | `data-glass-anchor` | 用于定位的祖先选择器 | `offsetParent` |
-| `data-glass-morph` | 液体迁移，见下文。空值表示自身位置或尺寸变化时流动过去，非空值同时是迁移的名字 | 关闭 |
+| `data-glass-morph` | 液体迁移，见下文。空值或 `true` 表示自身位置或尺寸变化时流动过去，其他值同时是迁移的名字；`false` 关闭 | 关闭 |
 | `data-glass-morph-stretch` | 液体迁移的拉伸，0–2。0 表示整体平移，越大前缘与后缘拉得越开、拖尾越长 | 1 |
 | `data-glass-morph-bounce` | 液体迁移的回弹，0–1。0 表示前缘不越过目标 | 0.33 |
 | `data-glass-morph-wobble` | 液体迁移的晃动，0–1。到达时被压扁，随后在压扁与拉长之间振荡；0 表示不晃动 | 0.35 |
-| `data-glass-materialize` | 生效与移除的过渡。出现（注册或由隐藏变为显示）时光线先弯折、再成为磨砂并略微越过；从 DOM 移除或隐藏时在原处退去。`none` 关闭 | 开启 |
+| `data-glass-materialize` | 生效与移除的过渡。出现（注册或由隐藏变为显示）时光线先弯折、再成为磨砂并略微越过；从 DOM 移除或隐藏时在原处退去。`none` 或 `false` 关闭 | 开启 |
 
 长度单位都是 CSS 像素，缺省一栏写作 `regular / clear`。`data-glass-lens` 与后五项只对画布渲染有效；折射、透镜和色散在 `css` 回退下不起作用。
+
+### 参数作用域
+
+给祖先加上 `data-glass-scope`，它上面的 `data-glass-*` 参数就成为其中所有玻璃的缺省值，类似 UI 库的 `ThemeProvider`。查找顺序是玻璃自身的属性 → 由近及远的作用域 → 全局默认参数，所以作用域可以嵌套，内层只覆盖它写出的参数。作用域元素本身不必是玻璃；只做包装时加上 `display: contents`，不影响布局。
+
+```html
+<section data-glass-scope data-glass-variant="clear" data-glass-layer="2" style="display: contents">
+  <button data-liquid-glass>继承 clear 与第 2 层</button>
+  <button data-liquid-glass data-glass-variant="regular">自身属性优先</button>
+</section>
+```
+
+`data-glass-morph` 不从作用域继承：它的名字标识单块玻璃，传下去会让作用域里的玻璃都成为同一组迁移。作用域的参数变化时，其中的玻璃立即更新。
 
 辅助属性（画布渲染）：
 
@@ -134,7 +147,7 @@ await mountLiquidGlass({
 
 ### TypeScript 类型
 
-`LiquidGlassAttributes` 列出上面所有属性和它们接受的写法：数值属性接受数字或数字字符串，`data-glass-variant` 只接受 `regular` / `clear`，`data-glass-tint` 要以 `#` 开头，只看是否存在的属性（`data-liquid-glass` 等）接受空字符串或模板里不写值。只有类型，没有运行时代码。
+`LiquidGlassAttributes` 列出上面所有属性和它们接受的写法：数值属性接受数字或数字字符串，`data-glass-variant` 只接受 `regular` / `clear`，`data-glass-tint` 要以 `#` 开头，开关属性（`data-liquid-glass`、`data-glass-scope` 等）接受空字符串、模板里不写值或布尔值。只有类型，没有运行时代码。
 
 在 Vue 模板或 React JSX 里检查原生元素上的这些属性，把对应入口加进 tsconfig：
 
@@ -156,7 +169,11 @@ import type { LiquidGlassAttributes } from 'liquid-in-canvas'
 const pill: LiquidGlassAttributes = { 'data-liquid-glass': '', 'data-glass-variant': 'clear', 'data-glass-blur': 1 }
 ```
 
-不要绑定 `false` 来去掉属性：框架会把它渲染成字符串 `"false"`，属性仍然存在，玻璃仍然生效。用 `undefined` 或 `null`。
+开关属性可以直接绑定布尔值：框架把 `false` 渲染成字符串 `"false"`，舞台把值为 `"false"` 的约定属性当作不存在，与绑定 `undefined` 或 `null` 效果相同。
+
+```tsx
+<button data-liquid-glass={active} data-glass-morph={active && 'tabs'}>全部</button>
+```
 
 ## 嵌套玻璃与液体迁移
 
@@ -253,6 +270,10 @@ glass.stage?.getMetrics() // { dpr: 画布实际倍率, targetDpr: 降级前的�
 - `fieldCache`（`mountLiquidGlass`、`CanvasStage` 的选项，或 `stage.setFieldCache()`，缺省 `true`）只对 `hybrid` 有意义：连接处的求交结果（折射场）在几何静止约 0.1 秒后算一次并缓存，之后每帧读回、照常取样背景，视频与页面滚动不受影响；成员相对运动、按压或液体迁移期间这一组改用查表，停下后再求交并淡入。缓存按着色倍率分配，总量不超过 48 MB。设为 `false` 时连接处每帧逐步求交，运动中也与 `raymarch` 一致，开销随连接处的面积变化。
 - 上层玻璃盖在下层玻璃上时，上层取样一张画好下层玻璃的背景（最多三级），只在需要的范围内额外合成与模糊；互不交叠时没有额外开销。
 - 同层玻璃靠近或重叠时会并入同一个融合组，组内每个像素都要对所有成员求距离。大面积的面板请用 `data-glass-layer` 放到单独的层，避免和它下方的控件融合。
+
+## 已知问题
+
+- Chrome 157 的 HTML-in-Canvas 在计算滚动范围时，把 `canvas.updateElementGeometry()` 的平移叠加到 drawable 元素的布局位置上，位置被算了两次（命中测试是对的）。贴在视口右侧或底部的固定玻璃因此会把所在滚动容器撑大到约"位置 × 2 + 尺寸"，出现多余的滚动条。调参面板已经在 `.lg-tuner` 上用 `overflow: clip` 绕开；页面自己的固定玻璃可以放进一个铺满视口、`overflow: clip` 的 fixed 容器。随页面滚动的玻璃通常只多出很小的范围。详情与最小复现见仓库的 `docs/known-issues/drawable-scroll-overflow.md`。
 
 ## 其他导出
 

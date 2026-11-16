@@ -488,4 +488,40 @@ describe('玻璃内容纹理', () => {
       layer.dispose()
     }
   })
+  it('data-liquid-glass="false" 注销玻璃，改回来时重新注册', async () => {
+    const { layer, sync, element } = setup()
+    try {
+      sync()
+      expect(layer.surfaces.map(surface => surface.element)).toContain(element)
+      element.dataset.liquidGlass = 'false'
+      await flush()
+      expect(layer.surfaces.map(surface => surface.element)).not.toContain(element)
+      element.dataset.liquidGlass = 'true'
+      await flush()
+      expect(layer.surfaces.map(surface => surface.element)).toContain(element)
+    }
+    finally {
+      layer.dispose()
+    }
+  })
+
+  it('作用域上的参数变化时刷新其中的玻璃', async () => {
+    const { layer, sync, element, anchor } = setup()
+    try {
+      anchor.dataset.glassScope = ''
+      anchor.dataset.glassBlur = '6'
+      await flush()
+      sync()
+      expect(layer.surfaces[0]!.options.blur).toBe(6)
+      anchor.dataset.glassBlur = '30'
+      await flush()
+      expect(layer.surfaces[0]!.options.blur).toBe(30)
+      element.dataset.glassBlur = '2'
+      await flush()
+      expect(layer.surfaces[0]!.options.blur).toBe(2)
+    }
+    finally {
+      layer.dispose()
+    }
+  })
 })

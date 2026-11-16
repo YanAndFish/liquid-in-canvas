@@ -1,7 +1,7 @@
 import type { GlassTheme } from '../liquid-glass/defaults'
 import type { GlassOptions } from '../liquid-glass/options'
 import type { RefractionShape } from './refraction'
-import { attr, GLASS_ATTR } from '../contract'
+import { attr, GLASS_ATTR, GLASS_SCOPE_ATTR, hasAttr } from '../contract'
 import { onGlassDefaultsChange } from '../liquid-glass/defaults'
 import { GLASS_OPTION_ATTRS, parseGlassOptions } from '../liquid-glass/options'
 import { GlassThemeSource } from '../liquid-glass/theme'
@@ -222,7 +222,7 @@ export class CssGlassStage {
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: [GLASS_ATTR, ...GLASS_OPTION_ATTRS],
+      attributeFilter: [GLASS_ATTR, GLASS_SCOPE_ATTR, ...GLASS_OPTION_ATTRS],
     })
     for (const element of this.root.querySelectorAll<HTMLElement>(attr(GLASS_ATTR)))
       this.register(element)
@@ -366,10 +366,13 @@ export class CssGlassStage {
       if (record.type === 'attributes') {
         const target = record.target as HTMLElement
         if (record.attributeName !== GLASS_ATTR) {
-          if (this.surfaces.has(target))
-            this.apply(target)
+          // 参数可能写在作用域上，作用域内的玻璃都要重新读取。
+          for (const element of this.surfaces.keys()) {
+            if (target.contains(element))
+              this.apply(element)
+          }
         }
-        else if (target.hasAttribute(GLASS_ATTR)) {
+        else if (hasAttr(target, GLASS_ATTR)) {
           this.register(target)
         }
         else if (this.surfaces.has(target)) {

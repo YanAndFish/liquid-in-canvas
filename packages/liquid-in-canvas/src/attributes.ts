@@ -6,6 +6,7 @@
  * 其他场景可以直接使用 `LiquidGlassAttributes`，例如给自己的组件属性加上这些键。
  *
  * 数值超出范围时被限制在范围之内，无法解析时取全局默认值，见 `GLASS_LIMITS` 与 `setGlassDefaults()`。
+ * 玻璃参数（`data-glass-*`）也可以写在带 `data-glass-scope` 的祖先上，作为其中所有玻璃的缺省值。
  */
 
 /** 数值属性：数字，或写在模板里的数字字符串。 */
@@ -22,10 +23,10 @@ export type GlassRadiusAttribute
     | `${number},${number},${number},${number}`
 
 /**
- * 只看是否存在的属性：写成空字符串，或在 JSX、Vue 模板里不写值。
- * 不接受 `false`：框架会把它渲染成字符串 `"false"`，属性仍然存在。不需要时绑定 `undefined` 或 `null`。
+ * 开关属性：写成空字符串，或在 JSX、Vue 模板里不写值表示打开。
+ * `false`（框架渲染成字符串 `"false"`）、`undefined` 与 `null` 都表示关闭，可以直接绑定布尔值。
  */
-export type GlassPresenceAttribute = '' | true
+export type GlassPresenceAttribute = '' | boolean | 'true' | 'false'
 
 /** 声明液态玻璃及其参数的属性。长度单位都是 CSS 像素，缺省一栏写作 `regular / clear`。 */
 export interface LiquidGlassAttributes {
@@ -73,16 +74,24 @@ export interface LiquidGlassAttributes {
   'data-glass-elevation'?: GlassNumberAttribute | null
   /** 用于定位的祖先选择器。缺省使用 `offsetParent`。 */
   'data-glass-anchor'?: string | null
-  /** 液体迁移，只对画布渲染有效。空值表示自身位置或尺寸变化时流动过去，非空值同时是迁移的名字。缺省关闭。 */
-  'data-glass-morph'?: string | true | null
+  /**
+   * 液体迁移，只对画布渲染有效。空值或 `true` 表示自身位置或尺寸变化时流动过去，其他值同时是迁移的名字。
+   * `false` 与不写都是关闭。不从 `data-glass-scope` 继承。
+   */
+  'data-glass-morph'?: string | boolean | null
   /** 液体迁移的拉伸，0–2。缺省来自全局默认参数。 */
   'data-glass-morph-stretch'?: GlassNumberAttribute | null
   /** 液体迁移的回弹，0–1。缺省来自全局默认参数。 */
   'data-glass-morph-bounce'?: GlassNumberAttribute | null
   /** 液体迁移的晃动，0–1。缺省来自全局默认参数。 */
   'data-glass-morph-wobble'?: GlassNumberAttribute | null
-  /** 生效与移除的过渡，只对画布渲染有效。`none` 关闭，其他值或不写都是开启。 */
+  /** 生效与移除的过渡，只对画布渲染有效。`none` 或 `false` 关闭，其他值或不写都是开启。 */
   'data-glass-materialize'?: 'none' | 'auto' | GlassPresenceAttribute | null
+  /**
+   * 玻璃参数作用域：这个元素上的 `data-glass-*` 参数成为其中所有玻璃的缺省值，就近的作用域优先，
+   * 玻璃自身的属性又优先于作用域。可以配合 `display: contents` 作为不占布局的包装元素。
+   */
+  'data-glass-scope'?: GlassPresenceAttribute | null
   /** 加在普通祖先上：后代玻璃和阴影限制在它的矩形内。 */
   'data-glass-clip'?: GlassPresenceAttribute | null
   /** 模态层根节点。打开时模态层外的玻璃按遮罩透明度压暗。 */

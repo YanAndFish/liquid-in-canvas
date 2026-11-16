@@ -212,18 +212,19 @@ src/tuner/, tuner.ts    调参面板（原生 DOM），经 liquid-in-canvas/tune
 
 ## DOM 约定
 
-舞台只通过以下钩子认识页面。修改时同步 `packages/liquid-in-canvas/src/contract.ts` 与 `src/attributes.ts` 里的类型。
+舞台只通过以下钩子认识页面。修改时同步 `packages/liquid-in-canvas/src/contract.ts` 与 `src/attributes.ts` 里的类型。值为 `"false"` 的约定属性视为不存在（`contract.ts` `attr()` / `hasAttr()`），框架里可以直接绑定布尔值。
 
 | 钩子 | 舞台行为 |
 | --- | --- |
 | `[data-liquid-glass]` + `data-glass-*` | 注册为玻璃表面，参数见包的 README；嵌套在另一块玻璃里时只绘制体积。`data-glass-materialize="none"` 关闭生效与移除的过渡 |
+| `[data-glass-scope]` + `data-glass-*` | 参数作用域：其中玻璃未声明的参数取最近作用域的值，再取更外层的作用域，最后取全局默认参数（`options.ts` `GlassAttributeSource`）。`data-glass-morph` 不继承。作用域上的参数变化时刷新其中的玻璃 |
 | `[data-glass-clip]` | 限制后代玻璃与阴影的绘制范围 |
 | `[data-glass-modal]` | 模态层根节点，内部玻璃不被压暗 |
 | `[data-glass-scrim]` | 背景色 alpha × 模态层 opacity 决定压暗强度 |
 | `[data-glass-fade]` | opacity 作用到内部玻璃 |
 | `[data-stage-overlay="L"]` | 单独上传的透明前景层，盖住低于第 L 层的玻璃，被第 L 层及更高层的玻璃盖住；不写值时位于所有玻璃之上。需要在舞台 `start()` 之前存在 |
 
-回退实现只使用第一行；裁剪、压暗和淡入淡出由浏览器按普通 DOM 处理。
+回退实现只使用前两行；裁剪、压暗和淡入淡出由浏览器按普通 DOM 处理。
 
 ## 绘制顺序
 

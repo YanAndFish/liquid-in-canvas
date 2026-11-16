@@ -495,6 +495,7 @@ OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面�
 - `scrollbar-gutter`、`overflow: clip`、`100dvh` 都要求较新的 Chrome。目标环境是 Chrome 157，满足要求。
 - 提示页只检查 `navigator.gpu` 是否存在。适配器创建失败由 init 失败路径处理。
 - 页面切换的旧页被绝对定位并裁剪，旧页中如果有 fixed 元素需要单独评估。
+- Chrome 157 计算滚动范围时会把 `updateElementGeometry()` 的平移和 drawable 的布局位置叠加，固定在视口右下的玻璃会撑出多余的滚动范围，见 [drawable 滚动范围](known-issues/drawable-scroll-overflow.md)。
 
 ## 16. 文件索引
 

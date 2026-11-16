@@ -1,4 +1,5 @@
 import type { GlassDefaults, GlassTheme, GlassVariant } from './defaults'
+import { attr, ATTR_OFF, GLASS_SCOPE_ATTR } from '../contract'
 import { GLASS_LAYER_RANGE } from '../render-order'
 import { clamp, getGlassDefaults, GLASS_LIMITS, normalizeHex } from './defaults'
 
@@ -93,13 +94,48 @@ export interface GlassOptions {
   materialize: boolean
 }
 
+const SCOPE_SELECTOR = attr(GLASS_SCOPE_ATTR)
+
+/** 作用域不向下传递的参数：迁移名字标识单块玻璃，传下去会让作用域里的玻璃全都同名。 */
+const UNSCOPED = new Set<string>(['data-glass-morph'])
+
+/**
+ * 玻璃参数的来源：先看元素自身，再由近及远看外围的 `[data-glass-scope]`。
+ * 元素自身也带 `data-glass-scope` 时，它的属性已经在第一步读到。
+ */
+export class GlassAttributeSource {
+  private readonly element: HTMLElement
+  private readonly scopes: HTMLElement[] = []
+
+  constructor(element: HTMLElement) {
+    this.element = element
+    let scope = element.parentElement?.closest<HTMLElement>(SCOPE_SELECTOR)
+    while (scope) {
+      this.scopes.push(scope)
+      scope = scope.parentElement?.closest<HTMLElement>(SCOPE_SELECTOR)
+    }
+  }
+
+  get(name: string): string | null {
+    const own = this.element.getAttribute(name)
+    if (own !== null || UNSCOPED.has(name))
+      return own
+    for (const scope of this.scopes) {
+      const value = scope.getAttribute(name)
+      if (value !== null)
+        return value
+    }
+    return null
+  }
+}
+
 function numberAttribute(
-  element: HTMLElement,
+  source: GlassAttributeSource,
   name: string,
   fallback: number,
   [min, max]: readonly [number, number],
 ): number {
-  const raw = element.getAttribute(name)
+  const raw = source.get(name)
   if (raw === null)
     return fallback
 
@@ -161,43 +197,63 @@ function parseAnchor(raw: string | null): string | null {
 }
 
 /**
- * 读取元素的玻璃参数。未声明的属性取 `defaults`，缺省为当前的全局默认值，见 `setGlassDefaults()`。
+ * 液体迁移：不写或 `"false"` 关闭；空值或 `"true"`（JSX 里不写值时得到的字符串）只对自身生效；
+ * 其他值是迁移的名字。
+ */
+export function parseMorph(raw: string | null): string | null {
+  const value = raw?.trim()
+  if (value === undefined || value.toLowerCase() === ATTR_OFF)
+    return null
+  if (value.toLowerCase() === 'true')
+    return ''
+  return value
+}
+
+function parseMaterialize(raw: string | null): boolean {
+  const value = raw?.trim().toLowerCase()
+  return value !== 'none' && value !== ATTR_OFF
+}
+
+/**
+ * 读取元素的玻璃参数。元素自身未声明的属性取外围作用域（`data-glass-scope`）的值，
+ * 仍未声明时取 `defaults`，缺省为当前的全局默认值，见 `setGlassDefaults()`。
  */
 export function parseGlassOptions(
   element: HTMLElement,
   theme: GlassTheme,
   defaults: GlassDefaults = getGlassDefaults(),
 ): GlassOptions {
-  const variant = parseVariant(element.getAttribute('data-glass-variant'))
+  const source = new GlassAttributeSource(element)
+  const variant = parseVariant(source.get('data-glass-variant'))
   const material = defaults.materials[variant][theme]
 
   return {
-    layer: Math.round(numberAttribute(element, 'data-glass-layer', 0, GLASS_LAYER_RANGE)),
-    fusion: numberAttribute(element, 'data-glass-fusion', defaults.fusion, GLASS_LIMITS.fusion),
-    elevation: numberAttribute(element, 'data-glass-elevation', defaults.elevation, GLASS_LIMITS.elevation),
-    radius: parseRadius(element.getAttribute('data-glass-radius'), defaults.radius),
-    blur: numberAttribute(element, 'data-glass-blur', material.blur, GLASS_LIMITS.blur),
-    refraction: numberAttribute(element, 'data-glass-refraction', material.refraction, GLASS_LIMITS.refraction),
-    bevelWidth: numberAttribute(element, 'data-glass-bevel-width', material.bevelWidth, GLASS_LIMITS.bevelWidth),
-    bevelHeight: numberAttribute(element, 'data-glass-bevel-height', material.bevelHeight, GLASS_LIMITS.bevelHeight),
-    bevelCurve: numberAttribute(element, 'data-glass-bevel-curve', material.bevelCurve, GLASS_LIMITS.bevelCurve),
-    bottomBevel: numberAttribute(element, 'data-glass-bottom-bevel', material.bottomBevel, GLASS_LIMITS.bottomBevel),
-    dispersion: numberAttribute(element, 'data-glass-dispersion', material.dispersion, GLASS_LIMITS.dispersion),
-    lens: numberAttribute(element, 'data-glass-lens', material.lens, GLASS_LIMITS.lens),
-    saturation: numberAttribute(element, 'data-glass-saturation', material.saturation, GLASS_LIMITS.saturation),
-    brightness: numberAttribute(element, 'data-glass-brightness', material.brightness, GLASS_LIMITS.brightness),
-    tint: parseTint(element.getAttribute('data-glass-tint'), material.tint),
-    tintAlpha: numberAttribute(element, 'data-glass-tint-alpha', material.tintAlpha, GLASS_LIMITS.tintAlpha),
-    specular: numberAttribute(element, 'data-glass-specular', material.specular, GLASS_LIMITS.specular),
-    shadow: numberAttribute(element, 'data-glass-shadow', material.shadow, GLASS_LIMITS.shadow),
-    shadowSize: numberAttribute(element, 'data-glass-shadow-size', material.shadowSize, GLASS_LIMITS.shadowSize),
+    layer: Math.round(numberAttribute(source, 'data-glass-layer', 0, GLASS_LAYER_RANGE)),
+    fusion: numberAttribute(source, 'data-glass-fusion', defaults.fusion, GLASS_LIMITS.fusion),
+    elevation: numberAttribute(source, 'data-glass-elevation', defaults.elevation, GLASS_LIMITS.elevation),
+    radius: parseRadius(source.get('data-glass-radius'), defaults.radius),
+    blur: numberAttribute(source, 'data-glass-blur', material.blur, GLASS_LIMITS.blur),
+    refraction: numberAttribute(source, 'data-glass-refraction', material.refraction, GLASS_LIMITS.refraction),
+    bevelWidth: numberAttribute(source, 'data-glass-bevel-width', material.bevelWidth, GLASS_LIMITS.bevelWidth),
+    bevelHeight: numberAttribute(source, 'data-glass-bevel-height', material.bevelHeight, GLASS_LIMITS.bevelHeight),
+    bevelCurve: numberAttribute(source, 'data-glass-bevel-curve', material.bevelCurve, GLASS_LIMITS.bevelCurve),
+    bottomBevel: numberAttribute(source, 'data-glass-bottom-bevel', material.bottomBevel, GLASS_LIMITS.bottomBevel),
+    dispersion: numberAttribute(source, 'data-glass-dispersion', material.dispersion, GLASS_LIMITS.dispersion),
+    lens: numberAttribute(source, 'data-glass-lens', material.lens, GLASS_LIMITS.lens),
+    saturation: numberAttribute(source, 'data-glass-saturation', material.saturation, GLASS_LIMITS.saturation),
+    brightness: numberAttribute(source, 'data-glass-brightness', material.brightness, GLASS_LIMITS.brightness),
+    tint: parseTint(source.get('data-glass-tint'), material.tint),
+    tintAlpha: numberAttribute(source, 'data-glass-tint-alpha', material.tintAlpha, GLASS_LIMITS.tintAlpha),
+    specular: numberAttribute(source, 'data-glass-specular', material.specular, GLASS_LIMITS.specular),
+    shadow: numberAttribute(source, 'data-glass-shadow', material.shadow, GLASS_LIMITS.shadow),
+    shadowSize: numberAttribute(source, 'data-glass-shadow-size', material.shadowSize, GLASS_LIMITS.shadowSize),
     variant,
-    anchor: parseAnchor(element.getAttribute('data-glass-anchor')),
-    morph: element.getAttribute('data-glass-morph')?.trim() ?? null,
-    morphStretch: numberAttribute(element, 'data-glass-morph-stretch', defaults.morphStretch, GLASS_LIMITS.morphStretch),
-    morphBounce: numberAttribute(element, 'data-glass-morph-bounce', defaults.morphBounce, GLASS_LIMITS.morphBounce),
-    morphWobble: numberAttribute(element, 'data-glass-morph-wobble', defaults.morphWobble, GLASS_LIMITS.morphWobble),
-    materialize: element.getAttribute('data-glass-materialize')?.trim().toLowerCase() !== 'none',
+    anchor: parseAnchor(source.get('data-glass-anchor')),
+    morph: parseMorph(element.getAttribute('data-glass-morph')),
+    morphStretch: numberAttribute(source, 'data-glass-morph-stretch', defaults.morphStretch, GLASS_LIMITS.morphStretch),
+    morphBounce: numberAttribute(source, 'data-glass-morph-bounce', defaults.morphBounce, GLASS_LIMITS.morphBounce),
+    morphWobble: numberAttribute(source, 'data-glass-morph-wobble', defaults.morphWobble, GLASS_LIMITS.morphWobble),
+    materialize: parseMaterialize(source.get('data-glass-materialize')),
   }
 }
 
