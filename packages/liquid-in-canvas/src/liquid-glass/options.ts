@@ -5,6 +5,12 @@ import { clamp, getGlassDefaults, GLASS_LIMITS, normalizeHex } from './defaults'
 
 export type GlassRadius = readonly [number, number, number, number]
 
+/**
+ * 液体迁移期间玻璃上的 HTML 内容：`static` 停在元素位置，尺寸过渡时随玻璃展开显露；
+ * `clip` 停在元素位置并裁剪在体积之内；`follow` 映射到体积上，随拉伸、回弹和晃动一起变形。
+ */
+export type GlassMorphContent = 'static' | 'clip' | 'follow'
+
 /** 所有会影响玻璃参数的属性名，供属性监听使用。 */
 export const GLASS_OPTION_ATTRS = [
   'data-glass-layer',
@@ -32,6 +38,7 @@ export const GLASS_OPTION_ATTRS = [
   'data-glass-morph-stretch',
   'data-glass-morph-bounce',
   'data-glass-morph-wobble',
+  'data-glass-morph-content',
   'data-glass-materialize',
 ] as const
 
@@ -90,6 +97,8 @@ export interface GlassOptions {
   morphBounce: number
   /** 液体迁移的晃动，0–1。0 表示到达后不晃动。 */
   morphWobble: number
+  /** 液体迁移期间内容的表现，见 `GlassMorphContent`。 */
+  morphContent: GlassMorphContent
   /** 出现与移除时以材质化过渡：光线先弯折再成为磨砂。`data-glass-materialize="none"` 关闭。 */
   materialize: boolean
 }
@@ -209,6 +218,13 @@ export function parseMorph(raw: string | null): string | null {
   return value
 }
 
+function parseMorphContent(raw: string | null): GlassMorphContent {
+  const value = raw?.trim().toLowerCase()
+  return value === 'clip' || value === 'follow'
+    ? value
+    : 'static'
+}
+
 function parseMaterialize(raw: string | null): boolean {
   const value = raw?.trim().toLowerCase()
   return value !== 'none' && value !== ATTR_OFF
@@ -253,6 +269,7 @@ export function parseGlassOptions(
     morphStretch: numberAttribute(source, 'data-glass-morph-stretch', defaults.morphStretch, GLASS_LIMITS.morphStretch),
     morphBounce: numberAttribute(source, 'data-glass-morph-bounce', defaults.morphBounce, GLASS_LIMITS.morphBounce),
     morphWobble: numberAttribute(source, 'data-glass-morph-wobble', defaults.morphWobble, GLASS_LIMITS.morphWobble),
+    morphContent: parseMorphContent(source.get('data-glass-morph-content')),
     materialize: parseMaterialize(source.get('data-glass-materialize')),
   }
 }
@@ -284,6 +301,7 @@ export function glassOptionsSignature(options: GlassOptions): string {
     morphStretch: options.morphStretch,
     morphBounce: options.morphBounce,
     morphWobble: options.morphWobble,
+    morphContent: options.morphContent,
     materialize: options.materialize,
   })
 }

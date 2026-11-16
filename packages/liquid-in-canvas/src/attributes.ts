@@ -85,6 +85,11 @@ export interface LiquidGlassAttributes {
   'data-glass-morph-bounce'?: GlassNumberAttribute | null
   /** 液体迁移的晃动，0–1。缺省来自全局默认参数。 */
   'data-glass-morph-wobble'?: GlassNumberAttribute | null
+  /**
+   * 液体迁移期间玻璃上的内容，只对画布渲染有效。`static` 停在元素位置（尺寸过渡时随玻璃展开显露）；
+   * `clip` 停在元素位置并裁剪在体积之内，相当于 `overflow: hidden`；`follow` 随体积一起拉伸、回弹和晃动。缺省 `static`。
+   */
+  'data-glass-morph-content'?: 'static' | 'clip' | 'follow' | null
   /** 生效与移除的过渡，只对画布渲染有效。`none` 或 `false` 关闭，其他值或不写都是开启。 */
   'data-glass-materialize'?: 'none' | 'auto' | GlassPresenceAttribute | null
   /**

@@ -48,6 +48,7 @@ describe('parseGlassOptions', () => {
       morphStretch: 1,
       morphBounce: 0.33,
       morphWobble: 0.35,
+      morphContent: 'static',
       materialize: true,
     })
   })
@@ -79,6 +80,7 @@ describe('parseGlassOptions', () => {
       morphStretch: 1,
       morphBounce: 0.33,
       morphWobble: 0.35,
+      morphContent: 'static',
       materialize: true,
     })
   })
@@ -127,6 +129,7 @@ describe('parseGlassOptions', () => {
       morphStretch: 1,
       morphBounce: 0.33,
       morphWobble: 0.35,
+      morphContent: 'static',
       materialize: true,
     })
   })
@@ -176,6 +179,7 @@ describe('parseGlassOptions', () => {
       morphStretch: 1,
       morphBounce: 0.33,
       morphWobble: 0.35,
+      morphContent: 'static',
       materialize: true,
     })
   })
@@ -265,6 +269,13 @@ describe('parseGlassOptions', () => {
     expect(parseGlassOptions(makeElement({ 'data-glass-morph': 'true' }), 'dark').morph).toBe('')
     expect(parseGlassOptions(makeElement({ 'data-glass-morph': 'false' }), 'dark').morph).toBeNull()
     expect(parseGlassOptions(makeElement({ 'data-glass-morph': 'tab' }), 'dark').morph).toBe('tab')
+  })
+
+  it('parses the morph content mode and falls back to static', () => {
+    const mode = (raw: string) => parseGlassOptions(makeElement({ 'data-glass-morph-content': raw }), 'dark').morphContent
+    expect(mode(' Follow ')).toBe('follow')
+    expect(mode('clip')).toBe('clip')
+    expect(mode('stretch')).toBe('static')
   })
 
   it('turns materialize off with "false"', () => {

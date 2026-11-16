@@ -14,6 +14,15 @@ export interface ContentSource {
     width: number
     height: number
   }
+  /**
+   * 内容快照映射到的矩形。通常与 `rect` 相同；液体迁移选择内容跟随体积时是体积的矩形，内容随之拉伸。
+   */
+  readonly contentRect: {
+    left: number
+    top: number
+    width: number
+    height: number
+  }
   /** 绘制矩形在内容四周留出的余量，容纳阴影。 */
   padding: number
   /** 可绘制范围：左、上、右、下。 */
@@ -69,7 +78,7 @@ export function writeContent(
   targetWidth: number,
   targetHeight: number,
 ): number {
-  const { rect, padding } = source
+  const { contentRect: rect, padding } = source
   const start = frame.rect(
     HEADER_FLOATS + CONTENT_FLOATS + occluderCount * MASK_FLOATS,
     rect.left - padding,

@@ -121,6 +121,7 @@ await mountLiquidGlass({
 | `data-glass-morph-stretch` | 液体迁移的拉伸，0–2。0 表示整体平移，越大前缘与后缘拉得越开、拖尾越长 | 1 |
 | `data-glass-morph-bounce` | 液体迁移的回弹，0–1。0 表示前缘不越过目标 | 0.33 |
 | `data-glass-morph-wobble` | 液体迁移的晃动，0–1。到达时被压扁，随后在压扁与拉长之间振荡；0 表示不晃动 | 0.35 |
+| `data-glass-morph-content` | 液体迁移期间玻璃上的内容：`static` 停在元素位置（尺寸过渡时随玻璃展开显露）；`clip` 停在元素位置并裁剪在体积内，相当于 `overflow: hidden`；`follow` 随体积一起拉伸、回弹和晃动 | `static` |
 | `data-glass-materialize` | 生效与移除的过渡。出现（注册或由隐藏变为显示）时光线先弯折、再成为磨砂并略微越过；从 DOM 移除或隐藏时在原处退去。`none` 或 `false` 关闭 | 开启 |
 
 长度单位都是 CSS 像素，缺省一栏写作 `regular / clear`。`data-glass-lens` 与后五项只对画布渲染有效；折射、透镜和色散在 `css` 回退下不起作用。
@@ -193,6 +194,7 @@ const pill: LiquidGlassAttributes = { 'data-liquid-glass': '', 'data-glass-varia
 - 同一个元素的 `data-glass-morph` 为空值时，它自己的位置或尺寸变化（不含滚动和窗口缩放）也以同样的方式过渡，例如拖动一块玻璃：本体紧跟元素，后面拖出一团与它融合的液滴，方向就是拖动方向（包括斜向）；松手后本体越过落点再弹回，液滴甩过本体后收拢，晃动几下停下。拖尾需要非零的融合距离。位置按 `offsetLeft` / `offsetTop` 测量：拖动时要改变玻璃元素自己的 `left` / `top`（或布局位置），只移动外层容器或使用 `transform` 不会触发流动。
 - 同名玻璃仍在页面上时，新出现的玻璃从它里面流出来，例如面板从按钮里长出来：两者同名，面板一步出现在最终位置，玻璃从按钮的位置和尺寸流向面板，内容随玻璃展开显露。面板移除时，它的体积流回按钮并被吸收。
 - 用 `data-glass-morph` 过渡尺寸时，元素应一步切换到新尺寸，由玻璃负责过渡。逐帧改变元素尺寸会让画布每帧重建内容快照，文字和控件会闪烁。
+- 玻璃停下时的回弹与晃动默认不带动内容。想让内容不超出晃动的玻璃，用 `data-glass-morph-content="clip"`；想让内容像贴在玻璃上一样跟着变形，用 `follow`。
 - `data-glass-morph-stretch`、`-bounce`、`-wobble` 调整流动的手感，缺省值来自全局默认参数里的 `morphStretch`、`morphBounce`、`morphWobble`。
 - 系统要求减少动态效果时直接到位；回退实现里激活项是一块直接切换的高亮。
 
