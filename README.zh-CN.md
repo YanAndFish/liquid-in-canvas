@@ -131,7 +131,7 @@ docs                        架构、视觉依据与性能记录
 
 ## 已知问题
 
-- 高分辨率下整页快照本身就可能超出帧预算。自适应降级最后才降低画布分辨率，此时文字变软。见性能记录：[填充率](docs/performance/2026-11-13-fill-rate/README.md)、[画布倍率的自适应降级](docs/performance/2026-11-15-adaptive-canvas/README.md)；没有在真机上测量过。
+- 高分辨率下浏览器把整页画进画布本身就可能超出帧预算（M1 上每帧每百万像素约 1 ms，空白页也一样）。自适应降级缺省不降低画布分辨率，文字保持清晰，此时帧率会低于 60；能接受文字变软时可以设置 `minPixelRatio`。见性能记录：[填充率](docs/performance/2026-11-13-fill-rate/README.md)、[文字清晰度作为底线](docs/performance/2026-11-16-text-floor/README.md)；没有在真机上测量过。
 - SVG 滤镜回退只在 Chromium 内核上生效，面积超过 12 万 CSS 像素的玻璃只有模糊。
 - 冷启动后第一次滚动可能因浏览器首次栅格化而掉帧。
 
