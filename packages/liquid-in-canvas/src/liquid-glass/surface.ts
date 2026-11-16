@@ -43,6 +43,11 @@ export interface GlassSurface extends ContentSource {
   /** 体积已经交给另一块同名玻璃，注销时不再留下起点。每帧开始时清除：仍然在页面上就不算交出。 */
   handedOver: boolean
   /**
+   * 体积是从同名玻璃接手的，还没有显示过。首次显示时它已经是完整的玻璃，不从零材质化。
+   * 不能看 `flow.active`：弹簧要到这一帧测量之后才对准新位置，判断显示变化时还是静止的。
+   */
+  inherited: boolean
+  /**
    * 这块玻璃从哪块仍在页面上的同名玻璃里流出来。流动期间两者之间的融合距离随中心距离渐进，
    * 刚出现时不会让两块玻璃一起鼓起；流动结束后清空。
    */
@@ -155,6 +160,7 @@ export function createSurface(init: SurfaceInit): GlassSurface {
     flow: null,
     snapFlow: true,
     handedOver: false,
+    inherited: false,
     partner: null,
     sizeDirty: false,
     placed: false,

@@ -507,6 +507,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
    */
   private attachFlow(surface: GlassSurface): void {
     const name = surface.options.morph
+    surface.inherited = false
     if (name === null) {
       surface.flow = null
       return
@@ -528,6 +529,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
     })
     surface.partner = source.partner
     surface.snapFlow = false
+    surface.inherited = true
     this.startAnimation()
   }
 
@@ -734,6 +736,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
         ? null
         : new LiquidFlow(surface.layout)
       surface.snapFlow = true
+      surface.inherited = false
     }
     surface.dirty = true
     this.onInvalidate()
