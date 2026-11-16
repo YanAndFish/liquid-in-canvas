@@ -63,7 +63,7 @@ export function volumeCommon(count: number): string {
   shadow: vec4f,
   // 背景取样坐标的有效范围（归一化）：左、上、右、下。多层玻璃的上层背景只在这个范围内画好。
   valid: vec4f,
-  // 折射场缓存（只有混合光路的缓存管线读取）：缓存左上角在视口中的位置、每个 CSS 像素的纹素数、
+  // 折射场缓存（混合光路读写缓存的管线）：缓存左上角的纹素位置、缓存倍率与目标倍率之比、
   // 缓存结果相对查表近似的比例（切换时交叉淡化）。
   field: vec4f,
   members: array<Member, ${count}>,`, /* wgsl */`

@@ -137,7 +137,7 @@ function setup() {
       return FIELD_FORMATS.includes(descriptor.format as GPUTextureFormat) && descriptor.usage === FIELD_USAGE && (texture.width === 1) === empty
     })
   const bindGroups = fake.device.createBindGroup as unknown as { mock: { calls: [{ entries: { resource: unknown }[] }][] } }
-  /** 一组的 uniform 里折射场的四个数：缓存左上角、倍率、求交结果的比例。 */
+  /** 一组的 uniform 里折射场的四个数：缓存左上角（纹素）、缓存倍率与目标倍率之比、求交结果的比例。 */
   const fieldOf = (item: Item) => {
     const at = item.start + HEADER_FLOATS + 12
     return [
@@ -253,12 +253,12 @@ describe('折射场缓存', () => {
     const items = frameAt(start + FIELD_SETTLE_MS, scene())
     expect(items.map(item => item.label).sort()).toEqual(['volume-field:0:2', 'volume-profile:0:1'])
     const fused = items.find(item => item.label === 'volume-field:0:2')!
-    const [originX, originY, ratio, fade] = fieldOf(fused)
-    expect(ratio).toBe(2)
+    const [originX, originY, scale, fade] = fieldOf(fused)
+    // 主绘制里缓存与目标的倍率相同，纹素与像素逐个对齐。
+    expect(scale).toBe(1)
     expect(fade).toBe(0)
-    // 缓存的左上角落在着色像素的边界上。
-    expect(Number.isInteger(originX! * 2)).toBe(true)
-    expect(Number.isInteger(originY! * 2)).toBe(true)
+    expect(Number.isInteger(originX)).toBe(true)
+    expect(Number.isInteger(originY)).toBe(true)
     const textures = fieldTextures()
     expect(textures).toHaveLength(FIELD_TARGETS)
     const passes = encode()
@@ -290,7 +290,7 @@ describe('折射场缓存', () => {
     expect(texture.width * texture.height).toBeLessThan(FIELD_TEXEL_BUDGET / 4)
   })
 
-  it('写入缓存用的 uniform 把成员位置换成相对缓存左上角的坐标', () => {
+  it('写入缓存时按画面上对应像素的坐标求交：成员与目标尺寸不变，只加上缓存左上角的像素位置', () => {
     const { frameAt, now, encode, data, fieldOf, fieldTextures } = setup()
     const start = now()
     frameAt(start, scene())
@@ -299,24 +299,31 @@ describe('折射场缓存', () => {
     const [originX, originY] = fieldOf(fused)
     const bake = encode()[0]!.uniforms[0]!
     const texture = fieldTextures()[0]!
-    // 目标是缓存纹理：纹素尺寸，以及它在 CSS 像素里的大小。
+    expect(texture.width).toBeGreaterThan(0)
+    // 矩形铺满缓存纹理，`screen` 仍是画布的像素尺寸与视口的 CSS 尺寸。
     expect([
-      ...data().subarray(bake + 4, bake + 8),
+      ...data().subarray(bake, bake + 8),
     ]).toEqual([
-      texture.width,
-      texture.height,
-      texture.width / 2,
-      texture.height / 2,
+      -1,
+      1,
+      1,
+      -1,
+      SHADING.pixelWidth,
+      SHADING.pixelHeight,
+      SHADING.cssWidth,
+      SHADING.cssHeight,
     ])
+    // 缓存左上角的像素位置与读取时相同。
+    expect(data()[bake + HEADER_FLOATS + 12]).toBe(originX)
+    expect(data()[bake + HEADER_FLOATS + 13]).toBe(originY)
+    // 成员与裁剪原样复制，仍是视口坐标。
     const live = fused.start + HEADER_FLOATS + VOLUME_GROUP_FLOATS
     const baked = bake + HEADER_FLOATS + VOLUME_GROUP_FLOATS
-    for (const member of [0, VOLUME_MEMBER_FLOATS]) {
-      expect(data()[baked + member]).toBeCloseTo(data()[live + member]! - originX!, 3)
-      expect(data()[baked + member + 1]).toBeCloseTo(data()[live + member + 1]! - originY!, 3)
-      // 尺寸、圆角与厚度原样复制。
-      for (let k = 2; k < 11; k++)
-        expect(data()[baked + member + k]).toBe(data()[live + member + k])
-    }
+    expect([
+      ...data().subarray(baked, baked + 2 * VOLUME_MEMBER_FLOATS),
+    ]).toEqual([
+      ...data().subarray(live, live + 2 * VOLUME_MEMBER_FLOATS),
+    ])
   })
 
   it('求交结果按时间淡入，淡入完成后不再要求重绘', () => {
@@ -349,8 +356,9 @@ describe('折射场缓存', () => {
       expect(moved).toBeDefined()
       expect(encode()).toHaveLength(0)
       const field = fieldOf(moved)
-      expect(field[0]).toBeCloseTo(originX! + dx!, 3)
-      expect(field[1]).toBeCloseTo(originY! + dy!, 3)
+      // 着色倍率 2：平移一个 CSS 像素，缓存左上角移动两个纹素。
+      expect(field[0]).toBe(originX! + Math.round(dx! * 2))
+      expect(field[1]).toBe(originY! + Math.round(dy! * 2))
       expect(field[3]).toBe(1)
     }
     expect(fieldTextures()).toHaveLength(FIELD_TARGETS)

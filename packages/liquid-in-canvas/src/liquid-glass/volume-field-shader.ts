@@ -32,7 +32,8 @@ export const FIELD_TEXEL_BYTES = 16 + 8 + 8
  * 外观（染色、模糊方差、透镜偏移）不写进缓存：读取时按入射点重新算一次平滑合并权重，
  * 压暗、淡入淡出与主题变化都不需要重新求交。
  *
- * uniform 与混合着色器相同，成员的位置换成相对缓存左上角的坐标；`screen` 是缓存的纹素尺寸与 CSS 尺寸。
+ * uniform 与这一组的主绘制相同（成员用视口坐标，`screen` 是主绘制的目标尺寸），`field.xy` 是缓存左上角在
+ * 主绘制目标上的像素位置：纹素加上它就是画面上的像素，求交的坐标与逐帧求交逐位相同。
  */
 export function createFieldBakeShader(count: number): string {
   return /* wgsl */`${volumeCommon(count)}${raymarchOptics(count)}${profileOptics()}
@@ -44,7 +45,8 @@ struct FieldOutput {
 
 @fragment
 fn bake(in: VertexOutput) -> FieldOutput {
-  let screen_uv = in.position.xy / u.screen.xy;
+  // 换算成画面上对应像素的坐标，与混合着色器的计算逐位相同。
+  let screen_uv = (in.position.xy + u.field.xy) / u.screen.xy;
   let xy = screen_uv * u.screen.zw;
 ${hybridOwner(count)}
   var out: FieldOutput;

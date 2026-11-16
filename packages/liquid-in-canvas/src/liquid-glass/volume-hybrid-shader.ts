@@ -92,7 +92,7 @@ export function hybridTier(): string {
 function traceTier(cached: boolean): string {
   if (!cached)
     return /* wgsl */`        shaded = glass_trace(xy, screen_uv);`
-  return /* wgsl */`        let texel = vec2i(floor((xy - u.field.xy) * u.field.z));
+  return /* wgsl */`        let texel = vec2i(floor(in.position.xy * u.field.z - u.field.xy));
         var stored = vec4f(0.0, 0.0, 0.0, -1.0);
         if (all(texel >= vec2i(0)) && all(texel < vec2i(textureDimensions(field2)))) {
           stored = textureLoad(field2, texel, 0);

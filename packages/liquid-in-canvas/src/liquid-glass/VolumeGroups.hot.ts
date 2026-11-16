@@ -617,13 +617,14 @@ export class VolumeGroups {
       const entry = fields.track(plan, this.frame.data, group, profiles)
       if (entry !== null) {
         if (primary && fields.prepare(entry, this.frame.data, group, plan.count, profiles, targetWidth / cssWidth))
-          this.bake(fields, entry, plan, start)
+          this.bake(fields, entry, plan, start, targetWidth, targetHeight, cssWidth, cssHeight)
         if (entry.live || entry.fade > 0) {
           // 静止的组读缓存；刚开始运动的组把上一次的求交结果淡出。
+          // 纹素按像素坐标查找：纹素 = 像素 × (缓存倍率 / 目标倍率) − 缓存左上角（纹素）。主绘制里比例为 1，逐像素对齐。
           const data = this.frame.data
-          data[group + 12] = entry.anchorX + entry.originX
-          data[group + 13] = entry.anchorY + entry.originY
-          data[group + 14] = entry.ratio
+          data[group + 12] = Math.round((entry.anchorX + entry.originX) * entry.ratio)
+          data[group + 13] = Math.round((entry.anchorY + entry.originY) * entry.ratio)
+          data[group + 14] = entry.ratio * cssWidth / targetWidth
           data[group + 15] = entry.fade
           pipelines = this.fieldPipelines
           textures = this.fieldGroup(fields, entry, plan.level)
@@ -638,30 +639,35 @@ export class VolumeGroups {
   }
 
   /**
-   * 安排把一组的折射场写进缓存：复制这一组刚写好的 uniform，把成员与裁剪的位置换成相对缓存左上角的坐标，
-   * 目标换成缓存纹理。`source` 是这一组的 uniform 在本帧数据里的起始下标。
+   * 安排把一组的折射场写进缓存：复制这一组刚写好的 uniform，目标换成缓存纹理。
+   *
+   * 成员仍用视口坐标，`screen` 仍是这一组主绘制的目标尺寸，片元坐标加上缓存左上角的像素位置：
+   * 每个纹素求交时的坐标与画面上对应像素的计算逐位相同。轮廓附近全内反射的光路对坐标的舍入很敏感，
+   * 换成局部坐标会让这些像素与逐帧求交的结果不同。`source` 是这一组的 uniform 在本帧数据里的起始下标。
    */
-  private bake(fields: FieldCache, entry: FieldEntry, plan: VolumeGroupPlan, source: number): void {
+  private bake(
+    fields: FieldCache,
+    entry: FieldEntry,
+    plan: VolumeGroupPlan,
+    source: number,
+    targetWidth: number,
+    targetHeight: number,
+    cssWidth: number,
+    cssHeight: number,
+  ): void {
     const target = entry.textures!
     const floats = HEADER_FLOATS + VOLUME_GROUP_FLOATS + plan.count * VOLUME_MEMBER_FLOATS
-    const cssWidth = target.width / entry.ratio
-    const cssHeight = target.height / entry.ratio
-    const start = this.frame.rect(floats, 0, 0, cssWidth, cssHeight, cssWidth, cssHeight, target.width, target.height)
+    const start = this.frame.rect(floats, 0, 0, 1, 1, 1, 1, target.width, target.height)
     // 分配可能换了一块更大的数组，原来的内容保留在同样的下标上。
     const data = this.frame.data
     data.copyWithin(start + HEADER_FLOATS, source + HEADER_FLOATS, source + floats)
-    const x = entry.anchorX + entry.originX
-    const y = entry.anchorY + entry.originY
-    let member = start + HEADER_FLOATS + VOLUME_GROUP_FLOATS
-    for (let i = 0; i < plan.count; i++) {
-      data[member] = data[member]! - x
-      data[member + 1] = data[member + 1]! - y
-      data[member + 12] = data[member + 12]! - x
-      data[member + 13] = data[member + 13]! - y
-      data[member + 14] = data[member + 14]! - x
-      data[member + 15] = data[member + 15]! - y
-      member += VOLUME_MEMBER_FLOATS
-    }
+    data[start + 4] = targetWidth
+    data[start + 5] = targetHeight
+    data[start + 6] = cssWidth
+    data[start + 7] = cssHeight
+    const group = start + HEADER_FLOATS
+    data[group + 12] = Math.round((entry.anchorX + entry.originX) * entry.ratio)
+    data[group + 13] = Math.round((entry.anchorY + entry.originY) * entry.ratio)
     fields.list.push(0, this.bakePipelines.get(plan.count), start * 4, this.textureGroup(plan.level))
   }
 
