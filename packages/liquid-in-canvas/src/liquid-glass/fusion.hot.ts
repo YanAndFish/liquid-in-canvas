@@ -40,6 +40,12 @@ export interface VolumeSurface {
   materialize: number
   /** 嵌套玻璃所在外层玻璃的编号，顶层玻璃为 null。 */
   host: number | null
+  /**
+   * 按这块玻璃的尺寸算厚度与截面，缺省是自己。液体流动的拖尾用本体：拖尾比本体小，按自己的尺寸会更薄，
+   * 融合时较厚的本体只在轮廓外很窄的一圈里让给它（见 `fuseDominance`），本体与另一块玻璃之间的连接处
+   * 按拖尾的截面成形，本体的轮廓上留下一道折痕。
+   */
+  depthFrom?: VolumeSurface
 }
 
 /** 一组相连的玻璃，成员按表面编号排列。对象在 `GlassGroups` 里复用。 */

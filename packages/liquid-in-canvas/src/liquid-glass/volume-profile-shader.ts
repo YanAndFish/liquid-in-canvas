@@ -1,6 +1,6 @@
 import { wgslFloat } from '../gpu'
 import { BASE_IOR, LUT_ROWS_PER_PROFILE, LUT_SAMPLES, MAX_TRAVEL } from './optics-lut'
-import { clipCoverage, each, fuseDominance, gradientArray, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
+import { clipCoverage, each, fuseDominance, fuseOutlines, gradientArray, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
 
 /**
  * 剖面查表：查找表的绑定，以及按到轮廓的距离查表并着色。
@@ -92,6 +92,10 @@ fn glass_lookup(field: Field, xy: vec2f, screen_uv: vec2f) -> vec4f {
 
 /** 二维平滑合并后的距离场与外观（`glass_field`），剖面光学与混合光路切换时的交叉淡化共用。 */
 export function profileField(count: number): string {
+  // 只有一名成员时没有 `grads` 数组。
+  const firstGradient = count === 1
+    ? 'c0.yz'
+    : 'grads[index]'
   return /* wgsl */`
 // 平滑合并后的距离场与外观。距离与外法向用平面平滑合并（与三维求交的合并轮廓相同）；
 // 截面尺寸与外观由较厚成员主导（与三维求交的 glass_body、glass_material 相同），查找表的行取权重占优的成员。
@@ -99,20 +103,12 @@ fn glass_field(xy: vec2f) -> Field {
 ${each(count, i => `  let c${i} = glass_contour(xy, u.members[${i}]);
   let d${i} = c${i}.x;`)}
   var f: Field;
-  f.distance = d0;
-  f.gradient = c0.yz;
-  var fusion = u.members[0].depth.z;
-${each(count, i => `  {
-    let m = u.members[${i}];
-    let k = max(min(fusion, m.depth.z) * 2.0, 0.001);
-    let h = clamp(0.5 + 0.5 * (d${i} - f.distance) / k, 0.0, 1.0);
-    f.gradient = mix(c${i}.yz, f.gradient, h);
-    f.distance = mix(d${i}, f.distance, h) - k * h * (1.0 - h);
-    fusion = max(fusion, m.depth.z);
-  }`, 1)}
+  var distance: f32;
+${gradientArray(count, 'c')}
+${fuseOutlines(count, `    f.gradient = ${firstGradient};`, `    f.gradient = mix(grads[index], f.gradient, h);`)}
+  f.distance = distance;
   f.stretch = min(length(f.gradient), 1.0);
   f.gradient = normalize(f.gradient + vec2f(0.0, 0.00001));
-${gradientArray(count, 'c')}
 ${fuseDominance(count, `      f.top_slope = vec2f(0.0);
       f.bottom_slope = vec2f(0.0);
       f.optics = m.appearance;
@@ -154,16 +150,9 @@ export function createProfileVolumeShader(count: number): string {
 ${profileField(count)}
 // 只求平滑合并后的距离，用于阴影。
 fn glass_projection(xy: vec2f) -> f32 {
-  var distance = glass_outline(xy, u.members[0]);
-  var fusion = u.members[0].depth.z;
-${each(count, i => `  {
-    let m = u.members[${i}];
-    let other = glass_outline(xy, m);
-    let k = max(min(fusion, m.depth.z) * 2.0, 0.001);
-    let h = clamp(0.5 + 0.5 * (other - distance) / k, 0.0, 1.0);
-    distance = mix(other, distance, h) - k * h * (1.0 - h);
-    fusion = max(fusion, m.depth.z);
-  }`, 1)}
+${each(count, i => `  let d${i} = glass_outline(xy, u.members[${i}]);`)}
+  var distance: f32;
+${fuseOutlines(count, '', '')}
   return distance;
 }
 

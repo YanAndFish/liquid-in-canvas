@@ -9,7 +9,7 @@ import { parseGlassOptions } from '../../src/liquid-glass/options'
 import { createFieldBakeShader, FIELD_FORMATS, FIELD_TARGETS, FIELD_TEXEL_BYTES } from '../../src/liquid-glass/volume-field-shader'
 import { createHybridVolumeShader } from '../../src/liquid-glass/volume-hybrid-shader'
 import { createVolumeShader, VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS, VOLUME_TEXTURES } from '../../src/liquid-glass/volume-shader'
-import { VolumeGroups } from '../../src/liquid-glass/VolumeGroups.hot'
+import { VolumeGroups, volumeHalfDepth } from '../../src/liquid-glass/VolumeGroups.hot'
 import { createFakeGpu } from '../helpers/fake-gpu'
 
 /** 没有裁剪祖先时的裁剪范围。 */
@@ -404,8 +404,65 @@ describe('折射场缓存', () => {
     expect(groups.settling).toBe(false)
   })
 
+  it('成员小幅漂移（弹簧收敛的尾巴、很慢的拖动）时缓存不作废：同一帧按新的几何重新求交，不淡出', () => {
+    const { run, frame, encode, fieldOf, groups } = setup()
+    run(SETTLE_FRAMES, scene())
+    // 第二块玻璃每帧相对第一块移动 0.3 像素，越来越慢，最后停下。
+    let x = 210
+    for (const step of [0.3, 0.3, 0.2, 0.1, 0.05]) {
+      x += step
+      const surfaces = [
+        surface(1, 0),
+        surface(2, x),
+        surface(3, 700),
+      ]
+      const fused = frame(surfaces).find(item => item.label.endsWith(':2'))!
+      expect(fused.label).toBe('volume-field:0:2')
+      expect(fieldOf(fused)[3]).toBe(1)
+      const passes = encode()
+      expect(passes).toHaveLength(1)
+      expect(passes[0]!.labels).toEqual(['volume-bake:2'])
+      expect(groups.settling).toBe(true)
+    }
+    // 停下之后不再求交，也不再要求重绘。
+    const rest = [
+      surface(1, 0),
+      surface(2, x),
+      surface(3, 700),
+    ]
+    frame(rest)
+    expect(encode()).toHaveLength(0)
+    expect(groups.settling).toBe(false)
+  })
+
+  it('明显变化之后不等旧结果淡完：没有明显变化满规定时间就重新求交，从当前的比例接着淡入', () => {
+    const { run, frameAt, now, encode, fieldOf } = setup()
+    run(SETTLE_FRAMES, scene())
+    const moved = [
+      surface(1, 0),
+      surface(2, 216),
+      surface(3, 700),
+    ]
+    // 120 Hz：淡出比等待静止慢。
+    const tick = 1000 / 120
+    const start = now()
+    let bakeAt = -1
+    let lowest = 1
+    for (let i = 1; i <= Math.ceil(FIELD_SETTLE_MS / tick) + 2; i++) {
+      const fused = frameAt(start + i * tick, moved).find(item => item.label.endsWith(':2'))!
+      expect(fused.label).toBe('volume-field:0:2')
+      lowest = Math.min(lowest, fieldOf(fused)[3]!)
+      if (encode().length > 0 && bakeAt < 0)
+        bakeAt = i
+    }
+    expect(bakeAt).toBe(Math.ceil((FIELD_SETTLE_MS + tick) / tick))
+    // 只淡出了一部分。
+    expect(lowest).toBeGreaterThan(0)
+    expect(lowest).toBeLessThan(1)
+  })
+
   it('尺寸、按压、材质化、圆角与截面参数变化都让缓存失效；外观变化不会', () => {
-    const { run, frame, encode } = setup()
+    const { run, frame, encode, fieldOf } = setup()
     const base = (): VolumeSurface[] => scene()
     const settle = () => {
       run(SETTLE_FRAMES, base())
@@ -429,10 +486,11 @@ describe('折射场缓存', () => {
       settle()
       const changed = base()
       change(changed)
-      // 先把旧结果淡出，再用剖面管线。
-      const labels = run(Math.ceil(FIELD_FADE_OUT_MS / TICK) + 1, changed).map(item => item.label)
-      expect(labels).toContain('volume-profile:0:2')
-      expect(labels).not.toContain('volume-field:0:2')
+      // 缓存作废：旧结果开始淡出，这一帧不重新求交。
+      const fused = frame(changed).find(item => item.label.endsWith(':2'))!
+      expect(fused.label).toBe('volume-field:0:2')
+      expect(fieldOf(fused)[3]).toBeLessThan(1)
+      expect(encode()).toHaveLength(0)
     }
 
     // 染色、不透明度、遮罩压暗与透镜强度每帧现算，不需要重新求交。
@@ -489,7 +547,7 @@ describe('折射场缓存', () => {
   })
 
   it('裁剪切进玻璃时单独一块也缓存；裁剪边远离玻璃时随滚动移动不影响缓存', () => {
-    const { run, frame, encode, fieldTextures } = setup()
+    const { run, frame, encode, fieldTextures, fieldOf } = setup()
     // 裁剪边穿过玻璃：沿裁剪边的一条需要求交。
     const cut = (): VolumeSurface[] => [
       surface(1, 300, 200, [350, 0, 1000, 600]),
@@ -502,7 +560,9 @@ describe('折射场缓存', () => {
     const shifted = [
       surface(1, 310, 200, [350, 0, 1000, 600]),
     ]
-    expect(run(Math.ceil(FIELD_FADE_OUT_MS / TICK) + 1, shifted).map(item => item.label)).toEqual(['volume-profile:0:1'])
+    const moved = frame(shifted)
+    expect(moved.map(item => item.label)).toEqual(['volume-field:0:1'])
+    expect(fieldOf(moved[0]!)[3]).toBeLessThan(1)
 
     // 两块相连的玻璃在裁剪容器里滚动，裁剪边一直离得远：缓存保持命中。
     const inside = (dy: number): VolumeSurface[] => [
@@ -706,5 +766,22 @@ describe('折射场缓存', () => {
       'volume-profile:0:2',
       'volume-profile:1:2',
     ])
+  })
+})
+
+describe('拖尾的厚度', () => {
+  it('按本体的尺寸与材质化算，与本体一致；没有指定时按自己的尺寸', () => {
+    const body = surface(1, 0, 200)
+    body.width = 64
+    body.height = 64
+    const tail = surface(-2, 10, 210)
+    tail.width = 40
+    tail.height = 40
+    const own = volumeHalfDepth(tail)
+    expect(own).toBeLessThan(volumeHalfDepth(body))
+    tail.depthFrom = body
+    expect(volumeHalfDepth(tail)).toBe(volumeHalfDepth(body))
+    body.materialize = 0.5
+    expect(volumeHalfDepth(tail)).toBe(volumeHalfDepth(body))
   })
 })

@@ -27,13 +27,13 @@ export function each(count: number, body: (i: number) => string, from = 0): stri
 }
 
 /**
- * 成员按顶面高度（底面高度 + 厚度）从低到高的次序，`fusion_order()` 返回每一名次对应的成员下标。
- * 顶面一样高时下标小的在前。只取决于 uniform，每个像素算出的次序相同。
+ * 按 `key` 从小到大给成员排名次的函数 `name()`，返回每一名次对应的成员下标；`key` 一样大时下标小的在前。
+ * 只取决于 uniform，每个像素算出的次序相同。
  */
-function fusionOrder(count: number): string {
-  const tops = each(count, i => `  let t${i} = u.members[${i}].depth.y + 2.0 * u.members[${i}].depth.x;`)
+function memberOrder(count: number, name: string, key: (i: number) => string, comment: string): string {
+  const keys = each(count, i => `  let t${i} = ${key(i)};`)
   const ranks = each(count, (i) => {
-    // 名次是排在它前面的成员数：顶面更低，或一样高且下标更小。
+    // 名次是排在它前面的成员数：key 更小，或一样大且下标更小。
     const before = Array.from({ length: count }, (_, j) => j)
       .filter(j => j !== i)
       .map((j) => {
@@ -48,13 +48,23 @@ function fusionOrder(count: number): string {
     return `  order[${rank}] = ${i};`
   })
   return /* wgsl */`
-// 成员按顶面从低到高的次序（下标）。
-fn fusion_order() -> array<i32, ${count}> {
+// ${comment}
+fn ${name}() -> array<i32, ${count}> {
   var order: array<i32, ${count}>;
-${tops}
+${keys}
 ${ranks}
   return order;
 }`
+}
+
+/** 成员按顶面高度（底面高度 + 厚度）从低到高的次序 `fusion_order()`，截面参数与外观按它合并（`fuseDominance`）。 */
+function fusionOrder(count: number): string {
+  return memberOrder(count, 'fusion_order', i => `u.members[${i}].depth.y + 2.0 * u.members[${i}].depth.x`, '成员按顶面从低到高的次序（下标）。')
+}
+
+/** 成员按融合距离从大到小的次序 `smooth_order()`，轮廓按它平滑合并（`fuseOutlines`）。 */
+function smoothOrder(count: number): string {
+  return memberOrder(count, 'smooth_order', i => `-u.members[${i}].depth.z`, '成员按融合距离从大到小的次序（下标）。')
 }
 
 /** 各成员外法向的数组 `grads`，`prefix` 是 `glass_contour` 结果的变量名前缀。只有一名成员时不需要。 */
@@ -238,6 +248,7 @@ fn glass_corner(xy: vec2f, m: Member, lateral: f32) -> bool {
   return abs(w.x - w.y) < reach;
 }
 ${fusionOrder(count)}
+${smoothOrder(count)}
 // 较厚成员的截面参数与外观向轮廓外延伸的权重与它对平面距离的导数：轮廓内为 1，到 reach 处降到 0，
 // 两端的一阶、二阶导数都为零，合并后的顶面没有折线。
 fn fusion_ramp(distance: f32, reach: f32) -> vec2f {
@@ -290,25 +301,53 @@ ${each(count, i => `  {
 }
 
 /**
- * 按成员顺序做平面平滑合并的循环体：与剖面光学的 `glass_field` 用同一个权重，`extra` 在每一步用这个权重混合附带的值。
- * 要求作用域里已有 `var distance`（第一名成员的平面距离）与 `var fusion`，循环内可以用 `m`、`other` 与 `h`。
+ * 平面平滑合并：按融合距离从大到小（`smooth_order()`）依次并入，每名成员用自己的融合距离做二次多项式平滑合并，
+ * 合并范围是两倍融合距离。两名成员矩形间距等于较小的融合距离（刚分进同一组）时，连接处的轮廓正好碰到一起。
+ *
+ * 不能按成员在组里的顺序、取“之前成员的最大融合距离与自己的较小值”：融合距离很小的成员排在前面时，
+ * 比如拖动时藏在按钮里的拖尾（融合距离按离本体的距离渐进，接近零），它与按钮本该几乎不合并，
+ * 但只要组里还有一块融合距离大的玻璃排在中间，按钮就按大的融合距离与拖尾合并，两个几乎重合的轮廓
+ * 整圈鼓出去半个融合距离：拖着按钮靠近另一块玻璃、刚分进同一组时按钮突然变大一圈，原来的轮廓在里面留下一道环。
+ * 从大到小合并时，每一步之前的成员融合距离都不小于当前成员，两种取法只在这里一致，结果与成员在组里的顺序无关。
+ *
+ * 要求作用域里已有 `var distance: f32` 与各成员的平面距离 `d0`、`d1`……。`first` 在开始时对排第一的成员执行，
+ * 此时 `distance` 已是它的距离；`extra` 在之后每一步、更新 `distance` 之前执行。两者都可以用成员下标 `index`
+ * 与成员 `m`，`extra` 还可以用这名成员的距离 `other` 与权重 `h`（`h` 为 1 时保留已经合并的部分）。
  */
-export function fuseOutlines(count: number, other: (i: number) => string, extra: (i: number) => string = () => ''): string {
-  return each(count, i => `  {
-    let m = u.members[${i}];
-    let other = ${other(i)};
-    let k = max(min(fusion, m.depth.z) * 2.0, 0.001);
-    let h = clamp(0.5 + 0.5 * (other - distance) / k, 0.0, 1.0);
-${extra(i)}
-    distance = mix(other, distance, h) - k * h * (1.0 - h);
-    fusion = max(fusion, m.depth.z);
-  }`, 1)
+export function fuseOutlines(count: number, first: string, extra: string): string {
+  if (count === 1) {
+    return /* wgsl */`  {
+    let index = 0;
+    let m = u.members[0];
+    distance = d0;
+${first}
+  }`
+  }
+  return /* wgsl */`  {
+    var outline_order = smooth_order();
+    var outlines = array<f32, ${count}>(${each(count, i => `d${i}`).split('\n').join(', ')});
+    {
+      let index = outline_order[0];
+      let m = u.members[index];
+      distance = outlines[index];
+${first}
+    }
+    for (var r = 1; r < ${count}; r++) {
+      let index = outline_order[r];
+      let m = u.members[index];
+      let other = outlines[index];
+      let k = max(m.depth.z * 2.0, 0.001);
+      let h = clamp(0.5 + 0.5 * (other - distance) / k, 0.0, 1.0);
+${extra}
+      distance = mix(other, distance, h) - k * h * (1.0 - h);
+    }
+  }`
 }
 
 /**
  * 合并后的轮廓与截面（`glass_body`）。每名成员的平面距离与裁剪距离只算一次：
  *
- * - 轮廓按成员顺序做平面平滑合并（`fuseOutlines`）。裁剪距离用同一个权重混合，混合前截到不深于“半厚度 + 1”：
+ * - 轮廓按融合距离从大到小做平面平滑合并（`fuseOutlines`）。裁剪距离用同一个权重混合，混合前截到不深于“半厚度 + 1”：
  *   截面的距离不小于负的半厚度，更深的裁剪距离不起作用；截短后，没有裁剪的成员只把相邻成员的裁剪切面
  *   在融合范围内平滑地推开，不会把它整个抹掉。所有成员共用同一个裁剪范围时结果与逐成员裁剪相同。
  * - 同时记下最近与次近成员（含裁剪）的距离和最近成员的下标，供混合光路分档。
@@ -320,13 +359,13 @@ function glassBody(count: number): string {
   var b: Body;
 ${each(count, i => `  let d${i} = glass_outline(xy, u.members[${i}]);
   let c${i} = glass_clip(xy, u.members[${i}].clip);`)}
-  var distance = d0;
-  var fusion = u.members[0].depth.z;
-  b.clip = max(c0, -u.members[0].depth.x - 1.0);
+  var distance: f32;
+  var clips = array<f32, ${count}>(${each(count, i => `c${i}`).split('\n').join(', ')});
+${fuseOutlines(count, `    b.clip = max(clips[index], -m.depth.x - 1.0);`, `    b.clip = mix(max(clips[index], -m.depth.x - 1.0), b.clip, h);`)}
   b.owner = 0;
   b.nearest = max(d0, c0);
   b.second = 1000000.0;
-${fuseOutlines(count, i => `d${i}`, i => `    b.clip = mix(max(c${i}, -m.depth.x - 1.0), b.clip, h);
+${each(count, i => `  {
     let apart = max(d${i}, c${i});
     if (apart < b.nearest) {
       b.second = b.nearest;
@@ -334,7 +373,8 @@ ${fuseOutlines(count, i => `d${i}`, i => `    b.clip = mix(max(c${i}, -m.depth.x
       b.owner = ${i};
     } else {
       b.second = min(b.second, apart);
-    }`)}
+    }
+  }`, 1)}
   b.planar = distance;
   var top_slope = 0.0;
   var bottom_slope = 0.0;

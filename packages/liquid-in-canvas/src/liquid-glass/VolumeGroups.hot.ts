@@ -89,11 +89,12 @@ function settled(surface: VolumeSurface): number {
 
 /**
  * 三维实体的半厚度：`refraction` 受控件短边限制，材质化时从接近零长到原厚度
- * （出现时略微越过，先厚后回落）。
+ * （出现时略微越过，先厚后回落）。拖尾按本体算（`depthFrom`）。
  */
 export function volumeHalfDepth(surface: VolumeSurface): number {
-  const base = profileHalfDepth(surface.options.refraction, surface.width, surface.height)
-  return Math.max(0.5, base * materialized(surface))
+  const source = surface.depthFrom ?? surface
+  const base = profileHalfDepth(surface.options.refraction, source.width, source.height)
+  return Math.max(0.5, base * materialized(source))
 }
 
 /** 算出一组的包围矩形、绘制顺序与求交范围。 */
