@@ -33,6 +33,8 @@ interface ObservedStage {
   setOptics: CanvasStage['setOptics']
   /** 打开或关闭混合光路的折射场缓存。 */
   setFieldCache: CanvasStage['setFieldCache']
+  /** 打开或关闭快照复用。 */
+  setSnapshotReuse: CanvasStage['setSnapshotReuse']
   /** 当前画布尺寸、倍率与实际使用的光路。 */
   getMetrics: CanvasStage['getMetrics']
 }
@@ -74,12 +76,33 @@ const resolutionOverride = {
 const hold = query.has('hold')
   ? Number(query.get('hold'))
   : null
+/**
+ * `?press=400` 在测量期间停在当前滚动位置，每 400 ms 交替按下、松开视口里的第一块玻璃
+ * （合成的指针事件，不触发 `:active` 样式），只有玻璃的按压弹簧在动，页面本身不变。
+ * 与 `?reuse=1` 对照，测量快照复用能省下多少。
+ */
+const pressPeriod = query.has('press')
+  ? Number(query.get('press')) || 400
+  : null
 const configured = new WeakSet<object>()
 /** 读取舞台的实际倍率与光路（自适应降级后的结果），测量结束时调用。 */
 let readMetrics: (() => ReturnType<CanvasStage['getMetrics']>) | null = null
 const errors: string[] = []
 let active = false
 let measurement = 0
+/** 测量期间整页快照（源元素是舞台根元素）与其他元素的上传次数。 */
+let rootUploads = 0
+let otherUploads = 0
+const uploadElement = GPUQueue.prototype.drawElementImageToTexture
+GPUQueue.prototype.drawElementImageToTexture = function (source, destination) {
+  if (active) {
+    if (source.source.parentElement?.id === 'stage')
+      rootUploads++
+    else
+      otherUploads++
+  }
+  uploadElement.call(this, source, destination)
+}
 let durations: number[] = []
 let paints: number[] = []
 let frames: number[] = []
@@ -220,6 +243,16 @@ output.id = 'scroll-result'
 panel.append(button, output)
 document.body.append(panel)
 
+/** 视口里第一块完整可见的玻璃，按压测量的目标。 */
+function pressTarget(): HTMLElement | null {
+  for (const element of document.querySelectorAll<HTMLElement>('[data-liquid-glass]')) {
+    const rect = element.getBoundingClientRect()
+    if (rect.width > 0 && rect.top >= 0 && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth)
+      return element
+  }
+  return null
+}
+
 /** 暂停视频，在相同八秒路径中向下滚动 2200 像素，再回到顶部；带 `?hold` 时停在给定位置。 */
 button.onclick = () => {
   const scroller = getStageScroller()
@@ -229,6 +262,8 @@ button.onclick = () => {
   scroller.scrollTo({ top: 0, behavior: 'instant' })
   const distance = Math.min(2200, scroller.scrollHeight - scroller.clientHeight)
   durations = []
+  rootUploads = 0
+  otherUploads = 0
   paints = []
   frames = []
   gpuTimes = []
@@ -245,6 +280,9 @@ button.onclick = () => {
   button.disabled = true
   output.textContent = '正在滚动'
   let started: number | undefined
+  let pressed = false
+  if (pressPeriod !== null)
+    scroller.scrollTo({ top: hold ?? 0, behavior: 'instant' })
   const frame = (time: number) => {
     started ??= time
     const elapsed = time - started
@@ -259,7 +297,7 @@ button.onclick = () => {
         ...(durations.length < 30
           ? ['绘制次数不足']
           : []),
-        ...(hold === null && Math.max(...positions) < distance * 0.95
+        ...(hold === null && pressPeriod === null && Math.max(...positions) < distance * 0.95
           ? ['没有经过规定的滚动范围']
           : []),
       ]
@@ -276,6 +314,8 @@ button.onclick = () => {
         distance,
         hold,
         maxScroll: Math.max(...positions),
+        pressPeriod,
+        uploads: { root: rootUploads, other: otherUploads },
         draw: distribution(durations),
         paintInterval: distribution(intervals(paints)),
         animationInterval: distribution(intervals(frames)),
@@ -289,7 +329,19 @@ button.onclick = () => {
       return
     }
     const fraction = elapsed / 8000
-    scroller.scrollTo({ top: hold ?? distance * (1 - Math.abs(fraction * 2 - 1)), behavior: 'instant' })
+    if (pressPeriod !== null) {
+      const down = Math.floor(elapsed / pressPeriod) % 2 === 0
+      if (down !== pressed) {
+        pressed = down
+        if (down)
+          pressTarget()?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+        else
+          window.dispatchEvent(new PointerEvent('pointerup'))
+      }
+    }
+    else {
+      scroller.scrollTo({ top: hold ?? distance * (1 - Math.abs(fraction * 2 - 1)), behavior: 'instant' })
+    }
     positions.push(scroller.scrollTop)
     frames.push(time)
     requestAnimationFrame(frame)

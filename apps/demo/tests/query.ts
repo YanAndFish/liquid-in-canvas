@@ -24,10 +24,17 @@ export function applyGlassQuery(query: URLSearchParams): void {
 /**
  * `?optics=profile`、`?optics=raymarch`、`?optics=hybrid` 切换光路，用于比对画面与开销。
  * `?cache=0` 关闭混合光路的折射场缓存：连接处每帧逐步求交，运动中也不改用查表。
+ * `?reuse=1` 打开实验性的快照复用：页面没有变化的帧沿用上一帧整页快照。
  */
-export function applyStageQuery(stage: { setOptics: (optics: GlassOptics) => void, setFieldCache: (enabled: boolean) => void }, query: URLSearchParams): void {
+export function applyStageQuery(stage: {
+  setOptics: (optics: GlassOptics) => void
+  setFieldCache: (enabled: boolean) => void
+  setSnapshotReuse?: (enabled: boolean) => void
+}, query: URLSearchParams): void {
   if (query.has('cache'))
     stage.setFieldCache(query.get('cache') !== '0')
+  if (query.has('reuse'))
+    stage.setSnapshotReuse?.(query.get('reuse') !== '0')
   const optics = query.get('optics')
   if (optics === 'profile' || optics === 'raymarch' || optics === 'hybrid')
     stage.setOptics(optics)

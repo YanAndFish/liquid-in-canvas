@@ -75,7 +75,7 @@ src/tuner/, tuner.ts    调参面板（原生 DOM），经 liquid-in-canvas/tune
 
 **显示帧探针**（`frame-probe.hot.ts`）：绘制间隔是 33 ms 时，可能是跟不上显示器，也可能是页面本来就每两个显示帧才更新一次（30 帧的视频、间歇的 DOM 更新）。浏览器自行触发的 `paint` 不经过 `invalidate()`，无法靠“谁请求了重绘”分辨；能分辨的是两次绘制之间有没有一个没有绘制的显示帧。每次绘制之后探针用 `requestAnimationFrame` 数最多两个显示帧，下一次绘制时不足两个就是连续的。自适应降级只对连续的绘制取样（见[分辨率](#分辨率)）。探针只在自适应降级开启时工作，绘制停止后数到两帧也随之停止。
 
-1. **页面快照**：`CanvasStage` 把整个根元素上传为纹理，同时作为全屏背景和玻璃的折射源。
+1. **页面快照**：`CanvasStage` 把整个根元素上传为纹理，同时作为全屏背景和玻璃的折射源。打开实验开关 `snapshotReuse` 时，页面没有变化的帧沿用上一帧快照，见下文“页面快照的获取”。
 2. **玻璃表面**（`LiquidGlassLayer.sync`）：测量每块 `[data-liquid-glass]`，按需上传其 HTML 内容。
 3. **内容遮挡**（`content-order.ts`、`ContentBackdrop`）：按层级、层叠上下文与 DOM 顺序排序；被上层玻璃覆盖的下层文字写进背景的副本，参与模糊。
 4. **多级模糊**（`blur.ts`）：对合成背景逐级做高斯卷积，σ 为 2/6/16/40/80 CSS 像素；本帧用不到的层不生成。
@@ -83,6 +83,11 @@ src/tuner/, tuner.ts    调参面板（原生 DOM），经 liquid-in-canvas/tune
 6. **三维体积**（`VolumeGroups`、`volume-shader.ts`、`volume-profile-shader.ts` 或 `volume-hybrid-shader.ts`）：同层邻近玻璃合成一个距离场，按 RGB 三条光路折射取样，再叠加凸透镜偏移。混合光路里几何静止的组读取折射场缓存，见下文。
 7. **前景**（`CanvasOverlay`）：`[data-stage-overlay]` 单独上传，画在低层玻璃之上。
 8. **画布遍**：页面快照、前景、体积与玻璃内容按绘制顺序画进画布。
+
+**页面快照的获取**：`drawElementImageToTexture()` 每次调用都由浏览器按目标尺寸新建一张表面、回放元素的整份绘制记录、再拷进我们的纹理；接口支持源子矩形（CSS 像素）与目标起点 `origin`，光栅化的像素随面积减少，但每多一次调用就多付一次与绘制记录复杂度成正比的固定开销。快照同时是画布上显示的整个页面，所以不能只获取玻璃需要的局部，按条带或脏矩形分次上传也只会更慢（测量与方案对比见[局部快照的记录](performance/2026-11-16-local-snapshot/README.md)）。能省的是页面没变的帧：
+
+- `snapshotReuse`（缺省关闭）打开后，`paint` 事件的 `changedElements` 里没有根元素、且舞台没有记下页面可能变了（`pageStale`）时不上传。`pageStale` 由快照纹理重建、根元素里的 `scroll` / `scrollend` / `load`、字体就绪、视频新帧、外部 `invalidate()` 与玻璃图层的 `onInvalidate`（DOM 变更、注册、尺寸、按下指针）置位。
+- 玻璃自己的运动（弹簧、液体迁移、折射场缓存的等待与淡化、内容快照补传）走 `onRedraw`，只请求重绘。这些帧省掉整页光栅化，滚动、视频与页面动画的帧照常上传。
 
 ### GPU 结构
 
@@ -103,7 +108,7 @@ src/tuner/, tuner.ts    调参面板（原生 DOM），经 liquid-in-canvas/tune
 
 | 文件 | 每帧做什么 |
 | --- | --- |
-| `stage-frame.hot.ts` | 上传页面快照，组装画布遍，编码并提交 |
+| `stage-frame.hot.ts` | 上传页面快照（快照复用时判断页面是否变了），组装画布遍，编码并提交 |
 | `frame.hot.ts` | uniform 分配、绘制列表排序、渲染遍编码、元素上传 |
 | `CanvasOverlay.hot.ts` | 上传前景层 |
 | `adaptive.hot.ts` | 按绘制间隔降级：先改用剖面光学，再调整玻璃着色倍率 |
@@ -190,7 +195,7 @@ src/tuner/, tuner.ts    调参面板（原生 DOM），经 liquid-in-canvas/tune
 
 合成只覆盖体积组的包围矩形。离屏目标里各组已经相互混合，重叠的包围矩形先换成互不重叠的矩形（`cover.ts`），否则重叠处的阴影会叠加两遍。体积组按前景层的绘制顺序分成两段，各用一个离屏目标，前景层仍然夹在两段之间。低分辨率下一段内的所有体积先于这一段的内容绘制，上层玻璃的阴影因此不再压暗下层玻璃上的文字。
 
-玻璃着色之外的开销（整页快照、页面绘制、模糊）不受玻璃着色倍率影响，只能靠降低画布倍率减少，代价是文字变软：接入方可以用两个静态上限直接限制，也可以用 `minPixelRatio` 显式打开自适应降级的最后一级。实际倍率见 `getMetrics()` 的 `dpr`，静态上限给出的倍率是 `targetDpr`。快照纹理、模糊层和玻璃内容纹理的尺寸互相独立，改变画布倍率不影响点击命中。
+玻璃着色之外的开销（整页快照、页面绘制、模糊）不受玻璃着色倍率影响；只有玻璃在动的帧可以用快照复用省掉整页快照，滚动时只能靠降低画布倍率减少，代价是文字变软：接入方可以用两个静态上限直接限制，也可以用 `minPixelRatio` 显式打开自适应降级的最后一级。实际倍率见 `getMetrics()` 的 `dpr`，静态上限给出的倍率是 `targetDpr`。快照纹理、模糊层和玻璃内容纹理的尺寸互相独立，改变画布倍率不影响点击命中。
 
 ### 隐式组件
 
@@ -203,6 +208,7 @@ src/tuner/, tuner.ts    调参面板（原生 DOM），经 liquid-in-canvas/tune
 | 液体迁移 | `liquid-glass/flow.hot.ts` | 四边弹簧，体积在布局坐标中流向新位置 |
 | 热路径规则 | `tools/eslint-plugin-hot` | `*.hot.ts` 里每帧执行的函数不得分配 |
 | 快照调度 | `LiquidGlassLayer` 内 `dirty` / `settleFrames` / `paintPending` / `contentComplete` | 决定何时向浏览器请求新的绘制记录、何时上传 |
+| 快照复用 | `CanvasStage` 的 `pageStale`、`stage-frame.hot.ts` 的 `snapshotChanged()` | 页面没有变化的帧沿用上一帧整页快照（实验开关 `snapshotReuse`） |
 | 模态压暗 | `[data-glass-modal]` + `[data-glass-scrim]` | 模态层打开时压暗其外部玻璃的染色和高光 |
 | 页面淡入淡出 | `[data-glass-fade]` | 页面切换时把容器 opacity 传给内部玻璃 |
 | 按压形变 | `fusion.ts` `pressedBox` | 体积距离场与内容遮挡共用的按压轮廓 |
@@ -259,8 +265,8 @@ src/shared                  偏好存储与滚动容器
 - `packages/liquid-in-canvas/tests`：Vitest + jsdom，覆盖属性解析、默认参数、分辨率、融合分组（含嵌套玻璃）、内容顺序、不重叠覆盖、液体迁移的弹簧与交接、回退实现（含折射滤镜的贴图取值）和不支持时的挂载行为。管线缓存、uniform 布局、绘制列表与玻璃图层的每帧逻辑用记录调用的假设备（`tests/helpers/fake-gpu.ts`）驱动真实代码检查。
 - `tools/eslint-plugin-hot/tests`：热路径规则的正反用例。
 - `apps/demo/tests`：领域逻辑与视图。
-- `apps/demo/tests/visual/*.html`：在支持的浏览器中人工检查玻璃边缘与内容遮挡；`glass-stack.html` 检查多层叠放、生效与移除；`reference.html` 复刻参考画面的几何条件，配合 `docs/performance/2026-11-14-visual/tools/profile_fit.py` 测量折射剖面。`?optics=profile`、`?optics=raymarch`、`?optics=hybrid` 切换光路，`?cache=0` 关闭混合光路的折射场缓存。
-- `apps/demo/tests/perf/`：独立构建入口，通过替换 `CanvasStage.prototype.draw` 记录帧时间，`?gpu` 时打开逐遍计时，结果保存在 `docs/performance/`。`scroll.html?hold=600` 停在给定的滚动位置测量。`?lens=0` 关闭透镜，用于和没有透镜的旧版本逐像素比对（`docs/performance/2026-11-13-webgpu/tools/`）。
+- `apps/demo/tests/visual/*.html`：在支持的浏览器中人工检查玻璃边缘与内容遮挡；`glass-stack.html` 检查多层叠放、生效与移除；`reference.html` 复刻参考画面的几何条件，配合 `docs/performance/2026-11-14-visual/tools/profile_fit.py` 测量折射剖面。`?optics=profile`、`?optics=raymarch`、`?optics=hybrid` 切换光路，`?cache=0` 关闭混合光路的折射场缓存，`?reuse=1` 打开快照复用。
+- `apps/demo/tests/perf/`：独立构建入口，通过替换 `CanvasStage.prototype.draw` 记录帧时间，`?gpu` 时打开逐遍计时，结果保存在 `docs/performance/`。`scroll.html?hold=600` 停在给定的滚动位置测量，`?press=400` 停住并反复按压一块玻璃（只有玻璃在动），输出里的 `uploads` 是整页快照的上传次数。`?lens=0` 关闭透镜，用于和没有透镜的旧版本逐像素比对（`docs/performance/2026-11-13-webgpu/tools/`）。
 
 jsdom 不绘制 WebGPU，测试通过不能证明着色器的画面。画面需要在支持这些 API 的浏览器中检查。
 
