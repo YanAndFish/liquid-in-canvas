@@ -88,12 +88,44 @@ struct Member {
 @group(1) @binding(0) var source: texture_2d<f32>;
 ${BLUR_SIGMAS.map((_, i) => `@group(1) @binding(${i + 1}) var blur${i}: texture_2d<f32>;`).join('\n')}
 
-// 圆角矩形轮廓的有向距离。
-fn glass_outline(xy: vec2f, b: vec4f, radii: vec4f) -> f32 {
+// 成员轮廓的有向距离与朝外的单位法向。
+//
+// 圆角矩形的有向距离往里走，等距线的圆角半径逐渐缩到零，再往里在角上折成直角，法向沿对角线突变。
+// 倒角比圆角宽时这条折线落进倒角，两侧的折射方向跳变，画面上从四角各出现一条斜线。
+// 这里让等距线的圆角半径缩到 rounding 就不再缩小，折线换成半径为 rounding 的圆弧，法向连续转过。
+// rounding 取倒角超出圆角的部分，不超过圆角半径，也不超过倒角最深处还放得下的大小：
+// 倒角不比圆角宽时与原来完全相同，胶囊也不变。
+// 轮廓外与浅于 radius − rounding 的部分仍是原来的有向距离；更深处的值不大于原来的值，梯度长度不超过 1，
+// 求交步长仍然安全。
+fn glass_contour(xy: vec2f, m: Member) -> vec3f {
+  let b = m.box;
+  let radii = m.radius;
   let local = xy - b.xy;
-  let radius = min(select(select(radii.z, radii.y, local.y < 0.0), select(radii.w, radii.x, local.y < 0.0), local.x < 0.0), min(b.z, b.w));
-  let q = abs(local) - b.zw + radius;
-  return length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+  let narrow = min(b.z, b.w);
+  let radius = min(select(select(radii.z, radii.y, local.y < 0.0), select(radii.w, radii.x, local.y < 0.0), local.x < 0.0), narrow);
+  let w = abs(local) - b.zw + radius;
+  let side = select(vec2f(-1.0), vec2f(1.0), local >= vec2f(0.0));
+  let q = max(w, vec2f(0.0));
+  let l = length(q);
+  let g = max(w.x, w.y);
+  let exact = select(g, l, g > 0.0) - radius;
+  let bevel = min(m.profile.x, narrow);
+  let rounding = max(min(min(radius, bevel - radius), narrow - bevel), 0.0);
+  let shift = radius - rounding;
+  if (rounding <= 0.0 || exact >= -shift) {
+    let inner = select(vec2f(0.0, 1.0), vec2f(1.0, 0.0), w.x > w.y);
+    return vec3f(exact, select(inner, q / max(l, 0.00001), g > 0.0) * side);
+  }
+  // 圆角半径已缩到 rounding 的等距线：在 shift 之外再往里 deeper。
+  let e = w.x - w.y;
+  let deeper = select(rounding - g, 0.5 * (sqrt(max(2.0 * rounding * rounding - e * e, 0.0)) - w.x - w.y), abs(e) < rounding);
+  let normal = max(w + deeper, vec2f(0.0));
+  return vec3f(-(shift + deeper), normal / max(length(normal), 0.00001) * side);
+}
+
+// 成员轮廓的有向距离。
+fn glass_outline(xy: vec2f, m: Member) -> f32 {
+  return glass_contour(xy, m).x;
 }
 
 // 凸透镜在背景平面上产生的取样偏移。
@@ -181,7 +213,7 @@ fn glass_section(planar: f32, height: f32, m: Member) -> f32 {
 
 // 圆角实体：截面再按裁剪范围切开。
 fn glass_solid(p: vec3f, m: Member) -> f32 {
-  let planar = glass_outline(p.xy, m.box, m.radius);
+  let planar = glass_outline(p.xy, m);
   return max(glass_section(planar, p.z - (m.depth.y + m.depth.x), m), glass_clip(p.xy, m.clip));
 }
 
@@ -360,7 +392,7 @@ fn glass_slab(xy: vec2f) -> f32 {
   var away = 0;
 ${each(count, i => `  {
     let m = u.members[${i}];
-    let planar = glass_outline(xy, m.box, m.radius);
+    let planar = glass_outline(xy, m);
     let clipped = glass_clip(xy, m.clip);
     let bevel = max(min(m.profile.x, min(m.box.z, m.box.w)), 0.5);
     if (planar + bevel < -0.5 && clipped < -1.0) {

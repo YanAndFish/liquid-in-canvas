@@ -20,7 +20,7 @@ export interface CanvasStageOptions {
   resolution?: Partial<StageResolution>
   /** 固定玻璃主题；缺省时读取 `<html data-theme>`，再退回系统配色。 */
   theme?: GlassTheme
-  /** 光路计算方式，缺省为 `profile`，见 `GlassOptics`。 */
+  /** 光路计算方式，缺省为 `hybrid`，见 `GlassOptics`。 */
   optics?: GlassOptics
   /**
    * `hybrid` 光路是否缓存连接处的折射场，缺省为 true。打开时，几何静止的融合组只求交一次，
@@ -78,7 +78,7 @@ export class CanvasStage {
       ...options.resolution,
     }
     this.theme = options.theme ?? null
-    this.optics = options.optics ?? 'profile'
+    this.optics = options.optics ?? 'hybrid'
     this.fieldCache = options.fieldCache ?? true
     this.adaptive.setRelaxable(this.optics !== 'profile')
   }

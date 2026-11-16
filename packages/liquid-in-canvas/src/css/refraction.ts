@@ -122,26 +122,45 @@ export function refractionSample(shape: RefractionShape, px: number, py: number)
   const signY = y < 0
     ? -1
     : 1
-  // 轮廓外侧为正的有向距离，以及朝外的单位法线。
+  // 轮廓外侧为正的有向距离，以及朝外的单位法线。与体积着色器的 glass_contour 相同：
+  // 倒角宽于圆角时，更深处的等距线保持半径为 rounding 的圆角，法线不在对角线上突变。
+  const narrow = Math.min(halfWidth, halfHeight)
+  const bevel = Math.min(shape.band, narrow)
+  const rounding = Math.max(Math.min(radius, bevel - radius, narrow - bevel), 0)
+  const shift = radius - rounding
   let distance: number
   let normalX: number
   let normalY: number
   if (qx > 0 && qy > 0) {
     const length = Math.hypot(qx, qy)
     distance = length - radius
-    normalX = qx / length * signX
-    normalY = qy / length * signY
+    normalX = qx / length
+    normalY = qy / length
   }
   else if (qx > qy) {
     distance = qx - radius
-    normalX = signX
+    normalX = 1
     normalY = 0
   }
   else {
     distance = qy - radius
     normalX = 0
-    normalY = signY
+    normalY = 1
   }
+  if (rounding > 0 && distance < -shift) {
+    const e = qx - qy
+    const deeper = Math.abs(e) < rounding
+      ? 0.5 * (Math.sqrt(Math.max(2 * rounding * rounding - e * e, 0)) - qx - qy)
+      : rounding - Math.max(qx, qy)
+    const nx = Math.max(qx + deeper, 0)
+    const ny = Math.max(qy + deeper, 0)
+    const length = Math.max(Math.hypot(nx, ny), 0.00001)
+    distance = -(shift + deeper)
+    normalX = nx / length
+    normalY = ny / length
+  }
+  normalX *= signX
+  normalY *= signY
   const depth = Math.max(0, -distance)
   const t = Math.min(1, depth / Math.max(shape.band, 1))
   const amount = glassEdgeTilt(depth, shape.band, shape.rise, shape.curve)

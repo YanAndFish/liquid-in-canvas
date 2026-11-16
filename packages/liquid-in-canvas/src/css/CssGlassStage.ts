@@ -79,6 +79,73 @@ function rgba(hex: string, alpha: number): string {
 }
 
 /**
+ * 回退实现里背景模糊的下限，单位 CSS 像素。
+ *
+ * 画布里的倒角把边缘一圈背景压缩、折开，中间也随厚度轻微放大，玻璃上的文字下面不会是原样的背景细节；
+ * 回退实现没有这些，通透材质直接把视频、照片的细节压在文字下面。
+ */
+export const FALLBACK_MIN_BLUR = 10
+
+/** 回退实现里衬底不透明度的下限：染色不足时补到这么多。 */
+export const FALLBACK_MIN_VEIL = 0.24
+
+/** 承托深色文字的浅色衬底与承托浅色文字的深色衬底。 */
+const LIGHT_VEIL = '#f6f6f8'
+const DARK_VEIL = '#14181c'
+
+/** 解析 `rgb()` / `rgba()` 形式的计算颜色，返回相对亮度（0–1）；无法解析时返回 null。 */
+export function colorLuminance(color: string): number | null {
+  const match = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(color)
+  if (!match)
+    return null
+  const linear = (value: string | undefined): number => {
+    const c = Number(value) / 255
+    return c <= 0.04045
+      ? c / 12.92
+      : ((c + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * linear(match[1]) + 0.7152 * linear(match[2]) + 0.0722 * linear(match[3])
+}
+
+function mixHex(a: string, b: string, t: number): string {
+  const x = Number.parseInt(a.slice(1), 16)
+  const y = Number.parseInt(b.slice(1), 16)
+  let out = 0
+  for (const shift of [16, 8, 0])
+    out |= Math.round((x >> shift & 255) * (1 - t) + (y >> shift & 255) * t) << shift
+  return `#${out.toString(16).padStart(6, '0')}`
+}
+
+/**
+ * 回退实现的可读性底线：模糊不低于 `FALLBACK_MIN_BLUR`，染色不足 `FALLBACK_MIN_VEIL` 时补一层衬底。
+ *
+ * 衬底颜色按玻璃上文字的明暗选择：浅色文字配深色衬底，深色文字配浅色衬底。
+ * 视频上用白字的控件因此不会被浅色主题的白雾冲淡。原有染色按比例保留在衬底里。
+ * `textColor` 无法解析时按主题选择：深色主题配深色衬底。
+ */
+export function legibleOptions(options: GlassOptions, textColor: string | null, theme: GlassTheme): GlassOptions {
+  const blur = Math.max(options.blur, FALLBACK_MIN_BLUR)
+  if (options.tintAlpha >= FALLBACK_MIN_VEIL) {
+    return blur === options.blur
+      ? options
+      : { ...options, blur }
+  }
+  const luminance = textColor
+    ? colorLuminance(textColor)
+    : null
+  const light = luminance === null
+    ? theme === 'dark'
+    : luminance > 0.4
+  const veil = light ? DARK_VEIL : LIGHT_VEIL
+  return {
+    ...options,
+    blur,
+    tint: mixHex(veil, options.tint, options.tintAlpha / FALLBACK_MIN_VEIL),
+    tintAlpha: FALLBACK_MIN_VEIL,
+  }
+}
+
+/**
  * 把玻璃参数换算成 CSS 能表达的部分：模糊、染色、圆角、阴影和一圈高光。
  *
  * `highlight` 为 false 时不输出内阴影高光，用于已经由折射滤镜绘制高光的玻璃。
@@ -224,10 +291,16 @@ export class CssGlassStage {
   }
 
   private apply(element: HTMLElement, settled = false): void {
-    const options = parseGlassOptions(element, this.themeSource.value)
+    const theme = this.themeSource.value
+    const options = parseGlassOptions(element, theme)
     this.applyRefraction(element, options, settled)
+    // 嵌套玻璃（激活项）下面已经有外层的衬底，不再补。
+    const nested = !!element.parentElement?.closest(attr(GLASS_ATTR))
+    const legible = nested
+      ? options
+      : legibleOptions(options, getComputedStyle(element).color, theme)
     // 带滤镜的玻璃由滤镜绘制轮廓高光，不再叠加内阴影。
-    const properties = cssGlassProperties(options, !this.surfaces.get(element)?.signature)
+    const properties = cssGlassProperties(legible, !this.surfaces.get(element)?.signature)
     for (const name of PROPERTIES) {
       if (element.style.getPropertyValue(name) !== properties[name])
         element.style.setProperty(name, properties[name])

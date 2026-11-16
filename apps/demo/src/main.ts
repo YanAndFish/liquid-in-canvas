@@ -29,7 +29,7 @@ function boot(): void {
   const switching = ref(false)
   const error = ref('')
   const resolution = ref<StageResolution>({ ...DEFAULT_STAGE_RESOLUTION })
-  const optics = ref<GlassOptics>('profile')
+  const optics = ref<GlassOptics>('hybrid')
 
   const controller: RendererController = {
     mode,

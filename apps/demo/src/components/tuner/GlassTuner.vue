@@ -207,9 +207,10 @@ const OPTICS: readonly { id: GlassOptics, zh: string, en: string, hintZh: string
 /**
  * 面板展开时所在的玻璃层。同层玻璃会相互融合：面板很大，如果留在页面玻璃所在的第 0 层，
  * 滚到它下面的每个控件都会并入同一个融合组，整块面板逐像素求交，帧率明显下降。
- * 单独一层后只与入口按钮融合。收起时入口按钮回到第 0 层，拖到其他玻璃旁边仍然可以观察融合。
+ * 单独一层后只与入口按钮融合。第 1 层是顶栏，面板放在它之上，拖到顶栏附近也不会与它融合。
+ * 收起时入口按钮回到第 0 层，拖到其他玻璃旁边仍然可以观察融合。
  */
-const PANEL_LAYER = 1
+const PANEL_LAYER = 2
 
 const { isChinese } = useLocale()
 const { theme } = useTheme()

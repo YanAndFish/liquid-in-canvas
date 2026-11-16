@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>圆角检查</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; font-family: system-ui, sans-serif; }
+    canvas { display: block; }
+    canvas, #app { width: 100vw; height: 100vh; }
+    #app {
+      position: relative; overflow: clip; color: #192029;
+      background:
+        repeating-linear-gradient(0deg, #1b2330 0 2px, transparent 2px 24px),
+        repeating-linear-gradient(90deg, #1b2330 0 2px, transparent 2px 24px),
+        linear-gradient(120deg, #f2c48d, #9fc9e8 50%, #c8e6b0);
+    }
+    h1 { position: absolute; left: 48px; top: 12px; font-size: 22px; }
+    p { position: absolute; left: 48px; top: 56px; }
+    .anchor { position: absolute; }
+    .glass { width: 100%; height: 100%; border-radius: inherit; display: grid; place-items: center; font-size: 18px; font-weight: 600; }
+    .r8 { left: 60px; top: 130px; width: 300px; height: 240px; border-radius: 8px; }
+    .r26 { left: 420px; top: 130px; width: 292px; height: 244px; border-radius: 26px; }
+    .r60 { left: 780px; top: 130px; width: 300px; height: 240px; border-radius: 60px; }
+    .pill { left: 60px; top: 440px; width: 300px; height: 76px; border-radius: 38px; }
+    .tall { left: 420px; top: 440px; width: 120px; height: 300px; border-radius: 26px; }
+    .pair-a { left: 620px; top: 440px; width: 220px; height: 180px; border-radius: 22px; }
+    .pair-b { left: 860px; top: 470px; width: 180px; height: 150px; border-radius: 22px; }
+  </style>
+</head>
+<body>
+<canvas id="stage" content="drawable"><div id="app" drawable>
+  <h1>圆角检查</h1><p>倒角宽于圆角时，四角不应出现从角点向内的斜线；胶囊与融合连接处作对照。</p>
+  <div class="anchor r8"><div class="glass" data-liquid-glass data-glass-radius="8">圆角 8</div></div>
+  <div class="anchor r26"><div class="glass" data-liquid-glass data-glass-radius="26">圆角 26</div></div>
+  <div class="anchor r60"><div class="glass" data-liquid-glass data-glass-radius="60">圆角 60</div></div>
+  <div class="anchor pill"><div class="glass" data-liquid-glass data-glass-radius="999">胶囊</div></div>
+  <div class="anchor tall"><div class="glass" data-liquid-glass data-glass-radius="26">窄条</div></div>
+  <div class="anchor pair-a"><div class="glass" data-liquid-glass data-glass-radius="22">融合</div></div>
+  <div class="anchor pair-b"><div class="glass" data-liquid-glass data-glass-radius="22" /></div>
+</div></canvas>
+<script type="module">
+  import { CanvasStage } from 'liquid-in-canvas/canvas'
+  import { applyGlassQuery, applyStageQuery } from '../query'
+  applyGlassQuery(new URLSearchParams(location.search))
+  const canvas = document.querySelector('#stage')
+  const root = document.querySelector('#app')
+  for (const surface of document.querySelectorAll('[data-liquid-glass]')) {
+    surface.dataset.glassVariant = 'clear'
+    surface.dataset.glassBlur = '0'
+    surface.dataset.glassTintAlpha = '0.02'
+  }
+  const stage = new CanvasStage({ canvas, onFault: console.error })
+  applyStageQuery(stage, new URLSearchParams(location.search))
+  await stage.init()
+  stage.start(root)
+  window.addEventListener('pagehide', () => stage.dispose(), { once: true })
+</script>
+</body>
+</html>
