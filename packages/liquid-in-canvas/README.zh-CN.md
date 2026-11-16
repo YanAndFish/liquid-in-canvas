@@ -117,16 +117,16 @@ await mountLiquidGlass({
 | `data-glass-fusion` | 融合距离，0 表示关闭 | 32 |
 | `data-glass-elevation` | 玻璃底面到背景的距离 | 16 |
 | `data-glass-anchor` | 用于定位的祖先选择器 | `offsetParent` |
-| `data-glass-morph` | 液体迁移，见下文。空值或 `true` 表示自身位置或尺寸变化时流动过去，其他值同时是迁移的名字；`false` 关闭 | 关闭 |
+| `data-glass-morph` | 液体迁移，见下文。空值或 `true` 表示自身位置或尺寸变化时流动过去，其他值同时是迁移的名字；`false` 关闭（`true` / `false` 开关 0.3.0+） | 关闭 |
 | `data-glass-morph-stretch` | 液体迁移的拉伸，0–2。0 表示整体平移，越大前缘与后缘拉得越开、拖尾越长 | 1 |
 | `data-glass-morph-bounce` | 液体迁移的回弹，0–1。0 表示前缘不越过目标 | 0.33 |
 | `data-glass-morph-wobble` | 液体迁移的晃动，0–1。到达时被压扁，随后在压扁与拉长之间振荡；0 表示不晃动 | 0.35 |
-| `data-glass-morph-content` | 液体迁移期间玻璃上的内容：`static` 停在元素位置（尺寸过渡时随玻璃展开显露）；`clip` 停在元素位置并裁剪在体积内，相当于 `overflow: hidden`；`follow` 随体积一起拉伸、回弹和晃动 | `static` |
-| `data-glass-materialize` | 生效与移除的过渡。出现（注册或由隐藏变为显示）时光线先弯折、再成为磨砂并略微越过；从 DOM 移除或隐藏时在原处退去。`none` 或 `false` 关闭 | 开启 |
+| `data-glass-morph-content`（0.3.0+） | 液体迁移期间玻璃上的内容：`static` 停在元素位置（尺寸过渡时随玻璃展开显露）；`clip` 停在元素位置并裁剪在体积内，相当于 `overflow: hidden`；`follow` 随体积一起拉伸、回弹和晃动 | `static` |
+| `data-glass-materialize` | 生效与移除的过渡。出现（注册或由隐藏变为显示）时光线先弯折、再成为磨砂并略微越过；从 DOM 移除或隐藏时在原处退去。`none` 或 `false`（0.3.0+）关闭 | 开启 |
 
 长度单位都是 CSS 像素，缺省一栏写作 `regular / clear`。`data-glass-lens` 与后五项只对画布渲染有效；折射、透镜和色散在 `css` 回退下不起作用。
 
-### 参数作用域
+### 参数作用域（0.3.0+）
 
 给祖先加上 `data-glass-scope`，它上面的 `data-glass-*` 参数就成为其中所有玻璃的缺省值，类似 UI 库的 `ThemeProvider`。查找顺序是玻璃自身的属性 → 由近及远的作用域 → 全局默认参数，所以作用域可以嵌套，内层只覆盖它写出的参数。作用域元素本身不必是玻璃；只做包装时加上 `display: contents`，不影响布局。
 
@@ -170,7 +170,7 @@ import type { LiquidGlassAttributes } from 'liquid-in-canvas'
 const pill: LiquidGlassAttributes = { 'data-liquid-glass': '', 'data-glass-variant': 'clear', 'data-glass-blur': 1 }
 ```
 
-开关属性可以直接绑定布尔值：框架把 `false` 渲染成字符串 `"false"`，舞台把值为 `"false"` 的约定属性当作不存在，与绑定 `undefined` 或 `null` 效果相同。
+0.3.0 起，开关属性可以直接绑定布尔值：框架把 `false` 渲染成字符串 `"false"`，舞台把值为 `"false"` 的约定属性当作不存在，与绑定 `undefined` 或 `null` 效果相同。
 
 ```tsx
 <button data-liquid-glass={active} data-glass-morph={active && 'tabs'}>全部</button>

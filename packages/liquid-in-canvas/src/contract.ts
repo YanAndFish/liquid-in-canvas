@@ -8,6 +8,7 @@
 /**
  * 约定属性取这个值时视为不存在。JSX 与 Vue 模板会把 `false` 渲染成字符串 `"false"`，
  * 这样 `data-liquid-glass={enabled}` 可以直接按布尔值开关。
+ * @since 0.3.0
  */
 export const ATTR_OFF = 'false'
 
@@ -26,6 +27,7 @@ export const GLASS_SCRIM_ATTR = 'data-glass-scrim'
 /**
  * 玻璃参数作用域：元素上的 `data-glass-*` 参数作为后代玻璃的缺省值，就近的作用域优先，
  * 玻璃自身的属性又优先于作用域。可以用在 `display: contents` 的包装元素上，不影响布局。
+ * @since 0.3.0
  */
 export const GLASS_SCOPE_ATTR = 'data-glass-scope'
 
@@ -43,7 +45,10 @@ export function attr(name: string): string {
   return `[${name}]:not([${name}="${ATTR_OFF}"])`
 }
 
-/** 元素是否声明了某个约定属性，值为 `"false"` 时视为未声明。 */
+/**
+ * 元素是否声明了某个约定属性，值为 `"false"` 时视为未声明。
+ * @since 0.3.0
+ */
 export function hasAttr(element: Element, name: string): boolean {
   const value = element.getAttribute(name)
   return value !== null && value !== ATTR_OFF

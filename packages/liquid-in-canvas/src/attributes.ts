@@ -25,6 +25,7 @@ export type GlassRadiusAttribute
 /**
  * 开关属性：写成空字符串，或在 JSX、Vue 模板里不写值表示打开。
  * `false`（框架渲染成字符串 `"false"`）、`undefined` 与 `null` 都表示关闭，可以直接绑定布尔值。
+ * 布尔值写法自 0.3.0 起支持；更早的版本里 `"false"` 仍然表示打开。
  */
 export type GlassPresenceAttribute = '' | boolean | 'true' | 'false'
 
@@ -77,6 +78,7 @@ export interface LiquidGlassAttributes {
   /**
    * 液体迁移，只对画布渲染有效。空值或 `true` 表示自身位置或尺寸变化时流动过去，其他值同时是迁移的名字。
    * `false` 与不写都是关闭。不从 `data-glass-scope` 继承。
+   * 0.3.0 起 `true` / `false` 才是开关，更早的版本把它们当作迁移的名字。
    */
   'data-glass-morph'?: string | boolean | null
   /** 液体迁移的拉伸，0–2。缺省来自全局默认参数。 */
@@ -88,6 +90,7 @@ export interface LiquidGlassAttributes {
   /**
    * 液体迁移期间玻璃上的内容，只对画布渲染有效。`static` 停在元素位置（尺寸过渡时随玻璃展开显露）；
    * `clip` 停在元素位置并裁剪在体积之内，相当于 `overflow: hidden`；`follow` 随体积一起拉伸、回弹和晃动。缺省 `static`。
+   * @since 0.3.0
    */
   'data-glass-morph-content'?: 'static' | 'clip' | 'follow' | null
   /** 生效与移除的过渡，只对画布渲染有效。`none` 或 `false` 关闭，其他值或不写都是开启。 */
@@ -95,6 +98,7 @@ export interface LiquidGlassAttributes {
   /**
    * 玻璃参数作用域：这个元素上的 `data-glass-*` 参数成为其中所有玻璃的缺省值，就近的作用域优先，
    * 玻璃自身的属性又优先于作用域。可以配合 `display: contents` 作为不占布局的包装元素。
+   * @since 0.3.0
    */
   'data-glass-scope'?: GlassPresenceAttribute | null
   /** 加在普通祖先上：后代玻璃和阴影限制在它的矩形内。 */
