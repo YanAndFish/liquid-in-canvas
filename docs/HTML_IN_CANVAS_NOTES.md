@@ -6,7 +6,7 @@
 
 - 整个商店页面，包括头部、产品网格、商品详情、页脚和购物袋，都作为实时 DOM 放在一块 canvas 里。
 - canvas 只负责显示纹理。DOM 仍然是真实 DOM，命中测试、焦点、文本选择和可访问性由浏览器处理。
-- 浏览器缺少 HTML-in-Canvas 或 WebGPU 时只显示支持提示页。没有普通 DOM 商店回退。
+- 浏览器缺少 HTML-in-Canvas 或 WebGPU 时先显示支持提示页，可以从那里改用 SVG / CSS 回退渲染（见 [架构](ARCHITECTURE.md) 的渲染方式）。
 - 目标环境是桌面 Chrome 157 或更新版本。
 
 ## 2. 浏览器支持与检测
@@ -485,13 +485,11 @@ OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面�
 
 ## 15. 已知限制和风险
 
-- 没有 DPR 上限。2560×1800 下上传加渲染约 0.4 到 3ms，5K 屏或后续 glass shader 可能成为瓶颈。
 - 页面切换时页脚会跟随新页高度跳变。短页面可能看到页脚移动。
 - 共享元素和入袋动画依赖 Web Animations API。pending clone 有 1.2s 超时；如果路由始终没有完成，clone 会被移除。目标图片在飞行期间是 `visibility: hidden`，依赖完成或取消回调恢复。
 - 返回列表的 instant 恢复只对 `#collection` 生效。从详情页跳到 `#approach` 仍然使用平滑滚动，这是预期行为。
 - 浏览器 Find-in-Page 对内部滚动容器的滚动行为没有完整验证。
 - Chrome 端到端检查目前是本地 CDP 脚本，不在 Ubuntu CI 里。
-- three.js 版本固定在 0.187.0。`HTMLTexture` 的 WebGPU API 仍在变化，升级前要重新验证。
 - `scrollbar-gutter`、`overflow: clip`、`100dvh` 都要求较新的 Chrome。目标环境是 Chrome 157，满足要求。
 - 提示页只检查 `navigator.gpu` 是否存在。适配器创建失败由 init 失败路径处理。
 - 页面切换的旧页被绝对定位并裁剪，旧页中如果有 fixed 元素需要单独评估。
@@ -499,34 +497,7 @@ OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面�
 
 ## 16. 文件索引
 
-> 下表记录的是撰写本文时的路径。拆分为 monorepo 之后，`src/stage/` 下的文件位于 `packages/liquid-in-canvas/src/`，其余 `src/` 与 `tests/` 位于 `apps/demo/`，当前结构见 [架构](ARCHITECTURE.md)。
-
-| 路径 | 作用 |
-| --- | --- |
-| `src/stage/CanvasStage.ts` | three.js WebGPU renderer、ExternalTexture、全屏 mesh、paint 上传、resize |
-| `src/stage/support.ts` | HTML-In-Canvas、WebGPU、元素上传的能力检测 |
-| `src/stage/scroll.ts` | 内层滚动容器和购物袋滚动锁 |
-| `src/stage/types.ts` | StageSupport、StageFault、StageMetrics |
-| `src/types/html-in-canvas.d.ts` | 浏览器 API 和 `drawElementImageToTexture` 的类型声明 |
-| `src/main.ts` | 支持检测、canvas 创建、商店挂载、失败提示 |
-| `src/App.vue` | 内层滚动容器、路由切换 wrapper、共享元素 hook、购物袋位置 |
-| `src/components/transition/SharedTransitionLayer.vue` | 共享元素 clone、详情页飞行、入袋飞行 |
-| `src/composables/sharedTransition.ts` | shared layer 注册、矩形类型、购物袋目标 |
-| `src/pages/UnsupportedView.vue` | 支持提示页 |
-| `src/router/index.ts` | 内层滚动、历史位置保存、instant 恢复、hash 偏移 |
-| `src/components/cart/CartDrawer.vue` | 液态玻璃抽屉、滚动锁、行项目错开动画、`right` 滑入 |
-| `src/components/home/GlassShowcase.vue` | 视频 showreel 和三块玻璃表面 |
-| `src/stage/liquid-glass/options.ts` | `data-glass-*` 参数解析 |
-| `src/stage/liquid-glass/blur.ts` | 两层可分离高斯模糊和 render target |
-| `src/stage/liquid-glass/material.ts` | TSL 液态玻璃材质、有限差分法线和折射 |
-| `src/stage/liquid-glass/LiquidGlassLayer.ts` | 表面发现、内容纹理、网格、锚点裁剪和脏标记 |
-| `public/media/liquid-glass-flower.mp4` | 6 秒 720p showreel |
-| `src/styles/main.css` | stage、drawable 根、滚动容器、路由切换、下划线动画 |
-| `src/components/product/ProductCard.vue` | 卡片 hover、图片缩放、共享元素起点、入袋动画、加购反馈 |
-| `src/components/home/HeroSection.vue` | Hero 图片 hover 缩放 |
-| `tests/stage/support.test.ts` | 能力检测测试 |
-| `tests/stage/liquid-glass-options.test.ts` | 液态玻璃参数解析测试 |
-| `tests/app/UnsupportedView.test.ts` | 提示页测试 |
+当前的文件结构与各模块职责见 [架构](ARCHITECTURE.md)。
 
 ## 17. 阶段 03 补充：液态玻璃
 
@@ -546,4 +517,4 @@ OpenCode 内置浏览器只用于确认提示页。它无法运行商店页面�
 - 平滑滚动到 collection 时，`getBoundingClientRect` 可能短暂落后于根快照。玻璃卡片会脱离 showreel 框。现在玻璃矩形必须与锚点矩形相交才显示。
 - 玻璃 mesh 的 `renderOrder` 要区分页面层和抽屉层。抽屉玻璃固定为 1000，页面玻璃保持在 10 以上。
 - 页头保持不透明。把页头做成玻璃会让共享商品图片和入袋 clone 在到达页头时被玻璃网格盖住，因为 clone 在根快照里。要解决需要把 shared layer 也提到玻璃层之上。
-- 这是 Chrome 157 的行为。升级 Chrome 或 three.js 前要重新验证嵌套 `drawable`、离屏快照和 TSL 编译。
+- 这是 Chrome 157 的行为。升级 Chrome 前要重新验证嵌套 `drawable` 与离屏快照。
