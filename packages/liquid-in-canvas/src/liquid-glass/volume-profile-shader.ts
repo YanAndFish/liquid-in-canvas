@@ -3,26 +3,12 @@ import { LUT_ROWS_PER_PROFILE, LUT_SAMPLES, MAX_TRAVEL } from './optics-lut'
 import { clipCoverage, each, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
 
 /**
- * 剖面查表：查找表的绑定、圆角矩形的距离与外法向，以及按到轮廓的距离查表并着色。
+ * 剖面查表：查找表的绑定，以及按到轮廓的距离查表并着色。
  * 剖面光学的体积着色器与混合光路共用。
  */
 export function profileOptics(): string {
   return /* wgsl */`
 @group(1) @binding(${VOLUME_TEXTURES}) var lut: texture_2d<f32>;
-
-// 圆角矩形的有向距离与外法向（距离场的梯度）。
-fn outline_gradient(xy: vec2f, b: vec4f, radii: vec4f) -> vec3f {
-  let local = xy - b.xy;
-  let radius = min(select(select(radii.z, radii.y, local.y < 0.0), select(radii.w, radii.x, local.y < 0.0), local.x < 0.0), min(b.z, b.w));
-  let w = abs(local) - b.zw + radius;
-  let g = max(w.x, w.y);
-  let q = max(w, vec2f(0.0));
-  let l = length(q);
-  let side = select(vec2f(-1.0), vec2f(1.0), local >= vec2f(0.0));
-  let inner = select(vec2f(0.0, 1.0), vec2f(1.0, 0.0), w.x > w.y);
-  let gradient = select(inner, q / max(l, 0.00001), g > 0.0) * side;
-  return vec3f(select(g, l, g > 0.0) - radius, gradient);
-}
 
 // 一个像素查表所需的距离场与外观。
 struct Field {
@@ -91,7 +77,7 @@ export function profileField(count: number): string {
   return /* wgsl */`
 // 平滑合并后的距离场与外观。外观、截面尺寸与距离用同一个合并权重；查找表的行取权重占优的成员。
 fn glass_field(xy: vec2f) -> Field {
-  let first = outline_gradient(xy, u.members[0].box, u.members[0].radius);
+  let first = glass_contour(xy, u.members[0]);
   var f: Field;
   f.distance = first.x;
   f.gradient = first.yz;
@@ -106,7 +92,7 @@ fn glass_field(xy: vec2f) -> Field {
   var fusion = u.members[0].depth.z;
 ${each(count, i => `  {
     let m = u.members[${i}];
-    let other = outline_gradient(xy, m.box, m.radius);
+    let other = glass_contour(xy, m);
     let k = max(min(fusion, m.depth.z) * 2.0, 0.001);
     let h = clamp(0.5 + 0.5 * (other.x - f.distance) / k, 0.0, 1.0);
     f.optics = mix(m.appearance, f.optics, h);
@@ -140,11 +126,11 @@ export function createProfileVolumeShader(count: number): string {
 ${profileField(count)}
 // 只求平滑合并后的距离，用于阴影。
 fn glass_projection(xy: vec2f) -> f32 {
-  var distance = glass_outline(xy, u.members[0].box, u.members[0].radius);
+  var distance = glass_outline(xy, u.members[0]);
   var fusion = u.members[0].depth.z;
 ${each(count, i => `  {
     let m = u.members[${i}];
-    let other = glass_outline(xy, m.box, m.radius);
+    let other = glass_outline(xy, m);
     let k = max(min(fusion, m.depth.z) * 2.0, 0.001);
     let h = clamp(0.5 + 0.5 * (other - distance) / k, 0.0, 1.0);
     distance = mix(other, distance, h) - k * h * (1.0 - h);

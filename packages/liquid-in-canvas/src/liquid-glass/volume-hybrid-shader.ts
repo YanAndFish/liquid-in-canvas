@@ -30,14 +30,14 @@ export function hybridOwner(count: number): string {
   var fusion = u.members[0].depth.z;
   {
     let m = u.members[0];
-    let planar = glass_outline(xy, m.box, m.radius);
+    let planar = glass_outline(xy, m);
     let clipped = glass_clip(xy, m.clip);
     outline = max(glass_section(planar, 0.0, m), clipped);
     nearest = max(planar, clipped);
   }
 ${each(count, i => `  {
     let m = u.members[${i}];
-    let planar = glass_outline(xy, m.box, m.radius);
+    let planar = glass_outline(xy, m);
     let clipped = glass_clip(xy, m.clip);
     let other = max(glass_section(planar, 0.0, m), clipped);
     let k = max(min(fusion, m.depth.z) * 2.0, 0.001);
@@ -61,7 +61,7 @@ ${each(count, i => `  {
  */
 export function hybridTier(): string {
   return /* wgsl */`    let m = u.members[owner];
-    let contour = outline_gradient(xy, m.box, m.radius);
+    let contour = glass_contour(xy, m);
     let clipped = glass_clip(xy, m.clip);
     var field: Field;
     field.distance = contour.x;
