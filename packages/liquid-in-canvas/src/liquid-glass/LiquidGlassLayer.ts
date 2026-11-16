@@ -27,7 +27,13 @@ export interface LiquidGlassLayerOptions {
   optics?: GlassOptics
   /** 混合光路是否使用折射场缓存，缺省为 true。 */
   fieldCache?: boolean
+  /** 页面或玻璃的 DOM 可能变了（变更、尺寸、注册、滚动）时调用。 */
   onInvalidate: () => void
+  /**
+   * 只有玻璃自己在动（弹簧、液体迁移、折射场缓存的淡化、内容快照的补传）时调用，页面没有变化。
+   * 缺省与 `onInvalidate` 相同。
+   */
+  onRedraw?: () => void
   onFault: (cause: unknown) => void
 }
 
@@ -93,6 +99,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
   private readonly gpu: StageGpu
   private readonly getBackdrop: () => SampledTexture | null
   private readonly onInvalidate: () => void
+  private readonly onRedraw: () => void
   private readonly onFault: (cause: unknown) => void
   private readonly byElement = new Map<HTMLElement, GlassSurface>()
   private readonly paintToggle = new WeakSet<HTMLElement>()
@@ -121,6 +128,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.getBackdrop = options.getBackdrop
     this.themeSource = new GlassThemeSource(() => this.refreshAll(), options.theme ?? null)
     this.onInvalidate = options.onInvalidate
+    this.onRedraw = options.onRedraw ?? options.onInvalidate
     this.onFault = options.onFault
     this.optics = options.optics ?? 'hybrid'
     this.fieldCache = options.fieldCache ?? true
@@ -236,8 +244,9 @@ export class LiquidGlassLayer implements GlassFrameHost {
     return this.getBackdrop()
   }
 
+  /** 每帧的玻璃逻辑还需要下一帧（折射场缓存在等待或淡化、内容快照在补传）时调用，页面没有变化。 */
   invalidate(): void {
-    this.onInvalidate()
+    this.onRedraw()
   }
 
   /** 退去结束的玻璃：移出列表并释放内容纹理。 */
@@ -309,7 +318,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
     const seconds = (now - this.previousTime) / 1000
     const moving = this.frame?.advanceMotion(seconds, this.pressed, this.reducedMotion()) ?? false
     this.previousTime = now
-    this.onInvalidate()
+    this.onRedraw()
     this.animation = moving
       ? requestAnimationFrame(this.animate)
       : 0

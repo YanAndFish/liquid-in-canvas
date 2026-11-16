@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>局部快照探针</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #root { width: 100vw; height: 100vh; overflow: clip; background: linear-gradient(135deg, #f4efe6, #c9d6e3); font: 15px/1.5 system-ui, sans-serif; color: #222; }
+  #scroll { height: 100%; overflow-y: auto; }
+  .cell { display: inline-block; width: 220px; height: 140px; margin: 10px; padding: 12px; box-sizing: border-box; border-radius: 18px; background: rgb(255 255 255 / 0.6); box-shadow: 0 6px 20px rgb(0 0 0 / 0.12); vertical-align: top; }
+  #result { position: fixed; left: 12px; bottom: 12px; z-index: 1; margin: 0; padding: 10px; max-width: 520px; background: #111; color: #fff; font: 12px monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<!--
+  只用浏览器提供的 API，不依赖仓库代码。需要 Chrome 157（HTML-in-Canvas 与 GPUQueue.drawElementImageToTexture）。
+  用任意静态服务器打开，参数：
+    mode=full      每帧上传整个根元素（舞台现在的做法）
+    mode=sub       每帧上传 count 块源矩形，每块占根元素面积的 fraction，写到目标纹理的同一位置（destination.origin）
+    mode=none      不上传，只保留拷贝与呈现，作为下限
+    scroll=1       每帧滚动内层容器，让绘制记录每帧都变（与舞台滚动时相同）
+    content=blank  根元素里只有背景，没有卡片
+  例：?mode=sub&fraction=0.1&count=3&scroll=1
+  结果是 4 秒内 paint 的平均间隔与每帧提交到 GPU 完成的平均延迟。在 CDP 里用
+  Emulation.setDeviceMetricsOverride 设置视口与 DPR，可以复现高像素数。
+-->
+<canvas id="stage" content="drawable"><div id="root" drawable><div id="scroll"></div></div></canvas>
+<pre id="result">准备中</pre>
+<script type="module">
+const query = new URLSearchParams(location.search)
+const mode = query.get('mode') ?? 'full'
+const fraction = Number(query.get('fraction') ?? 0.25)
+const count = Number(query.get('count') ?? 1)
+const scrolling = query.get('scroll') === '1'
+const output = document.getElementById('result')
+const canvas = document.getElementById('stage')
+const root = document.getElementById('root')
+const scroller = document.getElementById('scroll')
+
+if (query.get('content') !== 'blank') {
+  const words = '液态玻璃 refraction 快照 rasterize 光栅化 backdrop blur 模糊 texture 纹理 '.repeat(4)
+  for (let i = 0; i < 600; i++) {
+    const cell = document.createElement('div')
+    cell.className = 'cell'
+    cell.textContent = `${i} ${words}`
+    scroller.append(cell)
+  }
+}
+
+if (!navigator.gpu || typeof GPUQueue.prototype.drawElementImageToTexture !== 'function' || typeof canvas.requestPaint !== 'function') {
+  output.textContent = '这个浏览器没有 HTML-in-Canvas 或 drawElementImageToTexture，无法测量。'
+  throw new Error('unsupported')
+}
+
+const adapter = await navigator.gpu.requestAdapter()
+const device = await adapter.requestDevice()
+const format = navigator.gpu.getPreferredCanvasFormat()
+const context = canvas.getContext('webgpu')
+context.configure({ device, format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST, alphaMode: 'opaque' })
+
+const dpr = devicePixelRatio
+canvas.width = Math.round(innerWidth * dpr)
+canvas.height = Math.round(innerHeight * dpr)
+canvas.updateElementGeometry(root, { canvasTransform: new DOMMatrix() })
+// 与画布同格式，才能直接拷贝到画布纹理；drawElementImageToTexture 也接受这个格式。
+const page = device.createTexture({
+  size: { width: canvas.width, height: canvas.height },
+  format,
+  usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
+})
+
+/** 按面积比例排出 count 块源矩形（CSS 像素），沿对角线分布，互不重叠。 */
+function regions() {
+  const cssWidth = innerWidth
+  const cssHeight = innerHeight
+  const side = Math.sqrt(fraction)
+  const width = Math.max(1, Math.floor(cssWidth * side))
+  const height = Math.max(1, Math.floor(cssHeight * side))
+  const list = []
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0.5 : i / (count - 1)
+    list.push({
+      x: Math.floor((cssWidth - width) * t),
+      y: Math.floor((cssHeight - height) * t),
+      width,
+      height,
+    })
+  }
+  return list
+}
+const rects = regions()
+const uploads = rects.map(rect => {
+  const pixel = {
+    x: Math.round(rect.x * dpr),
+    y: Math.round(rect.y * dpr),
+    width: Math.round(rect.width * dpr),
+    height: Math.round(rect.height * dpr),
+  }
+  // Chromium 只把拷贝尺寸夹到纹理尺寸、不扣除 origin，这里自己夹取。
+  pixel.width = Math.min(pixel.width, page.width - pixel.x)
+  pixel.height = Math.min(pixel.height, page.height - pixel.y)
+  return {
+    source: { source: root, sourceX: rect.x, sourceY: rect.y, sourceWidth: rect.width, sourceHeight: rect.height },
+    destination: { texture: page, origin: { x: pixel.x, y: pixel.y }, size: { width: pixel.width, height: pixel.height }, colorSpace: 'srgb' },
+  }
+})
+const fullUpload = {
+  source: { source: root },
+  destination: { texture: page, size: { width: page.width, height: page.height }, colorSpace: 'srgb' },
+}
+
+const paints = []
+const latencies = []
+let started = 0
+let done = false
+let offset = 0
+
+canvas.addEventListener('paint', () => {
+  if (done)
+    return
+  const now = performance.now()
+  if (!started)
+    started = now
+  paints.push(now)
+  try {
+    if (mode === 'full')
+      device.queue.drawElementImageToTexture(fullUpload.source, fullUpload.destination)
+    else if (mode === 'sub')
+      for (const upload of uploads)
+        device.queue.drawElementImageToTexture(upload.source, upload.destination)
+  }
+  catch (error) {
+    output.textContent = String(error)
+    done = true
+    return
+  }
+  const encoder = device.createCommandEncoder()
+  encoder.copyTextureToTexture({ texture: page }, { texture: context.getCurrentTexture() }, { width: page.width, height: page.height })
+  device.queue.submit([encoder.finish()])
+  const submitted = performance.now()
+  device.queue.onSubmittedWorkDone().then(() => latencies.push(performance.now() - submitted))
+  if (now - started > 4000) {
+    done = true
+    report()
+    return
+  }
+  if (scrolling) {
+    offset = (offset + 7) % 4000
+    scroller.scrollTop = offset
+  }
+  canvas.requestPaint()
+})
+
+function mean(values) {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null
+}
+
+function report() {
+  const intervals = paints.slice(1).map((value, index) => value - paints[index])
+  const area = mode === 'full' ? 1 : mode === 'sub' ? fraction * count : 0
+  output.textContent = JSON.stringify({
+    mode,
+    fraction: mode === 'sub' ? fraction : null,
+    count: mode === 'sub' ? count : null,
+    uploadedArea: area,
+    scrolling,
+    canvas: [canvas.width, canvas.height, dpr],
+    megapixels: +(canvas.width * canvas.height / 1e6).toFixed(2),
+    paints: paints.length,
+    paintInterval: mean(intervals),
+    submitToDone: mean(latencies),
+  }, null, 2)
+}
+
+// 等一帧让首个快照记录下来再开始。
+requestAnimationFrame(() => canvas.requestPaint())
+</script>
+</body>
+</html>

@@ -8,7 +8,7 @@ import { FrameProbe } from './frame-probe.hot'
 import { createElementTexture, createStageDevice, disposeElementTexture, StageGpu } from './gpu'
 import { LiquidGlassLayer } from './liquid-glass/LiquidGlassLayer'
 import { DEFAULT_STAGE_RESOLUTION, resolveCanvasScaleFloor, resolveGlassPixelRatio, resolvePixelRatio } from './resolution'
-import { StageFrame } from './stage-frame.hot'
+import { snapshotChanged, StageFrame } from './stage-frame.hot'
 import { VideoClock } from './video-clock'
 
 export interface CanvasStageOptions {
@@ -28,6 +28,14 @@ export interface CanvasStageOptions {
    * 关闭后连接处每帧逐步求交，运动中也与 `raymarch` 一致，开销随连接处的面积增加。
    */
   fieldCache?: boolean
+  /**
+   * 实验开关，缺省为 false：页面没有变化的帧沿用上一帧的整页快照，不再调用 `drawElementImageToTexture()`。
+   * “没有变化”指 `paint` 事件的 `changedElements` 里没有根元素，而且上一次上传之后没有发生滚动、
+   * 资源加载、字体就绪、视频新帧、尺寸变化或外部调用 `invalidate()`。只有玻璃自己在动的帧
+   * （按压弹簧、液体迁移、折射场缓存的淡化）因此省掉整页光栅化；滚动和视频播放期间每帧照常上传。
+   * 依赖浏览器正确报告 `changedElements`，见 `docs/performance/2026-11-16-local-snapshot/README.md`。
+   */
+  snapshotReuse?: boolean
 }
 
 /** 开始绘制或修改分辨率限制后这么多毫秒内不做自适应判定：页面刚开始绘制时图片解码、字体加载会拖慢几帧，不代表常态。 */
@@ -60,6 +68,10 @@ export class CanvasStage {
   private readonly frameProbe = new FrameProbe()
   /** 有新的视频帧时请求重绘。 */
   private readonly videoClock = new VideoClock(() => this.invalidate())
+  /** 是否在页面没有变化的帧沿用上一帧快照，见 `CanvasStageOptions.snapshotReuse`。 */
+  private snapshotReuse: boolean
+  /** 上一次上传之后舞台自己知道页面可能变了（滚动、加载、尺寸、视频帧等），下一帧必须上传。 */
+  private pageStale = true
   /** 这个时间之前不把绘制间隔交给自适应降级。 */
   private adaptiveAfter = 0
   private theme: GlassTheme | null
@@ -80,6 +92,7 @@ export class CanvasStage {
     this.theme = options.theme ?? null
     this.optics = options.optics ?? 'hybrid'
     this.fieldCache = options.fieldCache ?? true
+    this.snapshotReuse = options.snapshotReuse ?? false
     this.adaptive.setRelaxable(this.optics !== 'profile')
   }
 
@@ -155,13 +168,19 @@ export class CanvasStage {
     this.optics = optics
     this.adaptive.setRelaxable(optics !== 'profile')
     this.glass?.setOptics(this.effectiveOptics())
-    this.invalidate()
+    this.requestFrame()
   }
 
   /** 打开或关闭 `hybrid` 光路的折射场缓存，下一帧生效。见 `CanvasStageOptions.fieldCache`。 */
   setFieldCache(enabled: boolean): void {
     this.fieldCache = enabled
     this.glass?.setFieldCache(enabled)
+    this.requestFrame()
+  }
+
+  /** 打开或关闭快照复用，下一帧生效。见 `CanvasStageOptions.snapshotReuse`。 */
+  setSnapshotReuse(enabled: boolean): void {
+    this.snapshotReuse = enabled
     this.invalidate()
   }
 
@@ -204,6 +223,8 @@ export class CanvasStage {
         optics: this.effectiveOptics(),
         fieldCache: this.fieldCache,
         onInvalidate: () => this.invalidate(),
+        // 玻璃自己的运动不改变页面，只请求重绘；快照复用打开时这些帧沿用上一帧快照。
+        onRedraw: () => this.requestFrame(),
         onFault: cause => this.fail(cause),
       })
       this.glass.start()
@@ -219,7 +240,14 @@ export class CanvasStage {
     this.invalidate()
   }
 
+  /** 页面可能有浏览器察觉不到的变化时调用：下一帧重新上传整页快照并重绘。 */
   invalidate(): void {
+    this.pageStale = true
+    this.requestFrame()
+  }
+
+  /** 只请求重绘，不认为页面变了。 */
+  private requestFrame(): void {
     if (this.disposed || this.failed || !this.initialized)
       return
     this.canvas.requestPaint()
@@ -306,7 +334,9 @@ export class CanvasStage {
 
     try {
       const dpr = this.metrics?.dpr ?? 1
-      frame.draw(root, page, this.glassPixelRatio(dpr) / dpr, event)
+      const upload = !this.snapshotReuse || this.pageStale || snapshotChanged(event, root)
+      this.pageStale = false
+      frame.draw(root, page, this.glassPixelRatio(dpr) / dpr, event, upload)
     }
     catch (cause) {
       this.fail(cause)
@@ -354,6 +384,7 @@ export class CanvasStage {
 
     const previous = this.page
     this.page = createElementTexture(gpu, size.pixelWidth, size.pixelHeight)
+    this.pageStale = true
     disposeElementTexture(previous)
     this.glass?.invalidateSizes()
 
