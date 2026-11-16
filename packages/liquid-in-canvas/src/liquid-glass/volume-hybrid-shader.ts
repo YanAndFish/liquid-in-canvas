@@ -1,7 +1,7 @@
 import { wgslFloat } from '../gpu'
 import { FIELD_TARGETS } from './volume-field-shader'
 import { profileField, profileOptics } from './volume-profile-shader'
-import { clipCoverage, each, raymarchOptics, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
+import { bodyFirst, bodyMix, clipCoverage, each, fuseOutlines, raymarchOptics, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
 
 /**
  * 查找表里的横向范围换算成像素时乘的余量与附加的像素数。
@@ -19,7 +19,7 @@ export function hybridLateral(reach: number, halfDepth: number): number {
 }
 
 /**
- * 每名成员的轮廓距离只算一次：合并出投影距离（与 `glass_projection` 相同），同时找出最近与次近的成员。
+ * 每名成员的轮廓距离只算一次：合并出投影距离（与 `glass_projection` 逐位相同），同时找出最近与次近的成员。
  * 声明 `owner`、`nearest`、`second` 与 `outline`，要求作用域里已有 `xy`。混合着色器与折射场缓存的写入共用。
  */
 export function hybridOwner(count: number): string {
@@ -27,32 +27,24 @@ export function hybridOwner(count: number): string {
   var nearest = 0.0;
   var second = 1000000.0;
   var outline = 0.0;
-  var fusion = u.members[0].depth.z;
   {
-    let m = u.members[0];
-    let planar = glass_outline(xy, m);
-    let clipped = glass_clip(xy, m.clip);
-    outline = max(glass_section(planar, 0.0, m), clipped);
+    let planar = glass_outline(xy, u.members[0]);
+    let clipped = glass_clip(xy, u.members[0].clip);
+${bodyFirst('planar', 'clipped')}
     nearest = max(planar, clipped);
-  }
-${each(count, i => `  {
-    let m = u.members[${i}];
-    let planar = glass_outline(xy, m);
-    let clipped = glass_clip(xy, m.clip);
-    let other = max(glass_section(planar, 0.0, m), clipped);
-    let k = max(min(fusion, m.depth.z) * 2.0, 0.001);
-    let h = clamp(0.5 + 0.5 * (other - outline) / k, 0.0, 1.0);
-    outline = mix(other, outline, h) - k * h * (1.0 - h);
-    fusion = max(fusion, m.depth.z);
-    let apart = max(planar, clipped);
+${fuseOutlines(count, () => 'glass_outline(xy, m)', i => `    let cut = glass_clip(xy, m.clip);
+${bodyMix('cut')}
+    let apart = max(other, cut);
     if (apart < nearest) {
       second = nearest;
       nearest = apart;
       owner = ${i};
     } else {
       second = min(second, apart);
-    }
-  }`, 1)}`
+    }`)}
+    b.planar = distance;
+    outline = max(glass_section(b.planar, 0.0, b), b.clip);
+  }`
 }
 
 /**
