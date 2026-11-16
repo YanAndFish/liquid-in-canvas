@@ -31,6 +31,8 @@ interface ObservedStage {
   setResolution: CanvasStage['setResolution']
   /** 切换光路计算方式。 */
   setOptics: CanvasStage['setOptics']
+  /** 打开或关闭混合光路的折射场缓存。 */
+  setFieldCache: CanvasStage['setFieldCache']
   /** 当前画布尺寸、倍率与实际使用的光路。 */
   getMetrics: CanvasStage['getMetrics']
 }
