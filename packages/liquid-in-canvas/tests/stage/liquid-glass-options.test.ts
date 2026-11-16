@@ -34,6 +34,7 @@ describe('parseGlassOptions', () => {
       bevelCurve: 2.75,
       bottomBevel: 1,
       dispersion: 0.05,
+      ior: 1.45,
       lens: 0,
       saturation: 1.3,
       brightness: 1,
@@ -66,6 +67,7 @@ describe('parseGlassOptions', () => {
       bevelCurve: 2.75,
       bottomBevel: 1,
       dispersion: 0.05,
+      ior: 1.45,
       lens: 0,
       saturation: 1.3,
       brightness: 1.06,
@@ -115,6 +117,7 @@ describe('parseGlassOptions', () => {
       bevelCurve: 2.75,
       bottomBevel: 1,
       dispersion: 0.05,
+      ior: 1.45,
       lens: 0,
       saturation: 1.15,
       brightness: 1,
@@ -165,6 +168,7 @@ describe('parseGlassOptions', () => {
       bevelCurve: 2.75,
       bottomBevel: 1,
       dispersion: 1,
+      ior: 1.45,
       lens: 0.5,
       saturation: 1.15,
       brightness: 1,
@@ -224,6 +228,7 @@ describe('parseGlassOptions', () => {
       bevelCurve: 2.75,
       bottomBevel: 1,
       dispersion: 0.05,
+      ior: 1.45,
       tintAlpha: 0.28,
       specular: 2,
       shadow: 0,
@@ -356,5 +361,18 @@ describe('data-glass-scope', () => {
     expect(parseGlassOptions(element, 'dark').blur).toBe(10)
     outer.removeAttribute('data-glass-scope')
     expect(parseGlassOptions(element, 'dark').blur).toBe(18)
+  })
+})
+
+describe('折射率', () => {
+  it('读取 data-glass-ior 并限制在 1–2.5', () => {
+    const element = document.createElement('div')
+    expect(parseGlassOptions(element, 'dark').ior).toBe(1.45)
+    element.setAttribute('data-glass-ior', '1.8')
+    expect(parseGlassOptions(element, 'dark').ior).toBe(1.8)
+    element.setAttribute('data-glass-ior', '9')
+    expect(parseGlassOptions(element, 'dark').ior).toBe(2.5)
+    element.setAttribute('data-glass-ior', '0.5')
+    expect(parseGlassOptions(element, 'dark').ior).toBe(1)
   })
 })

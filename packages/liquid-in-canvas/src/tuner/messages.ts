@@ -36,6 +36,11 @@ export const MATERIAL_FIELDS: readonly Field<MaterialNumber>[] = [
     step: 0.01,
   },
   {
+    key: 'ior',
+    label: ['折射率', 'Refractive index'],
+    step: 0.01,
+  },
+  {
     key: 'lens',
     label: ['透镜放大', 'Magnification'],
     step: 0.01,

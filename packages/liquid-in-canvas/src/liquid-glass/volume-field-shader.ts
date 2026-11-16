@@ -1,3 +1,5 @@
+import { wgslFloat } from '../gpu'
+import { DISPERSION_SPREAD } from './optics-lut'
 import { hybridOwner, hybridTier } from './volume-hybrid-shader'
 import { profileOptics } from './volume-profile-shader'
 import { raymarchOptics, volumeCommon } from './volume-shader'
@@ -59,7 +61,7 @@ ${hybridTier()}
       let entry = glass_entry(xy);
       if (entry.w > 0.5) {
         let material = glass_material(entry.xyz);
-        let paths = glass_paths(entry.xyz, material.optics.y * 0.055);
+        let paths = glass_paths(entry.xyz, material.ior, material.optics.y * ${wgslFloat(DISPERSION_SPREAD)});
         out.first = vec4f(paths.green.xy - xy, paths.normal.xy);
         out.rest = vec4f(paths.red.xy - paths.green.xy, paths.blue.xy - paths.green.xy);
         out.stored = vec4f(paths.red.z, paths.green.z, paths.blue.z, max(entry.z, 0.0));

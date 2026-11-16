@@ -4,15 +4,15 @@ import type { GlassOptics } from '../types'
 import type { GlassTheme } from './defaults'
 import type { GlassFrameHost } from './glass-frame.hot'
 import type { GlassOptions } from './options'
-import type { GlassGhost, GlassSurface, Rect } from './surface'
-import { attr, GLASS_ATTR, hasAttr } from '../contract'
+import type { GlassGhost, GlassSurface, Rect, UnderContent } from './surface'
+import { attr, GLASS_ATTR, GLASS_PLACE_ATTR, hasAttr } from '../contract'
 import { createElementTexture, disposeElementTexture } from '../gpu'
 import { reducedMotionQuery } from '../shared/motion'
 import { onGlassDefaultsChange } from './defaults'
 import { LiquidFlow } from './flow.hot'
 import { GlassFrame } from './glass-frame.hot'
 import { glassOptionsSignature, parseGlassOptions } from './options'
-import { createSurface } from './surface'
+import { createSurface, createUnderContent } from './surface'
 import { GlassThemeSource } from './theme'
 
 export interface LiquidGlassLayerOptions {
@@ -49,7 +49,10 @@ const HANDOVER_WINDOW = 400
 const WARM_VOLUME_COUNTS = [1, 2, 3, 4]
 const WARM_OCCLUDER_COUNTS = [0, 1, 2]
 const GLASS_SELECTOR = attr(GLASS_ATTR)
+const UNDER_SELECTOR = `[${GLASS_PLACE_ATTR}="below"]`
 const NO_ELEMENTS: readonly Element[] = []
+/** 放到玻璃之下的元素上传失败（还没有绘制记录）后重试的间隔，毫秒。 */
+const UNDER_RETRY_MS = 180
 
 /** 用 offset 系列属性相对定位基准测量元素，不受元素自身 transform 影响。 */
 function offsetPlacement(element: HTMLElement, base: { left: number, top: number }, scrollLeft: number, scrollTop: number): Placement {
@@ -297,6 +300,76 @@ export class LiquidGlassLayer implements GlassFrameHost {
     }
   }
 
+  /** 重新收集玻璃里放到玻璃之下的元素：新出现的设为 drawable 并创建纹理，不再符合的还原并释放。 */
+  syncUnder(surface: GlassSurface): void {
+    surface.underDirty = false
+    const under = surface.under
+    for (let i = under.length - 1; i >= 0; i--) {
+      const item = under[i]!
+      if (surface.host || !surface.element.contains(item.element) || !item.element.matches(UNDER_SELECTOR)) {
+        this.releaseUnder(item)
+        under.splice(i, 1)
+      }
+    }
+    if (surface.host)
+      return
+    for (const element of surface.element.querySelectorAll<HTMLElement>(UNDER_SELECTOR)) {
+      if (under.some(item => item.element === element))
+        continue
+      const size = this.textureSize(element)
+      const content = this.createContentTexture(size.width, size.height)
+      if (!content)
+        continue
+      const addedDrawable = !element.hasAttribute('drawable')
+      if (addedDrawable)
+        element.setAttribute('drawable', '')
+      under.push(createUnderContent(element, content, size.width, size.height, addedDrawable))
+    }
+    surface.dirty = true
+    this.onInvalidate()
+  }
+
+  /** 元素尺寸变化后按需重新创建放到玻璃之下的元素的纹理。 */
+  refreshUnderSize(item: UnderContent): void {
+    const size = this.textureSize(item.element)
+    if (size.width === item.textureWidth && size.height === item.textureHeight)
+      return
+    const content = this.createContentTexture(size.width, size.height)
+    if (!content)
+      return
+    disposeElementTexture(item.content)
+    item.content = content
+    item.textureWidth = size.width
+    item.textureHeight = size.height
+    item.dirty = true
+    item.uploaded = false
+  }
+
+  /** 上传放到玻璃之下的元素；浏览器还没有它的绘制记录时稍后重试。 */
+  uploadUnder(item: UnderContent): boolean {
+    if (!item.content)
+      return false
+    try {
+      this.gpu.frame.upload(item.element, item.content.texture)
+      item.dirty = false
+      item.uploaded = true
+      return true
+    }
+    catch {
+      window.setTimeout(this.onInvalidate, UNDER_RETRY_MS)
+      return false
+    }
+  }
+
+  private releaseUnder(item: UnderContent): void {
+    if (typeof this.canvas.clearElementGeometry === 'function' && item.placed)
+      this.canvas.clearElementGeometry(item.element)
+    if (item.addedDrawable)
+      item.element.removeAttribute('drawable')
+    disposeElementTexture(item.content)
+    item.content = null
+  }
+
   /** 交互结束、弹簧与液体迁移都静止后停止请求帧，静态页面无需持续重绘。 */
   startAnimation(): void {
     if (this.animation || this.disposed)
@@ -477,6 +550,9 @@ export class LiquidGlassLayer implements GlassFrameHost {
     }
     surface.element.removeEventListener('scroll', surface.onScroll, { capture: true })
     surface.element.removeEventListener('transitionend', surface.onTransitionEnd)
+    for (const item of surface.under)
+      this.releaseUnder(item)
+    surface.under.length = 0
     if (!surface.host && typeof this.canvas.clearElementGeometry === 'function')
       this.canvas.clearElementGeometry(surface.element)
     if (surface.addedDrawable)
@@ -641,6 +717,13 @@ export class LiquidGlassLayer implements GlassFrameHost {
           invalidated = true
           continue
         }
+        if (name === GLASS_PLACE_ATTR) {
+          const owner = this.surfaceOwner(target)
+          if (owner)
+            owner.underDirty = true
+          invalidated = true
+          continue
+        }
         if (name.startsWith('data-glass-')) {
           const surface = this.byElement.get(target) ?? this.surfaceOwner(target)
           if (surface)
@@ -675,6 +758,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
         const surface = this.surfaceOwner(record.target as HTMLElement)
         if (surface) {
           surface.dirty = true
+          surface.underDirty = true
           invalidated = true
         }
         else if (record.addedNodes.length || record.removedNodes.length) {

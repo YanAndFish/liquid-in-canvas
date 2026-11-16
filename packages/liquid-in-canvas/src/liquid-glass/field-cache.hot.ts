@@ -13,15 +13,18 @@ import {
   FIELD_FADE_IN_MS,
   FIELD_FADE_OUT_MS,
   FIELD_FADE_STEP_MS,
+  FIELD_FLAP_MS,
   FIELD_IDLE_FRAMES,
+  FIELD_LOCAL_LIMIT,
   FIELD_MAX_MEMBERS,
+  FIELD_SETTLE_MAX_MS,
   FIELD_SETTLE_MS,
   FIELD_SIZE_STEP,
   FIELD_TEXEL_BUDGET,
   FIELD_TOLERANCE,
 } from './field-cache'
-import { HYBRID_CLIP_PAD, hybridLateral } from './volume-hybrid-shader'
-import { memberCornered } from './volume-members.hot'
+import { FIELD_FEATHER, HYBRID_CLIP_PAD, hybridLateral } from './volume-hybrid-shader'
+import { MEMBER_PROXIMITY, memberCornered } from './volume-members.hot'
 import { VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from './volume-shader'
 
 /** 查找表里一行的光线在玻璃内的最大横向位移，与半厚度之比。由 `ProfileTable` 实现。 */
@@ -52,6 +55,38 @@ function put(signature: Float32Array, index: number, value: number, drift: numbe
   return delta <= drift
     ? DRIFT
     : MOVED
+}
+
+/** 淡化进度限制在 0–1，留一点余量：逐帧累加的舍入误差不该让淡化多拖一帧。 */
+function settleFade(value: number): number {
+  return value > 0.999
+    ? 1
+    : value < 0.001
+      ? 0
+      : value
+}
+
+/** 把矩形 `rect`（左、上、右、下）并入 `target`。 */
+function unite(target: Float32Array, rect: Float32Array): void {
+  target[0] = Math.min(target[0]!, rect[0]!)
+  target[1] = Math.min(target[1]!, rect[1]!)
+  target[2] = Math.max(target[2]!, rect[2]!)
+  target[3] = Math.max(target[3]!, rect[3]!)
+}
+
+/** 面积最大的成员，作为缓存的原点：它通常静止，别的成员移动时缓存可以只局部失效。 */
+function largestMember(data: Float32Array, members: number, count: number): number {
+  let best = 0
+  let area = -1
+  for (let i = 0; i < count; i++) {
+    const m = members + i * VOLUME_MEMBER_FLOATS
+    const size = data[m + 2]! * data[m + 3]!
+    if (size > area) {
+      area = size
+      best = i
+    }
+  }
+  return best
 }
 
 /** 一条裁剪边在几何特征里的值：切进玻璃时是它的相对位置，否则是固定的远处。 */
@@ -93,8 +128,18 @@ export class FieldCache {
   private readonly empty: FieldTextures
   /** 被换下的纹理。本帧已经排好的绘制可能还绑定着它们，下一帧开始时释放。 */
   private readonly retired: GPUTexture[] = []
+  /** 本帧写入的范围（纹素：左、上、右、下），见 `prepare()`。 */
+  bakeLeft = 0
+  bakeTop = 0
+  bakeRight = 0
+  bakeBottom = 0
   /** 本帧写入缓存的组。 */
   private baking: FieldEntry | null = null
+  /** 本帧只写入缓存的一块，其余纹素保留。 */
+  private partial = false
+  /** 本帧各成员的变化程度。 */
+  private readonly changes = new Uint8Array(FIELD_MAX_MEMBERS)
+  private readonly scratch = new Float32Array(4)
   private frameId = 0
   private now = 0
   /** 求缓存范围时累计的包围矩形。 */
@@ -140,11 +185,15 @@ export class FieldCache {
       return entry
     entry.frame = this.frameId
     const members = group + VOLUME_GROUP_FLOATS
-    const anchorX = data[members]!
-    const anchorY = data[members + 1]!
+    if (entry.anchor < 0)
+      entry.anchor = largestMember(data, members, count)
+    const a = members + entry.anchor * VOLUME_MEMBER_FLOATS
+    const anchorX = data[a]!
+    const anchorY = data[a + 1]!
     entry.anchorX = anchorX
     entry.anchorY = anchorY
     const signature = entry.signature
+    const changes = this.changes
     let change = STILL
     let s = 0
     for (let i = 0; i < count; i++) {
@@ -154,100 +203,102 @@ export class FieldCache {
       const halfWidth = data[m + 2]!
       const halfHeight = data[m + 3]!
       const halfDepth = data[m + 8]!
-      change = Math.max(change, put(signature, s++, x - anchorX, FIELD_DRIFT))
-      change = Math.max(change, put(signature, s++, y - anchorY, FIELD_DRIFT))
-      change = Math.max(change, put(signature, s++, halfWidth, FIELD_DRIFT))
-      change = Math.max(change, put(signature, s++, halfHeight, FIELD_DRIFT))
-      // 圆角、半厚度、底面高度、融合距离。
+      let c = put(signature, s++, x - anchorX, FIELD_DRIFT)
+      c = Math.max(c, put(signature, s++, y - anchorY, FIELD_DRIFT))
+      c = Math.max(c, put(signature, s++, halfWidth, FIELD_DRIFT))
+      c = Math.max(c, put(signature, s++, halfHeight, FIELD_DRIFT))
       for (let k = 4; k < 11; k++)
-        change = Math.max(change, put(signature, s++, data[m + k]!, FIELD_DRIFT))
-      // 裁剪边离玻璃足够远时不改变距离场（与 `writeVolumeGroup` 判断裁剪是否切进玻璃的条件相同），
-      // 记成固定的远处：玻璃在裁剪容器里滚动时缓存仍然有效。
+        c = Math.max(c, put(signature, s++, data[m + k]!, FIELD_DRIFT))
+      c = Math.max(c, put(signature, s++, data[m + MEMBER_PROXIMITY]! * data[m + 10]!, FIELD_DRIFT))
       const pad = hybridLateral(profiles.reachOf(data[m + 28]!), halfDepth) + halfDepth + HYBRID_CLIP_PAD
       const clipLeft = data[m + 12]!
       const clipTop = data[m + 13]!
       const clipRight = data[m + 14]!
       const clipBottom = data[m + 15]!
-      change = Math.max(change, put(signature, s++, edge(clipLeft > x - halfWidth - pad, clipLeft - anchorX, -FIELD_CLIP_FAR), FIELD_DRIFT))
-      change = Math.max(change, put(signature, s++, edge(clipTop > y - halfHeight - pad, clipTop - anchorY, -FIELD_CLIP_FAR), FIELD_DRIFT))
-      change = Math.max(change, put(signature, s++, edge(clipRight < x + halfWidth + pad, clipRight - anchorX, FIELD_CLIP_FAR), FIELD_DRIFT))
-      change = Math.max(change, put(signature, s++, edge(clipBottom < y + halfHeight + pad, clipBottom - anchorY, FIELD_CLIP_FAR), FIELD_DRIFT))
-      // 色散决定红蓝两条光路。
-      change = Math.max(change, put(signature, s++, data[m + 17]!, 0))
-      // 倒角的宽度与高度、曲线指数（没有长度单位）、底面倒角。
-      change = Math.max(change, put(signature, s++, data[m + 24]!, FIELD_DRIFT))
-      change = Math.max(change, put(signature, s++, data[m + 25]!, FIELD_DRIFT))
-      change = Math.max(change, put(signature, s++, data[m + 26]!, 0))
-      change = Math.max(change, put(signature, s++, data[m + 27]!, FIELD_DRIFT))
+      c = Math.max(c, put(signature, s++, edge(clipLeft > x - halfWidth - pad, clipLeft - anchorX, -FIELD_CLIP_FAR), FIELD_DRIFT))
+      c = Math.max(c, put(signature, s++, edge(clipTop > y - halfHeight - pad, clipTop - anchorY, -FIELD_CLIP_FAR), FIELD_DRIFT))
+      c = Math.max(c, put(signature, s++, edge(clipRight < x + halfWidth + pad, clipRight - anchorX, FIELD_CLIP_FAR), FIELD_DRIFT))
+      c = Math.max(c, put(signature, s++, edge(clipBottom < y + halfHeight + pad, clipBottom - anchorY, FIELD_CLIP_FAR), FIELD_DRIFT))
+      c = Math.max(c, put(signature, s++, data[m + 17]!, 0))
+      c = Math.max(c, put(signature, s++, data[m + 32]!, 0))
+      c = Math.max(c, put(signature, s++, data[m + 24]!, FIELD_DRIFT))
+      c = Math.max(c, put(signature, s++, data[m + 25]!, FIELD_DRIFT))
+      c = Math.max(c, put(signature, s++, data[m + 26]!, 0))
+      c = Math.max(c, put(signature, s++, data[m + 27]!, FIELD_DRIFT))
+      changes[i] = c
+      change = Math.max(change, c)
     }
-    if (change === MOVED) {
-      entry.live = false
-      entry.stale = false
-      entry.changedAt = this.now
-    }
-    else if (change === DRIFT) {
-      // 弹簧收敛的尾巴、慢慢拖动：缓存不作废也不淡出，本帧按新的几何重新求交（见 prepare）。
-      entry.stale = true
-    }
+    if (change === MOVED)
+      this.moved(entry, data, group, count, profiles)
+    else if (change === DRIFT && entry.live)
+      this.drifted(entry, data, group, count, profiles)
     const step = Math.min(Math.max(this.now - entry.seenAt, 0), FIELD_FADE_STEP_MS)
     entry.seenAt = this.now
-    const fade = entry.live
+    entry.fade = settleFade(entry.live
       ? entry.fade + step / FIELD_FADE_IN_MS
-      : entry.fade - step / FIELD_FADE_OUT_MS
-    // 留一点余量：逐帧累加的舍入误差不该让淡化多拖一帧。
-    entry.fade = fade > 0.999
-      ? 1
-      : fade < 0.001
-        ? 0
-        : fade
-    if (!entry.live || entry.stale || entry.fade < 1)
+      : entry.fade - step / FIELD_FADE_OUT_MS)
+    if (entry.dirty) {
+      entry.dirtyFade = settleFade(entry.dirtyBaked
+        ? entry.dirtyFade + step / FIELD_FADE_IN_MS
+        : entry.dirtyFade - step / FIELD_FADE_OUT_MS)
+      if (entry.dirtyBaked && entry.dirtyFade >= 1)
+        entry.dirty = false
+    }
+    if (change === STILL && entry.settle > FIELD_SETTLE_MS && entry.live && !entry.dirty && this.now - entry.bakedAt > FIELD_SETTLE_MAX_MS * 2)
+      entry.settle = FIELD_SETTLE_MS
+    if (!entry.live || entry.stale || entry.dirty || entry.fade < 1)
       this.settling = true
     return entry
   }
 
   /**
-   * 在主绘制里调用：几何静止够久之后，或者缓存有效而几何小幅漂移时，为这一组准备缓存。
-   * `ratio` 是绘制目标每个 CSS 像素的像素数。返回 true 时调用方要把求交的绘制加入 `list`；
-   * 一帧最多写一组，其余的顺延到下一帧。
+   * 在主绘制里调用：几何静止够久之后整组写入；缓存有效时，局部失效的范围静止够久、或小幅漂移的成员附近，
+   * 原地重新写入那一块。`ratio` 是绘制目标每个 CSS 像素的像素数。返回 true 时调用方要把求交的绘制加入 `list`，
+   * 范围是 `bakeLeft`…`bakeBottom`（纹素）。一帧最多写一组，其余的顺延到下一帧。
    */
   prepare(entry: FieldEntry, data: Float32Array, group: number, count: number, profiles: ReachSource, ratio: number): boolean {
     if (this.baking !== null)
       return false
+    let partial = false
+    let settledDirty = false
     if (entry.live) {
-      // 着色倍率变了（自适应降级、分辨率设置）：纹素不再与像素对齐，重新求交。
       if (entry.textures !== null && Math.abs(entry.ratio - ratio) > 1e-4) {
-        entry.live = false
-        entry.stale = false
-        entry.changedAt = this.now
+        this.invalidate(entry)
         this.settling = true
         return false
       }
-      // 几何只是小幅漂移：原地重新求交，淡化进度不变。
-      if (!entry.stale)
+      settledDirty = entry.dirty && !entry.dirtyBaked && this.now - entry.dirtyChangedAt >= entry.settle
+      if (!entry.stale && !settledDirty)
         return false
+      partial = entry.textures !== null
     }
-    else if (this.now - entry.changedAt < FIELD_SETTLE_MS) {
+    else if (this.now - entry.changedAt < entry.settle) {
       return false
     }
-    // 上一次的结果还没淡完也直接覆盖：新结果对应当前的几何，从当前的比例接着淡入。
+    const refresh = entry.stale
     entry.live = true
     entry.stale = false
-    this.measure(data, group, count, profiles)
+    this.measure(data, group, count, profiles, entry.anchor)
     if (this.right <= this.left || this.bottom <= this.top) {
-      // 没有需要求交的范围。
+      entry.dirty = false
       this.drop(entry)
       return false
     }
-    // 缓存的左上角落在着色像素的边界上，纹素中心与像素中心重合；外圈留一个像素。
     const originX = Math.floor((entry.anchorX + this.left - 1) * ratio) / ratio
     const originY = Math.floor((entry.anchorY + this.top - 1) * ratio) / ratio
     const width = Math.ceil(Math.ceil((entry.anchorX + this.right + 1 - originX) * ratio) / FIELD_SIZE_STEP) * FIELD_SIZE_STEP
     const height = Math.ceil(Math.ceil((entry.anchorY + this.bottom + 1 - originY) * ratio) / FIELD_SIZE_STEP) * FIELD_SIZE_STEP
     const current = entry.textures
-    if (current === null || current.width !== width || current.height !== height) {
+    if (partial && (current!.width !== width || current!.height !== height
+      || Math.abs(entry.originX - (originX - entry.anchorX)) > 1e-3 || Math.abs(entry.originY - (originY - entry.anchorY)) > 1e-3)) {
+      partial = false
+    }
+    if (!partial && (current === null || current.width !== width || current.height !== height)) {
       this.drop(entry)
-      if (!this.reserve(width * height))
+      if (!this.reserve(width * height)) {
+        entry.dirty = false
         return false
+      }
       entry.textures = createFieldTextures(this.gpu, width, height)
       entry.version++
       this.texels += width * height
@@ -255,6 +306,34 @@ export class FieldCache {
     entry.originX = originX - entry.anchorX
     entry.originY = originY - entry.anchorY
     entry.ratio = ratio
+    if (partial) {
+      const rect = this.scratch
+      rect[0] = Infinity
+      rect[1] = Infinity
+      rect[2] = -Infinity
+      rect[3] = -Infinity
+      if (refresh)
+        unite(rect, entry.refreshRect)
+      if (settledDirty)
+        unite(rect, entry.dirtyRect)
+      this.bakeLeft = Math.max(0, Math.floor((rect[0]! - entry.originX) * ratio))
+      this.bakeTop = Math.max(0, Math.floor((rect[1]! - entry.originY) * ratio))
+      this.bakeRight = Math.min(width, Math.ceil((rect[2]! - entry.originX) * ratio))
+      this.bakeBottom = Math.min(height, Math.ceil((rect[3]! - entry.originY) * ratio))
+      if (settledDirty)
+        entry.dirtyBaked = true
+    }
+    else {
+      this.bakeLeft = 0
+      this.bakeTop = 0
+      this.bakeRight = width
+      this.bakeBottom = height
+      entry.dirty = false
+    }
+    this.partial = partial
+    this.recordBaked(entry, data, group, count)
+    if (this.bakeRight <= this.bakeLeft || this.bakeBottom <= this.bakeTop)
+      return false
     this.baking = entry
     return true
   }
@@ -270,7 +349,7 @@ export class FieldCache {
     if (entry === null || entry.textures === null || this.list.count === 0)
       return
     const target = entry.textures
-    this.frame.encodeFieldPass(encoder, target.views, target.width, target.height, this.list)
+    this.frame.encodeFieldPass(encoder, target.views, target.width, target.height, this.list, this.partial)
   }
 
   /**
@@ -292,6 +371,116 @@ export class FieldCache {
     const empty = this.empty.textures
     for (let i = 0; i < empty.length; i++)
       empty[i]!.destroy()
+  }
+
+  /**
+   * 有成员明显变化：缓存有效、原点成员没有动、受影响的范围不大时只让那一块失效（查表），
+   * 否则整组作废。刚写完缓存就又变化时延长等待时间。
+   */
+  private moved(entry: FieldEntry, data: Float32Array, group: number, count: number, profiles: ReachSource): void {
+    if (this.now - entry.bakedAt < FIELD_FLAP_MS && !entry.flapped) {
+      entry.settle = Math.min(entry.settle * 2, FIELD_SETTLE_MAX_MS)
+      entry.flapped = true
+    }
+    const textures = entry.textures
+    if (!entry.live || textures === null || this.changes[entry.anchor] === MOVED) {
+      this.invalidate(entry)
+      return
+    }
+    const rect = this.scratch
+    this.region(entry, data, group, count, profiles, MOVED, rect)
+    const left = entry.originX
+    const top = entry.originY
+    const right = left + textures.width / entry.ratio
+    const bottom = top + textures.height / entry.ratio
+    const overlap = Math.max(0, Math.min(rect[2]!, right) - Math.max(rect[0]!, left))
+      * Math.max(0, Math.min(rect[3]!, bottom) - Math.max(rect[1]!, top))
+    if (overlap > FIELD_LOCAL_LIMIT * (right - left) * (bottom - top)) {
+      this.invalidate(entry)
+      return
+    }
+    if (!entry.dirty) {
+      entry.dirty = true
+      entry.dirtyFade = 1
+      entry.dirtyRect.set(rect)
+    }
+    else {
+      unite(entry.dirtyRect, rect)
+    }
+    entry.dirtyBaked = false
+    entry.dirtyChangedAt = this.now
+    this.drifted(entry, data, group, count, profiles)
+  }
+
+  /** 小幅漂移的成员附近记进 `refreshRect`，下一次写入时原地更新。 */
+  private drifted(entry: FieldEntry, data: Float32Array, group: number, count: number, profiles: ReachSource): void {
+    const rect = this.scratch
+    this.region(entry, data, group, count, profiles, DRIFT, rect)
+    if (rect[2]! <= rect[0]!)
+      return
+    if (!entry.stale) {
+      entry.stale = true
+      entry.refreshRect.set(rect)
+    }
+    else {
+      unite(entry.refreshRect, rect)
+    }
+  }
+
+  /**
+   * 变化程度为 `level` 的成员可能改变光路的范围，相对原点成员，写进 `target`：
+   * 它写入缓存时与现在的矩形，外扩平滑合并与较厚成员截面延伸的范围、光线的横向位移和交叉淡化的宽度。
+   */
+  private region(entry: FieldEntry, data: Float32Array, group: number, count: number, profiles: ReachSource, level: number, target: Float32Array): void {
+    const members = group + VOLUME_GROUP_FLOATS
+    let lateral = 0
+    let fusion = 0
+    for (let i = 0; i < count; i++) {
+      const m = members + i * VOLUME_MEMBER_FLOATS
+      lateral = Math.max(lateral, hybridLateral(profiles.reachOf(data[m + 28]!), data[m + 8]!))
+      fusion = Math.max(fusion, data[m + 10]!)
+    }
+    const margin = Math.max(data[group + 3]! + lateral + 1, fusion * 2 + lateral) + FIELD_FEATHER + 2
+    target[0] = Infinity
+    target[1] = Infinity
+    target[2] = -Infinity
+    target[3] = -Infinity
+    const baked = entry.baked
+    for (let i = 0; i < count; i++) {
+      if (this.changes[i] !== level)
+        continue
+      const m = members + i * VOLUME_MEMBER_FLOATS
+      const x = data[m]! - entry.anchorX
+      const y = data[m + 1]! - entry.anchorY
+      const b = i * 4
+      target[0] = Math.min(target[0]!, x - data[m + 2]!, baked[b]! - baked[b + 2]!) - margin
+      target[1] = Math.min(target[1]!, y - data[m + 3]!, baked[b + 1]! - baked[b + 3]!) - margin
+      target[2] = Math.max(target[2]!, x + data[m + 2]!, baked[b]! + baked[b + 2]!) + margin
+      target[3] = Math.max(target[3]!, y + data[m + 3]!, baked[b + 1]! + baked[b + 3]!) + margin
+    }
+  }
+
+  /** 整组作废：改用剖面管线，旧结果淡出，静止后整组重新写入。 */
+  private invalidate(entry: FieldEntry): void {
+    entry.live = false
+    entry.stale = false
+    entry.dirty = false
+    entry.changedAt = this.now
+  }
+
+  /** 记下写入缓存时各成员的矩形与时间。 */
+  private recordBaked(entry: FieldEntry, data: Float32Array, group: number, count: number): void {
+    const members = group + VOLUME_GROUP_FLOATS
+    const baked = entry.baked
+    for (let i = 0; i < count; i++) {
+      const m = members + i * VOLUME_MEMBER_FLOATS
+      baked[i * 4] = data[m]! - entry.anchorX
+      baked[i * 4 + 1] = data[m + 1]! - entry.anchorY
+      baked[i * 4 + 2] = data[m + 2]!
+      baked[i * 4 + 3] = data[m + 3]!
+    }
+    entry.bakedAt = this.now
+    entry.flapped = false
   }
 
   /** 销毁换下的纹理。 */
@@ -346,6 +535,13 @@ export class FieldCache {
     for (let j = 0; j < plan.count; j++)
       chosen.ids[j] = plan.members[j]!.id
     chosen.signature.fill(Number.NaN)
+    chosen.anchor = -1
+    chosen.settle = FIELD_SETTLE_MS
+    chosen.bakedAt = -Infinity
+    chosen.flapped = false
+    chosen.dirty = false
+    chosen.dirtyFade = 1
+    chosen.stale = false
     chosen.frame = -1
     chosen.seenAt = this.now
     chosen.changedAt = this.now
@@ -362,14 +558,14 @@ export class FieldCache {
    * 第二种落在被切进的成员沿裁剪边的一条里；第三种在那名成员的矩形里。
    * 范围之外即使有求交档的像素也只是回到逐步求交。
    */
-  private measure(data: Float32Array, group: number, count: number, profiles: ReachSource): void {
+  private measure(data: Float32Array, group: number, count: number, profiles: ReachSource, anchor: number): void {
     this.left = Infinity
     this.top = Infinity
     this.right = -Infinity
     this.bottom = -Infinity
     const members = group + VOLUME_GROUP_FLOATS
-    const anchorX = data[members]!
-    const anchorY = data[members + 1]!
+    const anchorX = data[members + anchor * VOLUME_MEMBER_FLOATS]!
+    const anchorY = data[members + anchor * VOLUME_MEMBER_FLOATS + 1]!
     let lateral = 0
     let fusion = 0
     for (let i = 0; i < count; i++) {
@@ -457,6 +653,7 @@ export class FieldCache {
       this.drop(victim)
       victim.live = false
       victim.stale = false
+      victim.dirty = false
       victim.fade = 0
       victim.changedAt = this.now
     }
@@ -482,6 +679,7 @@ export class FieldCache {
     entry.count = 0
     entry.live = false
     entry.stale = false
+    entry.dirty = false
     entry.fade = 0
   }
 }

@@ -428,6 +428,8 @@ describe('从挂载创建', () => {
       canvas: null,
       support: { supported: true, missing: [], capabilities: {} } as unknown as LiquidGlassMount['support'],
       setTheme: vi.fn(),
+      addGlass: vi.fn(),
+      removeGlass: vi.fn(),
       dispose: vi.fn(),
     }
   }

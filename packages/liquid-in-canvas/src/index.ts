@@ -13,6 +13,7 @@ export {
   GLASS_CLIP_ATTR,
   GLASS_FADE_ATTR,
   GLASS_MODAL_ATTR,
+  GLASS_PLACE_ATTR,
   GLASS_SCOPE_ATTR,
   GLASS_SCRIM_ATTR,
   hasAttr,
@@ -21,6 +22,7 @@ export {
 export { CssGlassStage } from './css/CssGlassStage'
 export type { CssGlassStageOptions } from './css/CssGlassStage'
 export { supportsSvgBackdropFilter } from './css/refraction'
+export type { GlassAttributeOptions, GlassHandle } from './glass-api'
 export {
   BUILTIN_GLASS_DEFAULTS,
   getGlassDefaults,

@@ -51,6 +51,11 @@ export interface LiquidGlassAttributes {
   'data-glass-bottom-bevel'?: GlassNumberAttribute | null
   /** RGB 取样分离强度，0–1。缺省 0.05。 */
   'data-glass-dispersion'?: GlassNumberAttribute | null
+  /**
+   * 折射率，1–2.5：1 表示不偏折，水约 1.33，玻璃约 1.5。越大边缘的扭曲越强，全反射的暗边也越宽。缺省 1.45。
+   * @since 0.4.0
+   */
+  'data-glass-ior'?: GlassNumberAttribute | null
   /** 凸透镜强度，0–0.6，只对画布渲染有效。缺省 0。 */
   'data-glass-lens'?: GlassNumberAttribute | null
   /** 透射背景的饱和度倍数，0–3。缺省 1.3 / 1.15。 */
@@ -107,6 +112,12 @@ export interface LiquidGlassAttributes {
   'data-glass-modal'?: GlassPresenceAttribute | null
   /** 模态层内的遮罩，压暗强度取其背景色 alpha 乘以模态层的 opacity。 */
   'data-glass-scrim'?: GlassPresenceAttribute | null
+  /**
+   * 写在玻璃里的元素上：`below` 时它画在玻璃之下，和背景一起被这块玻璃折射与模糊；`above` 或不写时画在玻璃之上。
+   * 只对画布渲染有效。
+   * @since 0.4.0
+   */
+  'data-glass-place'?: 'above' | 'below' | null
   /** 页面切换容器，其 opacity 作用到内部玻璃。 */
   'data-glass-fade'?: GlassPresenceAttribute | null
   /** 单独上传的透明前景层。值是一个玻璃层级：盖住更低各层的玻璃；不写值时位于所有玻璃之上。 */

@@ -1,5 +1,5 @@
 import { wgslFloat } from '../gpu'
-import { BASE_IOR, LUT_ROWS_PER_PROFILE, LUT_SAMPLES, MAX_TRAVEL } from './optics-lut'
+import { LUT_ROWS_PER_PROFILE, LUT_SAMPLES, MAX_TRAVEL } from './optics-lut'
 import { clipCoverage, each, fuseDominance, fuseOutlines, gradientArray, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
 
 /**
@@ -21,6 +21,7 @@ struct Field {
   elevation: f32,
   bevel: f32,
   row: f32,
+  ior: f32,
   tone: vec2f,
   // 融合处距离场的梯度长度：小于 1 时截面沿法向被拉宽，倒角的坡度按这个比例变缓。单块玻璃上为 1。
   stretch: f32,
@@ -62,7 +63,7 @@ fn glass_lookup(field: Field, xy: vec2f, screen_uv: vec2f) -> vec4f {
   let c = 1.0 - field.shape.x / max(field.half_depth, 0.001) * (1.0 - pow(1.0 - pow(bevel_u, power), 1.0 / power));
   let half_slope = 0.5 * (field.top_slope - field.bottom_slope);
   let top_tilt = 0.5 * (field.top_slope + field.bottom_slope) + c * half_slope;
-  let prism = top_tilt * (${wgslFloat(1 - 1 / BASE_IOR)} * 2.0 * c * field.half_depth) + half_slope * (${wgslFloat(2 * (BASE_IOR - 1))} * c * field.elevation);
+  let prism = top_tilt * ((1.0 - 1.0 / field.ior) * 2.0 * c * field.half_depth) + half_slope * (2.0 * (field.ior - 1.0) * c * field.elevation);
   let shifted = xy + field.lens + clamp(prism, vec2f(-${wgslFloat(MAX_TRAVEL)}), vec2f(${wgslFloat(MAX_TRAVEL)}));
   let red_uv = clamp((shifted + field.gradient * offsets.x) / viewport, u.valid.xy, u.valid.zw);
   let green_uv = clamp((shifted + field.gradient * offsets.y) / viewport, u.valid.xy, u.valid.zw);
@@ -119,6 +120,7 @@ ${fuseDominance(count, `      f.top_slope = vec2f(0.0);
       f.bevel = member_bevel(m);
       f.shape = m.profile.yz;
       f.row = m.extra.x;
+      f.ior = m.refraction.x;
       f.tone = m.extra.yz;`, `      let w = ramp.x;
       // mix(a, c, w) 的梯度是 (1 − w)·∇a + (c − a)·∇w，∇w 是 falloff。
       f.top_slope = (1.0 - w) * f.top_slope + (m.depth.y + 2.0 * m.depth.x - f.elevation - 2.0 * f.half_depth) * falloff;
@@ -131,6 +133,7 @@ ${fuseDominance(count, `      f.top_slope = vec2f(0.0);
       f.bevel = mix(f.bevel, member_bevel(m), w);
       f.shape = mix(f.shape, m.profile.yz, w);
       f.row = select(f.row, m.extra.x, w >= 0.5);
+      f.ior = mix(f.ior, m.refraction.x, w);
       f.tone = mix(f.tone, m.extra.yz, w);`, true)}
   return f;
 }

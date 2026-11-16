@@ -290,10 +290,11 @@ export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGr
     data[offset + 27] = options.bottomBevel
     data[offset + 29] = 1 + (options.saturation - 1) * amount
     data[offset + 30] = 1 + (options.brightness - 1) * amount
+    data[offset + 32] = options.ior
     if (profiles) {
       // 与着色器一致：倒角宽度不超过按压后的半宽高，也不小于半个像素。
       const bevelWidth = Math.max(Math.min(data[offset + 24]!, data[offset + 2]!, data[offset + 3]!), 0.5)
-      const row = profiles.rowOf(bevelWidth / halfDepth, data[offset + 25]! / halfDepth, options.bevelCurve, options.bottomBevel, options.dispersion)
+      const row = profiles.rowOf(bevelWidth / halfDepth, data[offset + 25]! / halfDepth, options.bevelCurve, options.bottomBevel, options.dispersion, options.ior)
       data[offset + 28] = row
       // 与混合着色器的查表条件一致，横向位移取这一行的最大值。
       const pad = hybridLateral(profiles.reachOf(row), halfDepth) + halfDepth + HYBRID_CLIP_PAD
@@ -631,6 +632,20 @@ export class VolumeGroups {
           data[group + 13] = Math.round((entry.anchorY + entry.originY) * entry.ratio)
           data[group + 14] = entry.ratio * cssWidth / targetWidth
           data[group + 15] = entry.fade
+          data[group + 6] = entry.dirtyFade
+          if (entry.dirty) {
+            const dirty = entry.dirtyRect
+            data[group + 16] = entry.anchorX + dirty[0]!
+            data[group + 17] = entry.anchorY + dirty[1]!
+            data[group + 18] = entry.anchorX + dirty[2]!
+            data[group + 19] = entry.anchorY + dirty[3]!
+          }
+          else {
+            data[group + 16] = 1
+            data[group + 17] = 1
+            data[group + 18] = 0
+            data[group + 19] = 0
+          }
           pipelines = this.fieldPipelines
           textures = this.fieldGroup(fields, entry, plan.level)
         }
@@ -662,7 +677,7 @@ export class VolumeGroups {
   ): void {
     const target = entry.textures!
     const floats = HEADER_FLOATS + VOLUME_GROUP_FLOATS + plan.count * VOLUME_MEMBER_FLOATS
-    const start = this.frame.rect(floats, 0, 0, 1, 1, 1, 1, target.width, target.height)
+    const start = this.frame.rect(floats, fields.bakeLeft, fields.bakeTop, fields.bakeRight, fields.bakeBottom, target.width, target.height, target.width, target.height)
     // 分配可能换了一块更大的数组，原来的内容保留在同样的下标上。
     const data = this.frame.data
     data.copyWithin(start + HEADER_FLOATS, source + HEADER_FLOATS, source + floats)

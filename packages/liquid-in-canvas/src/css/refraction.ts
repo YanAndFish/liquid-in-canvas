@@ -1,5 +1,5 @@
 import type { GlassOptions, GlassRadius } from '../liquid-glass/options'
-import { glassEdgeTilt, glassProfile } from '../liquid-glass/profile'
+import { BASE_IOR, glassEdgeTilt, glassProfile } from '../liquid-glass/profile'
 
 /** 一块玻璃的边缘折射滤镜参数，长度使用 CSS 像素。 */
 export interface RefractionShape {
@@ -72,7 +72,7 @@ export function refractionShape(options: GlassOptions, width: number, height: nu
     band: Math.max(1, Math.round(profile.bevelWidth)),
     rise: Math.round(profile.bevelHeight * 10) / 10,
     curve: Math.round(profile.curve * 100) / 100,
-    offset: Math.round(Math.min(depth * OFFSET_PER_DEPTH + options.elevation * OFFSET_PER_ELEVATION, short * 0.45) * 10) / 10,
+    offset: Math.round(Math.min((depth * OFFSET_PER_DEPTH + options.elevation * OFFSET_PER_ELEVATION) * (options.ior - 1) / (BASE_IOR - 1), short * 0.45) * 10) / 10,
     spread: Math.round(options.dispersion * 0.25 * 1000) / 1000,
     specular: Math.round(options.specular * 100) / 100,
   }

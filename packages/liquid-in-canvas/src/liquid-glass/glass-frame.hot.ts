@@ -2,12 +2,13 @@ import type { DrawList, FrameEncoder } from '../frame.hot'
 import type { SampledTexture, StageGpu } from '../gpu'
 import type { GlassOptics } from '../types'
 import type { ContentPipelines } from './content-shader'
+import type { ContentSource } from './content.hot'
 import type { FlowRect } from './flow.hot'
 import type { VolumeSurface } from './fusion.hot'
-import type { ElementBox, GlassGhost, GlassSurface, Rect } from './surface'
+import type { ElementBox, GlassGhost, GlassSurface, Rect, UnderContent } from './surface'
 import type { VolumeGroupPlan, VolumeShading } from './VolumeGroups.hot'
 import { attr, GLASS_CLIP_ATTR, GLASS_FADE_ATTR, GLASS_MODAL_ATTR } from '../contract'
-import { glassContentRenderOrder } from '../render-order'
+import { glassContentRenderOrder, glassUnderRenderOrder } from '../render-order'
 import { advanceSpring } from '../shared/spring.hot'
 import { BackdropBlur } from './blur.hot'
 import { covers, PaintOrder } from './content-order.hot'
@@ -42,6 +43,12 @@ export interface GlassFrameHost {
   kickPaint: (surface: GlassSurface) => void
   /** 上传玻璃的 HTML 内容，失败时返回 false 并安排重试。 */
   upload: (surface: GlassSurface) => boolean
+  /** 重新收集玻璃里放到玻璃之下的元素。 */
+  syncUnder: (surface: GlassSurface) => void
+  /** 放到玻璃之下的元素尺寸变化后按需重新创建纹理。 */
+  refreshUnderSize: (item: UnderContent) => void
+  /** 上传放到玻璃之下的元素，失败时返回 false 并安排重试。 */
+  uploadUnder: (item: UnderContent) => boolean
   /** 请求下一帧。 */
   invalidate: () => void
   /** 开始逐帧推进弹簧与液体迁移。 */
@@ -142,7 +149,7 @@ export class GlassFrame {
   /** `volumeList` 的有效长度：可见玻璃的体积加上正在流动的拖尾。 */
   private volumeCount = 0
   /** 本帧至少被一块上层玻璃覆盖的内容。 */
-  private readonly occluded: GlassSurface[] = []
+  private readonly occluded: ContentSource[] = []
   private readonly shading: VolumeShading = {
     scale: 1,
     pixelWidth: 1,
@@ -509,6 +516,11 @@ export class GlassFrame {
           host.kickPaint(surface)
       }
       this.place(surface)
+      if (surface.underDirty)
+        host.syncUnder(surface)
+      const under = surface.under
+      for (let u = 0; u < under.length; u++)
+        this.measureUnder(surface, under[u]!, changed, visible)
     }
     surface.visible = visible
     surface.fullyVisible = fullyVisible
@@ -764,12 +776,59 @@ export class GlassFrame {
         if (plan === null || above === null || above.level <= plan.level || !stackSees(plan, above))
           surface.backdropOccluders[surface.backdropOccluderCount++] = other
       }
+      const under = surface.under
+      for (let u = 0; u < under.length; u++) {
+        const item = under[u]!
+        if (item.visible && item.content)
+          occludedCount = this.planUnder(surface, item, plan, i, list, occludedCount, viewWidth, viewHeight)
+      }
       const uniform = writeContent(this.frame, surface, surface.occluders, surface.occluderCount, viewWidth, viewHeight, canvasWidth, canvasHeight)
       list.push(order, clear.get(surface.occluderCount), uniform, content.group)
       if (surface.backdropOccluderCount > 0)
         this.occluded[occludedCount++] = surface
     }
     return occludedCount
+  }
+
+  /**
+   * 放到玻璃之下的元素：玻璃本身和盖住它的上层玻璃把它从画布里裁掉，露在玻璃外的部分画在同层所有体积之下；
+   * 被这块玻璃盖住的部分总是写进页面背景，由它折射与模糊。返回加上它之后需要写进背景的内容数量。
+   */
+  private planUnder(
+    surface: GlassSurface,
+    item: UnderContent,
+    plan: VolumeGroupPlan | null,
+    index: number,
+    list: DrawList,
+    occludedCount: number,
+    viewWidth: number,
+    viewHeight: number,
+  ): number {
+    const visible = this.visible
+    const clip = surface.contentClip
+    item.contentClip[0] = clip[0]!
+    item.contentClip[1] = clip[1]!
+    item.contentClip[2] = clip[2]!
+    item.contentClip[3] = clip[3]!
+    item.contentOpacity = surface.contentOpacity
+    item.occluders[0] = surface.volume
+    item.backdropOccluders[0] = surface.volume
+    item.occluderCount = 1
+    item.backdropOccluderCount = 1
+    const groups = this.volumes.groups
+    for (let j = index + 1; j < this.visibleCount; j++) {
+      const other = visible[j]!.volume
+      if (!covers(item.contentRect, other))
+        continue
+      item.occluders[item.occluderCount++] = other
+      const above = groups.planOf(other)
+      if (plan === null || above === null || above.level <= plan.level || !stackSees(plan, above))
+        item.backdropOccluders[item.backdropOccluderCount++] = other
+    }
+    const uniform = writeContent(this.frame, item, item.occluders, item.occluderCount, viewWidth, viewHeight, this.canvas.width, this.canvas.height)
+    list.push(glassUnderRenderOrder(surface.volume.layer), this.content.clear.get(item.occluderCount), uniform, item.content!.group)
+    this.occluded[occludedCount] = item
+    return occludedCount + 1
   }
 
   /**
@@ -854,6 +913,70 @@ export class GlassFrame {
     return typeof element.checkVisibility === 'function'
       ? element.checkVisibility(VISIBILITY)
       : legacyShown(element)
+  }
+
+  /** 测量放到玻璃之下的元素，放到它在画布中的位置，内容或尺寸变化时重新上传。 */
+  private measureUnder(surface: GlassSurface, item: UnderContent, changed: readonly Element[], visible: boolean): void {
+    const element = item.element
+    item.visible = false
+    if (!visible || !this.shown(element))
+      return
+    const rect = item.rect
+    const width = element.offsetWidth
+    const height = element.offsetHeight
+    if (width < 1 || height < 1)
+      return
+    const glass = surface.element
+    let x = 0
+    let y = 0
+    let current: HTMLElement | null = element
+    while (current !== null && current !== glass) {
+      const parent: Element | null = current.offsetParent
+      x += current.offsetLeft
+      y += current.offsetTop
+      if (parent === glass) {
+        x += glass.clientLeft - glass.scrollLeft
+        y += glass.clientTop - glass.scrollTop
+        break
+      }
+      if (!(parent instanceof HTMLElement) || !glass.contains(parent)) {
+        x -= glass.offsetLeft
+        y -= glass.offsetTop
+        break
+      }
+      x += parent.clientLeft - parent.scrollLeft
+      y += parent.clientTop - parent.scrollTop
+      current = parent
+    }
+    if (Math.abs(width - rect.width) > GEOMETRY_EPSILON || Math.abs(height - rect.height) > GEOMETRY_EPSILON) {
+      if (rect.width > 0)
+        this.host.refreshUnderSize(item)
+      item.dirty = true
+    }
+    rect.left = surface.rect.left + x
+    rect.top = surface.rect.top + y
+    rect.width = width
+    rect.height = height
+    copyRect(item.contentRect, rect)
+    if (!item.placed
+      || Math.abs(item.placedLeft - rect.left) >= GEOMETRY_EPSILON
+      || Math.abs(item.placedTop - rect.top) >= GEOMETRY_EPSILON) {
+      this.matrix.e = rect.left
+      this.matrix.f = rect.top
+      this.canvas.updateElementGeometry(element, this.geometry)
+      item.placed = true
+      item.placedLeft = rect.left
+      item.placedTop = rect.top
+    }
+    for (let k = 0; k < changed.length; k++) {
+      if (element.contains(changed[k]!)) {
+        item.dirty = true
+        break
+      }
+    }
+    if (item.dirty)
+      this.host.uploadUnder(item)
+    item.visible = item.uploaded
   }
 
   /** 位置变化时更新元素在画布中的绘制位置，命中测试随之移动。 */

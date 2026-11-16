@@ -26,6 +26,7 @@ export const GLASS_OPTION_ATTRS = [
   'data-glass-bevel-curve',
   'data-glass-bottom-bevel',
   'data-glass-dispersion',
+  'data-glass-ior',
   'data-glass-lens',
   'data-glass-saturation',
   'data-glass-brightness',
@@ -67,6 +68,8 @@ export interface GlassOptions {
   bottomBevel: number
   /** RGB 采样位置的分离强度。 */
   dispersion: number
+  /** 折射率。 */
+  ior: number
   /** 凸透镜强度，0 表示平板。玻璃中间的背景被放大约 1 / (1 − lens) 倍。 */
   lens: number
   /** 透射背景的饱和度倍数，1 表示不变。 */
@@ -256,6 +259,7 @@ export function parseGlassOptions(
     bevelCurve: numberAttribute(source, 'data-glass-bevel-curve', material.bevelCurve, GLASS_LIMITS.bevelCurve),
     bottomBevel: numberAttribute(source, 'data-glass-bottom-bevel', material.bottomBevel, GLASS_LIMITS.bottomBevel),
     dispersion: numberAttribute(source, 'data-glass-dispersion', material.dispersion, GLASS_LIMITS.dispersion),
+    ior: numberAttribute(source, 'data-glass-ior', material.ior, GLASS_LIMITS.ior),
     lens: numberAttribute(source, 'data-glass-lens', material.lens, GLASS_LIMITS.lens),
     saturation: numberAttribute(source, 'data-glass-saturation', material.saturation, GLASS_LIMITS.saturation),
     brightness: numberAttribute(source, 'data-glass-brightness', material.brightness, GLASS_LIMITS.brightness),
@@ -288,6 +292,7 @@ export function glassOptionsSignature(options: GlassOptions): string {
     bevelCurve: options.bevelCurve,
     bottomBevel: options.bottomBevel,
     dispersion: options.dispersion,
+    ior: options.ior,
     lens: options.lens,
     saturation: options.saturation,
     brightness: options.brightness,

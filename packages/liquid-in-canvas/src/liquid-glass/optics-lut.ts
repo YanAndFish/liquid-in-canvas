@@ -10,6 +10,7 @@
  */
 import type { StageGpu } from '../gpu'
 import { TEXTURE_USAGE } from '../gpu'
+import { BASE_IOR } from './profile'
 
 /** 每行的采样数。 */
 export const LUT_SAMPLES = 128
@@ -17,8 +18,6 @@ export const LUT_SAMPLES = 128
 export const LUT_ROWS_PER_PROFILE = 4
 /** 纹理按这个行数扩容。 */
 const LUT_CAPACITY_STEP = 16
-/** 中间那条光路的折射率，与体积着色器一致。 */
-export const BASE_IOR = 1.45
 /** 色散在折射率上的跨度，与体积着色器一致。 */
 export const DISPERSION_SPREAD = 0.055
 /** 追踪时使用的参考半厚度，结果再按它归一化。阈值与步长以像素为单位，和着色器保持一致。 */
@@ -38,6 +37,8 @@ export interface ProfileKey {
   bottomBevel: number
   /** 色散强度。 */
   dispersion: number
+  /** 绿色光路的折射率，红蓝两条按色散在两侧展开。 */
+  ior: number
 }
 
 /**
@@ -111,7 +112,7 @@ export function traceProfile(key: ProfileKey): ProfileSample[] {
     return [x / length, y / length]
   }
   const spread = key.dispersion * DISPERSION_SPREAD
-  const iors = [BASE_IOR - spread, BASE_IOR, BASE_IOR + spread]
+  const iors = [key.ior - spread, key.ior, key.ior + spread]
   const samples: ProfileSample[] = []
   for (let i = 0; i < LUT_SAMPLES; i++) {
     const s = (i / (LUT_SAMPLES - 1)) ** 2
@@ -232,7 +233,7 @@ export function encodeProfile(samples: readonly ProfileSample[]): Uint16Array {
 /** 截面参数量化后的整数键。 */
 function keyOf(key: ProfileKey): number {
   const q = (value: number, scale: number, max: number): number => Math.min(max, Math.max(0, Math.round(value * scale)))
-  return (((q(key.bevelWidth, 64, 4095) * 4096 + q(key.bevelHeight, 64, 127)) * 128 + q(key.curve, 16, 255)) * 256 + q(key.bottomBevel, 32, 63)) * 64 + q(key.dispersion, 32, 63)
+  return ((((q(key.bevelWidth, 64, 4095) * 4096 + q(key.bevelHeight, 64, 127)) * 128 + q(key.curve, 16, 255)) * 256 + q(key.bottomBevel, 32, 63)) * 64 + q(key.dispersion, 32, 63)) * 128 + q(key.ior - 1, 64, 127)
 }
 
 /**
@@ -263,6 +264,7 @@ export class ProfileTable {
     curve: 0,
     bottomBevel: 0,
     dispersion: 0,
+    ior: BASE_IOR,
   }
 
   /** 没有 GPU（单元测试）时只记录行号。 */
@@ -283,13 +285,14 @@ export class ProfileTable {
   }
 
   /** 取得截面参数对应的行号，没有时追踪并上传。 */
-  rowOf(bevelWidth: number, bevelHeight: number, curve: number, bottomBevel: number, dispersion: number): number {
+  rowOf(bevelWidth: number, bevelHeight: number, curve: number, bottomBevel: number, dispersion: number, ior = BASE_IOR): number {
     const key = this.scratch
     key.bevelWidth = bevelWidth
     key.bevelHeight = bevelHeight
     key.curve = curve
     key.bottomBevel = bottomBevel
     key.dispersion = dispersion
+    key.ior = ior
     const id = keyOf(key)
     const row = this.rows.get(id)
     if (row !== undefined)

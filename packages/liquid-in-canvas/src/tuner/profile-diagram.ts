@@ -48,7 +48,7 @@ export function renderProfileDiagram(material: GlassProfileOptions, elevation: n
   // 光线只铺在倒角和紧邻的一段平面上，平面部分的光线笔直穿过，画几条就够。
   const span = Math.max(p.bevelWidth, bottomWidth) * 1.3
   const starts = Array.from({ length: RAY_COUNT }, (_, i) => (i + 0.5) / RAY_COUNT * span)
-  const rays = traceProfileRays(outline, starts, top + sky)
+  const rays = traceProfileRays(outline, starts, top + sky, material.ior)
   const ground = sz(0)
   const outlineX = sx(0)
   const fadeStart = sx(reach * 0.72)

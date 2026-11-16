@@ -34,6 +34,11 @@ export function glassContentRenderOrder(layer: number, paintOrder: number): numb
   return glassRenderOrder(layer) + 1 + paintOrder
 }
 
+/** 玻璃里放到玻璃之下的元素（`data-glass-place="below"`）的顺序：在第 layer 层所有体积之下、前景层之上。 */
+export function glassUnderRenderOrder(layer: number): number {
+  return glassRenderOrder(layer) - 0.25
+}
+
 /** 前景层的顺序：在第 layer 层玻璃之下、更低各层的内容之上。 */
 export function overlayRenderOrder(layer: number): number {
   return glassRenderOrder(layer) - 0.5

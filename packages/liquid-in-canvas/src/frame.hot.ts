@@ -187,13 +187,17 @@ export class FrameEncoder {
   /**
    * 编码写入折射场缓存的一遍：同时写 `views` 里的三张纹理，先清成“没有光路”。
    */
-  encodeFieldPass(encoder: GPUCommandEncoder, views: readonly GPUTextureView[], width: number, height: number, list: DrawList): void {
+  encodeFieldPass(encoder: GPUCommandEncoder, views: readonly GPUTextureView[], width: number, height: number, list: DrawList, keep = false): void {
     const uniforms = this.binding?.group
     if (!uniforms)
       throw new Error('FrameEncoder.beginEncoding() must be called before encodeFieldPass()')
     const attachments = this.fieldAttachments
-    for (let i = 0; i < attachments.length; i++)
+    for (let i = 0; i < attachments.length; i++) {
       attachments[i]!.view = views[i]!
+      attachments[i]!.loadOp = keep
+        ? 'load'
+        : 'clear'
+    }
     this.fieldPass.timestampWrites = this.timing.writes('field', width, height)
     this.drawList(encoder.beginRenderPass(this.fieldPass), uniforms, list)
   }

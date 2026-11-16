@@ -14,6 +14,7 @@ const DEFAULT_KEY = {
   curve: 3,
   bottomBevel: 1,
   dispersion: 0,
+  ior: 1.45,
 }
 
 describe('截面光路查找表', () => {
@@ -178,5 +179,20 @@ describe('剖面光学', () => {
     groups.plan(surfaces, count, {} as GPUTextureView, shading, new DrawList())
     expect(textures[0]!.destroy.mock.calls).toHaveLength(1)
     expect(textures[1]!.destroy.mock.calls).toHaveLength(0)
+  })
+})
+
+describe('折射率', () => {
+  it('折射率越大，倒角上的光线偏折越多；不同折射率各占一行', () => {
+    const at = Math.round(LUT_SAMPLES * 0.7)
+    const water = traceProfile({ ...DEFAULT_KEY, ior: 1.33 })[at]!
+    const glass = traceProfile(DEFAULT_KEY)[at]!
+    const dense = traceProfile({ ...DEFAULT_KEY, ior: 1.9 })[at]!
+    expect(Math.abs(water.shift[1]!)).toBeLessThan(Math.abs(glass.shift[1]!))
+    expect(Math.abs(glass.shift[1]!)).toBeLessThan(Math.abs(dense.shift[1]!))
+    const table = new ProfileTable(null)
+    const base = table.rowOf(0.68, 0.68, 3, 1, 0)
+    expect(table.rowOf(0.68, 0.68, 3, 1, 0, 1.45)).toBe(base)
+    expect(table.rowOf(0.68, 0.68, 3, 1, 0, 1.9)).toBe(base + 1)
   })
 })

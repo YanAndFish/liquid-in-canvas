@@ -21,6 +21,58 @@ export interface Rect {
 }
 
 /** 一块玻璃的全部状态。 */
+/**
+ * 玻璃里放到玻璃之下的一个元素（`data-glass-place="below"`）。它是单独的 drawable，不进玻璃的内容快照：
+ * 画布里它画在同层所有体积之下，被玻璃盖住的部分写进页面背景，由这块玻璃折射与模糊。
+ */
+export interface UnderContent extends ContentSource {
+  readonly element: HTMLElement
+  content: ElementTexture | null
+  textureWidth: number
+  textureHeight: number
+  /** 注册时由舞台加上 `drawable`，移除时要还原。 */
+  addedDrawable: boolean
+  placed: boolean
+  placedLeft: number
+  placedTop: number
+  /** 内容变化或尺寸变化后需要重新上传。 */
+  dirty: boolean
+  /** 至少成功上传过一次。 */
+  uploaded: boolean
+  /** 本帧是否可见并参与绘制。 */
+  visible: boolean
+}
+
+/** 创建一个放到玻璃之下的元素的状态。 */
+export function createUnderContent(element: HTMLElement, content: ElementTexture | null, width: number, height: number, addedDrawable: boolean): UnderContent {
+  return {
+    element,
+    content,
+    textureWidth: width,
+    textureHeight: height,
+    addedDrawable,
+    placed: false,
+    placedLeft: 0,
+    placedTop: 0,
+    dirty: true,
+    uploaded: false,
+    visible: false,
+    rect: { left: 0, top: 0, width: 0, height: 0 },
+    contentRect: { left: 0, top: 0, width: 0, height: 0 },
+    padding: 0,
+    contentClip: [0, 0, 0, 0],
+    contentOpacity: 1,
+    contentScale: 1,
+    contentBlur: 0,
+    contentOriginX: 0,
+    contentOriginY: 0,
+    occluders: [],
+    occluderCount: 0,
+    backdropOccluders: [],
+    backdropOccluderCount: 0,
+  }
+}
+
 export interface GlassSurface extends ContentSource {
   /** 生命周期内稳定的表面编号。 */
   readonly id: number
@@ -123,6 +175,10 @@ export interface GlassSurface extends ContentSource {
    */
   readonly tail: VolumeSurface
   hasTail: boolean
+  /** 放到玻璃之下的元素，嵌套玻璃没有。 */
+  readonly under: UnderContent[]
+  /** 玻璃里的元素或它们的 `data-glass-place` 变了，下一帧重新收集 `under`。 */
+  underDirty: boolean
 }
 
 /**
@@ -233,6 +289,8 @@ export function createSurface(init: SurfaceInit): GlassSurface {
       host: init.host?.id ?? null,
     },
     hasTail: false,
+    under: [],
+    underDirty: true,
     padding: 0,
     contentClip: [0, 0, 0, 0],
     contentOpacity: 1,

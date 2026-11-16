@@ -571,3 +571,45 @@ describe('玻璃内容纹理', () => {
     finally { layer.dispose() }
   })
 })
+
+describe('放到玻璃之下的元素', () => {
+  it('不进玻璃的内容快照：单独上传，画在同层体积之下，并写进页面背景；改回 above 后还原', async () => {
+    const { layer, upload, element, paint, sync } = setup()
+    try {
+      const picture = document.createElement('div')
+      picture.setAttribute('data-glass-place', 'below')
+      Object.defineProperties(picture, {
+        offsetParent: {
+          get: () => element,
+        },
+        offsetLeft: { value: 10 },
+        offsetTop: { value: 5 },
+        offsetWidth: { value: 80 },
+        offsetHeight: { value: 40 },
+      })
+      picture.getClientRects = () => [
+        new DOMRect(110, 105, 80, 40),
+      ] as unknown as DOMRectList
+      element.append(picture)
+      paint()
+      expect(picture.hasAttribute('drawable')).toBe(true)
+      const sources: Element[] = []
+      upload.mockImplementation((source: { source: Element }) => {
+        sources.push(source.source)
+      })
+      const items = sync(Object.assign(new Event('paint'), {
+        changedElements: [picture],
+      }))
+      expect(sources).toContain(picture)
+      expect(items).toBeGreaterThan(0)
+
+      picture.setAttribute('data-glass-place', 'above')
+      await flush()
+      sync()
+      expect(picture.hasAttribute('drawable')).toBe(false)
+    }
+    finally {
+      layer.dispose()
+    }
+  })
+})

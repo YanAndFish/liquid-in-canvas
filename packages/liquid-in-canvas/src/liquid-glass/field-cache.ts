@@ -14,16 +14,22 @@ export const FIELD_MAX_MEMBERS = 8
 /** 同时记录的组数。超过时换掉最久没有出现的组。 */
 export const FIELD_ENTRIES = 12
 /** 每名成员的几何特征占用的浮点数个数：相对位置、半宽高、圆角、厚度与融合、裁剪、色散、截面参数。 */
-export const FIELD_SIGNATURE_FLOATS = 20
+export const FIELD_SIGNATURE_FLOATS = 22
 /** 几何特征的比较容差（CSS 像素）。 */
 export const FIELD_TOLERANCE = 0.01
 /**
  * 长度类几何特征一次变化不超过它（CSS 像素）时算小幅漂移：弹簧收敛的尾巴、很慢的拖动。
  * 缓存有效时原地重新求交，不作废、不淡出，也不推迟求交。
  */
-export const FIELD_DRIFT = 0.5
+export const FIELD_DRIFT = 1.5
 /** 几何没有明显变化这么久之后才求交并写入缓存，毫秒。期间这一组按剖面光学查表。 */
 export const FIELD_SETTLE_MS = 50
+/** 刚写完缓存就又明显变化时，等待时间按倍数延长到这个上限，毫秒。轻微拖动不会在查表与缓存之间来回切换。 */
+export const FIELD_SETTLE_MAX_MS = 400
+/** 写入缓存后这么久之内又明显变化算来回切换，毫秒。 */
+export const FIELD_FLAP_MS = 400
+/** 变化的成员影响的范围超过缓存面积的这个比例时整组作废，不再局部失效。 */
+export const FIELD_LOCAL_LIMIT = 0.6
 /** 从查表的画面淡入求交结果的时间，毫秒。 */
 export const FIELD_FADE_IN_MS = 100
 /** 几何开始变化后，从上一次的求交结果淡出到查表的时间，毫秒。 */
@@ -72,9 +78,30 @@ export interface FieldEntry {
   stale: boolean
   /** 求交结果在画面里的比例：0 是查表的画面，1 是求交的画面。 */
   fade: number
-  /** 第一名成员的中心在本帧视口中的位置。 */
+  /** 作为原点的成员下标（面积最大的成员），-1 表示还没有选。 */
+  anchor: number
+  /** 原点成员的中心在本帧视口中的位置。 */
   anchorX: number
   anchorY: number
+  /** 写入缓存时各成员的中心与半宽高，相对原点成员。 */
+  readonly baked: Float32Array
+  /** 写入缓存的时间，毫秒。 */
+  bakedAt: number
+  /** 当前的等待时间，见 `FIELD_SETTLE_MAX_MS`。 */
+  settle: number
+  /** 这次写入之后已经延长过等待时间。 */
+  flapped: boolean
+  /** 局部失效：范围（相对原点成员：左、上、右、下）里查表，其余继续读缓存。 */
+  dirty: boolean
+  readonly dirtyRect: Float32Array
+  /** 局部失效范围里求交结果的比例。 */
+  dirtyFade: number
+  /** 局部失效范围里最近一次明显变化的时间，毫秒。 */
+  dirtyChangedAt: number
+  /** 局部失效的范围已经重新写入，正在淡入。 */
+  dirtyBaked: boolean
+  /** 小幅漂移的成员影响的范围，相对原点成员，下一次写入时原地更新。 */
+  readonly refreshRect: Float32Array
   /** 缓存左上角相对第一名成员中心的位置，CSS 像素。 */
   originX: number
   originY: number
@@ -107,8 +134,19 @@ export function createFieldEntry(): FieldEntry {
     live: false,
     stale: false,
     fade: 0,
+    anchor: -1,
     anchorX: 0,
     anchorY: 0,
+    baked: new Float32Array(FIELD_MAX_MEMBERS * 4),
+    bakedAt: -Infinity,
+    settle: FIELD_SETTLE_MS,
+    flapped: false,
+    dirty: false,
+    dirtyRect: new Float32Array(4),
+    dirtyFade: 1,
+    dirtyChangedAt: 0,
+    dirtyBaked: false,
+    refreshRect: new Float32Array(4),
     originX: 0,
     originY: 0,
     ratio: 1,

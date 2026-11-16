@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { HEADER_FLOATS } from '../../src/frame'
 import { DrawList } from '../../src/frame.hot'
 import { TEXTURE_USAGE } from '../../src/gpu'
-import { FIELD_FADE_IN_MS, FIELD_FADE_OUT_MS, FIELD_IDLE_FRAMES, FIELD_SETTLE_MS, FIELD_TEXEL_BUDGET } from '../../src/liquid-glass/field-cache'
+import { FIELD_FADE_IN_MS, FIELD_FADE_OUT_MS, FIELD_FLAP_MS, FIELD_IDLE_FRAMES, FIELD_SETTLE_MAX_MS, FIELD_SETTLE_MS, FIELD_TEXEL_BUDGET } from '../../src/liquid-glass/field-cache'
 import { parseGlassOptions } from '../../src/liquid-glass/options'
 import { createFieldBakeShader, FIELD_FORMATS, FIELD_TARGETS, FIELD_TEXEL_BYTES } from '../../src/liquid-glass/volume-field-shader'
 import { createHybridVolumeShader } from '../../src/liquid-glass/volume-hybrid-shader'
@@ -58,13 +58,14 @@ interface Item {
 
 /** 记录每一遍的附件与用到的管线的假编码器。 */
 function fakeEncoder() {
-  const passes: { views: unknown[], clear: unknown[], labels: string[], uniforms: number[] }[] = []
+  const passes: { views: unknown[], clear: unknown[], load: unknown[], labels: string[], uniforms: number[] }[] = []
   const encoder = {
     beginRenderPass(descriptor: GPURenderPassDescriptor) {
       const attachments = [...descriptor.colorAttachments] as GPURenderPassColorAttachment[]
       const pass = {
         views: attachments.map(attachment => attachment.view),
         clear: attachments.map(attachment => attachment.clearValue),
+        load: attachments.map(attachment => attachment.loadOp),
         labels: [] as string[],
         uniforms: [] as number[],
       }
@@ -144,9 +145,18 @@ function setup() {
       ...fake.gpu.frame.data.subarray(at, at + 4),
     ]
   }
+  /** 局部失效的范围（视口坐标：左、上、右、下）与范围里求交结果的比例。 */
+  const dirtyOf = (item: Item) => {
+    const at = item.start + HEADER_FLOATS
+    return [
+      ...fake.gpu.frame.data.subarray(at + 16, at + 20),
+      fake.gpu.frame.data[at + 6]!,
+    ]
+  }
   return {
     ...fake,
     groups,
+    dirtyOf,
     frame,
     frameAt,
     run,
@@ -437,7 +447,7 @@ describe('折射场缓存', () => {
 
   it('明显变化之后不等旧结果淡完：没有明显变化满规定时间就重新求交，从当前的比例接着淡入', () => {
     const { run, frameAt, now, encode, fieldOf } = setup()
-    run(SETTLE_FRAMES, scene())
+    run(SETTLE_FRAMES + Math.ceil(FIELD_FLAP_MS / TICK), scene())
     const moved = [
       surface(1, 0),
       surface(2, 216),
@@ -461,11 +471,87 @@ describe('折射场缓存', () => {
     expect(lowest).toBeLessThan(1)
   })
 
+  describe('局部失效', () => {
+    /** 一块 1200 × 120 的面板，左右两端下方各有一块 100 × 60 的小玻璃，三者融合成一组。 */
+    const panel = (dx = 0): VolumeSurface[] => {
+      const big = surface(1, 0, 180)
+      big.width = 1200
+      big.height = 120
+      const left = surface(2, 20, 320)
+      left.width = 100
+      left.height = 60
+      const right = surface(3, 1080 + dx, 320)
+      right.width = 100
+      right.height = 60
+      return [big, left, right]
+    }
+    const fusedOf = <T extends { label: string }>(items: T[]): T => items.find(item => item.label.endsWith(':3'))!
+
+    it('只有一块小玻璃移动时只让它附近失效：其余部分继续读缓存，停下后只重写那一块', () => {
+      const { run, frame, encode, fieldOf, dirtyOf, fieldTextures } = setup()
+      run(SETTLE_FRAMES + Math.ceil(FIELD_FLAP_MS / TICK), panel())
+      const texture = fieldTextures().at(-1)!
+      const moved = fusedOf(frame(panel(6)))
+      expect(moved.label).toBe('volume-field:0:3')
+      expect(encode()).toHaveLength(0)
+      // 整组的比例不变，失效范围在右边那块附近，不碰左边的连接处。
+      expect(fieldOf(moved)[3]).toBe(1)
+      const [left, top, right, bottom, fade] = dirtyOf(moved)
+      expect(fade!).toBeLessThan(1)
+      expect(left!).toBeGreaterThan(120)
+      expect(right!).toBeGreaterThan(1186)
+      expect(top!).toBeLessThan(320)
+      expect(bottom!).toBeGreaterThan(380)
+      // 停下：等满等待时间后只重写失效的一块，保留其余纹素。
+      let partial: ReturnType<typeof encode>[number] | null = null
+      for (let i = 0; i < Math.ceil(FIELD_SETTLE_MS / TICK) + 2 && !partial; i++) {
+        frame(panel(6))
+        partial = encode()[0] ?? null
+      }
+      expect(partial).not.toBeNull()
+      expect(partial!.load).toEqual(['load', 'load', 'load'])
+      expect(fieldTextures().at(-1)).toBe(texture)
+      // 淡入完成后不再局部失效。
+      const settled = fusedOf(run(Math.ceil(FIELD_FADE_IN_MS / TICK) + 2, panel(6)))
+      expect(dirtyOf(settled)[4]).toBe(1)
+      expect(dirtyOf(settled)[2]!).toBeLessThan(dirtyOf(settled)[0]!)
+    })
+
+    it('移动的是面积最大的成员、或影响范围超过缓存的大半时整组作废', () => {
+      const { run, frame, fieldOf } = setup()
+      run(SETTLE_FRAMES + Math.ceil(FIELD_FLAP_MS / TICK), panel())
+      const shifted = panel()
+      shifted[0]!.left += 6
+      expect(fieldOf(fusedOf(frame(shifted)))[3]).toBeLessThan(1)
+    })
+
+    it('刚写完缓存又明显移动时延长等待时间，轻微拖动不会在查表与缓存之间来回切换', () => {
+      const { run, frame, encode } = setup()
+      run(SETTLE_FRAMES + Math.ceil(FIELD_FLAP_MS / TICK), panel())
+      /** 移动一次，返回停下后过多久才重新写入（毫秒）。 */
+      const pause = (dx: number): number => {
+        frame(panel(dx))
+        encode()
+        for (let i = 1; i < 60; i++) {
+          frame(panel(dx))
+          if (encode().length > 0)
+            return i * TICK
+        }
+        return Infinity
+      }
+      const first = pause(6)
+      const second = pause(12)
+      expect(first).toBeLessThan(FIELD_SETTLE_MS + 2 * TICK)
+      expect(second).toBeGreaterThanOrEqual(FIELD_SETTLE_MS * 2)
+    })
+  })
+
   it('尺寸、按压、材质化、圆角与截面参数变化都让缓存失效；外观变化不会', () => {
-    const { run, frame, encode, fieldOf } = setup()
+    const { run, frame, encode, fieldOf, dirtyOf } = setup()
     const base = (): VolumeSurface[] => scene()
+    // 每次改动后又很快改动，等待时间会延长到上限，这里按上限等。
     const settle = () => {
-      run(SETTLE_FRAMES, base())
+      run(Math.ceil((FIELD_SETTLE_MAX_MS + FIELD_FLAP_MS + FIELD_FADE_IN_MS) / TICK) + 3, base())
       expect(frame(base()).map(item => item.label)).toContain('volume-field:0:2')
     }
     const changes: ((surfaces: VolumeSurface[]) => void)[] = [
@@ -486,11 +572,15 @@ describe('折射场缓存', () => {
       settle()
       const changed = base()
       change(changed)
-      // 缓存作废：旧结果开始淡出，这一帧不重新求交。
+      // 缓存作废（整组，或只是变化的成员附近）时旧结果开始淡出，这一帧不重新求交；
+      // 变化很小（按压只改变不到 1.5 像素）时不作废，同一帧按新的几何重新求交。
       const fused = frame(changed).find(item => item.label.endsWith(':2'))!
       expect(fused.label).toBe('volume-field:0:2')
-      expect(fieldOf(fused)[3]).toBeLessThan(1)
-      expect(encode()).toHaveLength(0)
+      const passes = encode()
+      if (Math.min(fieldOf(fused)[3]!, dirtyOf(fused)[4]!) < 1)
+        expect(passes).toHaveLength(0)
+      else
+        expect(passes).toHaveLength(1)
     }
 
     // 染色、不透明度、遮罩压暗与透镜强度每帧现算，不需要重新求交。

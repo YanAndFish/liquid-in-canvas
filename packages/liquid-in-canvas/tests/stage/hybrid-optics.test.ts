@@ -276,6 +276,7 @@ describe('查找表里的横向范围', () => {
     curve: 2.75,
     bottomBevel: 1,
     dispersion: 0.05,
+    ior: 1.45,
   }
 
   it('平顶上光线不离开入射位置，倒角上有横向位移', () => {

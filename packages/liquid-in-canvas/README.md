@@ -87,6 +87,18 @@ const glass = await mountLiquidGlass({
 glass.dispose() // Stop rendering and restore the page to its pre-mount state.
 ```
 
+### Adding and removing glass from code (0.4.0+)
+
+`addGlass(element, options)` turns an element inside the root into glass, and `removeGlass(element)` turns it back. Option names are the `data-glass-*` attributes without the prefix, in camelCase, and take the same values. All three renderers pick up the change on the next frame.
+
+```ts
+const handle = glass.addGlass(button, { variant: 'clear', radius: 20, ior: 1.5 })
+handle.update({ blur: 4, radius: null }) // null removes an option, so it falls back to scopes and defaults.
+handle.remove() // Same as glass.removeGlass(button).
+```
+
+`removeGlass()` removes `data-liquid-glass` and only the option attributes that `addGlass()` wrote. Calling `addGlass()` on an element that is already glass merges the options. It throws if the element isn't inside the root.
+
 To switch renderers at runtime, call `dispose()` and mount again with the new `mode`. Moving the root resets scroll positions inside it and pauses playing videos. Restore them from your application as needed.
 
 When using a framework, mount your app in `beforeStart`. The root is already in its final position when the callback runs. Rendering starts after the callback.
@@ -115,6 +127,7 @@ Add `data-liquid-glass` to the element you want to render as glass. Give the ele
 | `data-glass-bevel-curve` | Superellipse exponent of the bevel, 1–8. At 1 the bevel is a straight slope, at 2 it is an elliptical arc, and higher values approach a right angle. | 2.75 |
 | `data-glass-bottom-bevel` | Ratio of the bottom bevel to the top bevel, 0–1. At 0, the bottom is flat with a square edge. | 1 |
 | `data-glass-dispersion` | Strength of the separation between RGB samples, 0–1 | 0.05 |
+| `data-glass-ior` (0.4.0+) | Refractive index, 1–2.5. At 1 light passes straight through; water is about 1.33 and glass about 1.5. Higher values bend light more at the bevel and widen the dark total-internal-reflection rim. | 1.45 |
 | `data-glass-lens` | Convex lens strength, 0–0.6. The center magnifies the backdrop by about 1 / (1 − lens). Long, narrow shapes magnify along the short axis only. | 0 |
 | `data-glass-saturation` | Saturation multiplier for the backdrop seen through the glass, 0–3 | 1.3 / 1.15 |
 | `data-glass-brightness` | Brightness multiplier for the backdrop seen through the glass, 0.5–1.5 | 1.06 in light mode and 1 in dark mode / 1 |
@@ -154,6 +167,7 @@ Canvas mode also supports these attributes.
 - Add `data-glass-clip` to an ordinary ancestor to clip descendant glass and shadows to its rectangle.
 - Mark the modal root with `data-glass-modal` and its scrim with `data-glass-scrim`. While the modal is open, the scrim opacity controls how much the glass outside it dims.
 - Add `data-glass-fade` to a page transition container to apply its `opacity` to the glass inside it.
+- (0.4.0+) Add `data-glass-place="below"` to an element inside a piece of glass to draw it under the glass instead of on top. The glass then refracts and blurs it along with the backdrop. `above`, or no value, keeps the default. When the glass sits on top of other glass, the lower glass covers the element where they overlap.
 - Use `data-stage-overlay` for a transparent foreground layer sampled separately from the page, such as a transition that crosses multiple pieces of glass. `data-stage-overlay="5"` appears above glass below layer 5 and below glass at layer 5 or higher. An empty value places it above all glass. Add at most one overlay per page and put it in the DOM before rendering starts.
 
 ### TypeScript types

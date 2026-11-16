@@ -71,3 +71,58 @@ describe('mountLiquidGlass', () => {
     delete document.documentElement.dataset.theme
   })
 })
+
+describe('通过 API 开关玻璃', () => {
+  it('addGlass 写上玻璃与参数属性，回退实现在下一次变更回调里接手；removeGlass 只去掉自己写的属性', async () => {
+    const root = document.createElement('div')
+    const button = document.createElement('button')
+    button.setAttribute('data-glass-layer', '2')
+    root.append(button)
+    document.body.append(root)
+    const mount = await mountLiquidGlass({ root, mode: 'css' })
+    const handle = mount.addGlass(button, {
+      variant: 'clear',
+      bevelWidth: 1.2,
+      radius: '12 12 0 0',
+      materialize: false,
+    })
+    expect(button.getAttribute('data-liquid-glass')).toBe('')
+    expect(button.getAttribute('data-glass-variant')).toBe('clear')
+    expect(button.getAttribute('data-glass-bevel-width')).toBe('1.2')
+    expect(button.getAttribute('data-glass-radius')).toBe('12 12 0 0')
+    expect(button.getAttribute('data-glass-materialize')).toBe('false')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(button.hasAttribute('data-liquid-glass-css')).toBe(true)
+
+    handle.update({ bevelWidth: null, blur: 4 })
+    expect(button.hasAttribute('data-glass-bevel-width')).toBe(false)
+    expect(button.getAttribute('data-glass-blur')).toBe('4')
+
+    handle.remove()
+    expect(button.hasAttribute('data-liquid-glass')).toBe(false)
+    expect(button.hasAttribute('data-glass-variant')).toBe(false)
+    expect(button.hasAttribute('data-glass-blur')).toBe(false)
+    // 不是 API 写上的参数保留。
+    expect(button.getAttribute('data-glass-layer')).toBe('2')
+    // 移除之后的修改不再生效。
+    handle.update({ blur: 8 })
+    expect(button.hasAttribute('data-glass-blur')).toBe(false)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(button.hasAttribute('data-liquid-glass-css')).toBe(false)
+
+    mount.dispose()
+    root.remove()
+  })
+
+  it('元素不在根元素里、或参数名未知时抛出错误', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const mount = await mountLiquidGlass({ root, mode: 'css' })
+    expect(() => mount.addGlass(document.createElement('div'))).toThrow(/inside the mounted root/)
+    const inside = document.createElement('div')
+    root.append(inside)
+    expect(() => mount.addGlass(inside, { blurry: 1 } as never)).toThrow(/Unknown glass option/)
+    mount.dispose()
+    root.remove()
+  })
+})

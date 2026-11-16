@@ -1,14 +1,15 @@
 import type { StageGpu } from '../gpu'
 import { BLEND_NORMAL, PipelineTable, shaderPrelude, SLOT_CANVAS, SLOT_TARGET, TARGET_FORMAT, wgslFloat } from '../gpu'
 import { BLUR_SIGMAS } from './gaussian'
+import { DISPERSION_SPREAD } from './optics-lut'
 import { createFieldBakeShader, FIELD_FORMATS, FIELD_TARGETS } from './volume-field-shader'
 import { createHybridVolumeShader } from './volume-hybrid-shader'
 import { createProfileVolumeShader } from './volume-profile-shader'
 
-/** 体积组 uniform 中矩形与目标尺寸之后、成员之前的浮点数个数：`params`、`shadow`、`valid` 与 `field`。 */
-export const VOLUME_GROUP_FLOATS = 16
+/** 体积组 uniform 中矩形与目标尺寸之后、成员之前的浮点数个数：`params`、`shadow`、`valid`、`field` 与 `dirty`。 */
+export const VOLUME_GROUP_FLOATS = 20
 /** 每个成员占用的浮点数个数，对应着色器里的 `Member`。 */
-export const VOLUME_MEMBER_FLOATS = 32
+export const VOLUME_MEMBER_FLOATS = 36
 /** 体积着色器取样的纹理数量：背景加各级模糊。 */
 export const VOLUME_TEXTURES = 1 + BLUR_SIGMAS.length
 
@@ -162,6 +163,8 @@ export function volumeCommon(count: number): string {
   // 折射场缓存（混合光路读写缓存的管线）：缓存左上角的纹素位置、缓存倍率与目标倍率之比、
   // 缓存结果相对查表近似的比例（切换时交叉淡化）。
   field: vec4f,
+  // 折射场缓存局部失效的范围（视口坐标：左、上、右、下），范围内求交结果的比例在 shadow.z。
+  dirty: vec4f,
   members: array<Member, ${count}>,`, /* wgsl */`
 struct Member {
   // 中心坐标与半宽高。
@@ -181,6 +184,8 @@ struct Member {
   // 剖面查找表的行号（剖面光学与混合光路）、透射背景的饱和度与亮度倍数，
   // 以及与较薄成员的接近程度（见 writeFusionProximity）。
   extra: vec4f,
+  // 折射率，其余三个分量未用。
+  refraction: vec4f,
 }`)}
 @group(1) @binding(0) var source: texture_2d<f32>;
 ${BLUR_SIGMAS.map((_, i) => `@group(1) @binding(${i + 1}) var blur${i}: texture_2d<f32>;`).join('\n')}
@@ -519,6 +524,7 @@ fn glass_exit(entry: vec3f, normal: vec3f, ior: f32) -> vec4f {
 // 融合后的光学参数（模糊方差、色散、染色比例、高光）、染色与透镜偏移。
 struct Material {
   optics: vec4f,
+  ior: f32,
   colored: vec4f,
   color: vec3f,
   lens: vec2f,
@@ -530,18 +536,22 @@ fn glass_material(p: vec3f) -> Material {
   let xy = p.xy;
 ${each(count, i => `  let d${i} = glass_outline(xy, u.members[${i}]);`)}
   var optics: vec4f;
+  var ior: f32;
   var colored: vec4f;
   var lens: vec2f;
   var tone: vec2f;
 ${fuseDominance(count, `      optics = m.appearance;
+      ior = m.refraction.x;
       colored = m.color;
       lens = glass_lens(xy, m);
       tone = m.extra.yz;`, `      optics = mix(optics, m.appearance, ramp.x);
+      ior = mix(ior, m.refraction.x, ramp.x);
       colored = mix(colored, m.color, ramp.x);
       lens = mix(lens, glass_lens(xy, m), ramp.x);
       tone = mix(tone, m.extra.yz, ramp.x);`)}
   var material: Material;
   material.optics = optics;
+  material.ior = ior;
   // 透明材质的染色值不应把不透明一端的颜色冲淡。
   material.colored = colored;
   material.color = colored.rgb / max(optics.z, 0.0001);
@@ -560,18 +570,18 @@ struct Paths {
   blue: vec3f,
 }
 
-// 从入射点追踪三条光路。spread 是红蓝两条光路的折射率偏移。
-fn glass_paths(entry: vec3f, spread: f32) -> Paths {
+// 从入射点追踪三条光路。ior 是绿色光路的折射率，spread 是红蓝两条光路的折射率偏移。
+fn glass_paths(entry: vec3f, ior: f32, spread: f32) -> Paths {
   var paths: Paths;
   paths.height = entry.z;
   paths.normal = glass_normal(entry);
-  let green = glass_exit(entry, paths.normal, 1.45);
+  let green = glass_exit(entry, paths.normal, ior);
   var red = green;
   var blue = green;
   // 没有色散时三条光路重合，只追踪一次。
   if (spread > 0.00001) {
-    red = glass_exit(entry, paths.normal, 1.45 - spread);
-    blue = glass_exit(entry, paths.normal, 1.45 + spread);
+    red = glass_exit(entry, paths.normal, ior - spread);
+    blue = glass_exit(entry, paths.normal, ior + spread);
   }
   paths.red = red.xyw;
   paths.green = green.xyw;
@@ -612,7 +622,7 @@ fn glass_trace(xy: vec2f, screen_uv: vec2f) -> vec4f {
   let entry = glass_entry(xy);
   if (entry.w <= 0.5) { return vec4f(0.0, 0.0, 0.0, -1.0); }
   let material = glass_material(entry.xyz);
-  return glass_shade(screen_uv, material, glass_paths(entry.xyz, material.optics.y * 0.055));
+  return glass_shade(screen_uv, material, glass_paths(entry.xyz, material.ior, material.optics.y * ${wgslFloat(DISPERSION_SPREAD)}));
 }
 `
 }

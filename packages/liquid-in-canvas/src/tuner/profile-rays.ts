@@ -1,3 +1,5 @@
+import { BASE_IOR } from '../liquid-glass/profile'
+
 /** 截面图里的一条光路。 */
 export interface ProfileRay {
   /** 依次经过的点：起点、各次折射或反射处、终点。 */
@@ -6,8 +8,6 @@ export interface ProfileRay {
   landing: number | null
 }
 
-/** 玻璃的折射率，与体积着色器中绿色光路一致。 */
-const IOR = 1.45
 const EPSILON = 1e-4
 /** 最多经过的界面次数：入射、一次全内反射、出射，再留一点余量。 */
 const MAX_EVENTS = 6
@@ -19,11 +19,11 @@ const MAX_EVENTS = 6
  * 光线碰到它就停止。光线按 Snell 定律进出玻璃，与着色器一样最多允许一次全内反射，
  * 离开玻璃后走到背景平面 z = 0。
  */
-export function traceProfileRays(outline: readonly [number, number][], starts: readonly number[], height: number): ProfileRay[] {
-  return starts.map(x => traceRay(outline, x, height))
+export function traceProfileRays(outline: readonly [number, number][], starts: readonly number[], height: number, ior = BASE_IOR): ProfileRay[] {
+  return starts.map(x => traceRay(outline, x, height, ior))
 }
 
-function traceRay(outline: readonly [number, number][], startX: number, height: number): ProfileRay {
+function traceRay(outline: readonly [number, number][], startX: number, height: number, ior: number): ProfileRay {
   const points: [number, number][] = [
     [startX, height],
   ]
@@ -65,8 +65,8 @@ function traceRay(outline: readonly [number, number][], startX: number, height: 
       nz = -nz
     }
     const eta = inside
-      ? IOR
-      : 1 / IOR
+      ? ior
+      : 1 / ior
     const cosine = -(nx * dx + nz * dz)
     const k = 1 - eta * eta * (1 - cosine * cosine)
     if (k < 0) {

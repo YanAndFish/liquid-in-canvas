@@ -31,6 +31,13 @@ export const GLASS_SCRIM_ATTR = 'data-glass-scrim'
  */
 export const GLASS_SCOPE_ATTR = 'data-glass-scope'
 
+/**
+ * 玻璃里的元素画在玻璃之上还是之下：`below` 时这个元素不进玻璃的内容快照，改为画在玻璃下面，
+ * 和背景一起被这块玻璃折射与模糊；`above` 或不写时照常画在玻璃之上。只对画布渲染有效。
+ * @since 0.4.0
+ */
+export const GLASS_PLACE_ATTR = 'data-glass-place'
+
 /** 页面切换容器，其 opacity 作用到内部玻璃的内容与体积。 */
 export const GLASS_FADE_ATTR = 'data-glass-fade'
 

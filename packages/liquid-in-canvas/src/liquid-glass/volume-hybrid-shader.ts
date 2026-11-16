@@ -29,6 +29,9 @@ export function hybridOwner(): string {
   let outline = max(glass_section(b.planar, 0.0, b), b.clip);`
 }
 
+/** 折射场缓存局部失效的范围外缘与缓存交叉淡化的宽度，CSS 像素。 */
+export const FIELD_FEATHER = 8
+
 /**
  * 归属成员的查表参数与分档条件。声明 `m`、`clipped`、`field`、`on_slab`（平顶）与 `alone`（可以按这名成员查表），
  * 要求作用域里已有 `hybridOwner()` 的结果。
@@ -47,6 +50,7 @@ export function hybridTier(): string {
     field.elevation = m.depth.y;
     field.bevel = member_bevel(m);
     field.row = m.extra.x;
+    field.ior = m.refraction.x;
     field.tone = m.extra.yz;
     field.stretch = 1.0;
     field.top_slope = vec2f(0.0);
@@ -71,34 +75,38 @@ export function hybridTier(): string {
 function traceTier(cached: boolean): string {
   if (!cached)
     return /* wgsl */`        shaded = glass_trace(xy, screen_uv);`
-  return /* wgsl */`        let texel = vec2i(floor(in.position.xy * u.field.z - u.field.xy));
-        var stored = vec4f(0.0, 0.0, 0.0, -1.0);
-        if (all(texel >= vec2i(0)) && all(texel < vec2i(textureDimensions(field2)))) {
-          stored = textureLoad(field2, texel, 0);
-        }
-        if (stored.w >= 0.0) {
-          let first = textureLoad(field0, texel, 0);
-          let rest = textureLoad(field1, texel, 0);
-          var paths: Paths;
-          paths.height = stored.w;
-          let green = xy + first.xy;
-          paths.normal = vec3f(first.zw, sqrt(max(1.0 - dot(first.zw, first.zw), 0.0)));
-          paths.red = vec3f(green + rest.xy, stored.x);
-          paths.green = vec3f(green, stored.y);
-          paths.blue = vec3f(green + rest.zw, stored.z);
-          shaded = glass_shade(screen_uv, glass_material(vec3f(xy, stored.w)), paths);
+  return /* wgsl */`        let fade = field_fade(xy);
+        if (fade <= 0.0) {
+          shaded = glass_lookup(glass_field(xy), xy, screen_uv);
         } else {
-          shaded = glass_trace(xy, screen_uv);
-        }
-        if (u.field.w < 1.0) {
-          let approximate = glass_lookup(glass_field(xy), xy, screen_uv);
-          // 只有一方认为这里有实体时，按比例淡入或淡出。
-          if (approximate.a >= 0.0 && shaded.a >= 0.0) {
-            shaded = mix(approximate, shaded, u.field.w);
-          } else if (approximate.a >= 0.0) {
-            shaded = vec4f(approximate.rgb, approximate.a * (1.0 - u.field.w));
-          } else if (shaded.a >= 0.0) {
-            shaded.a *= u.field.w;
+          let texel = vec2i(floor(in.position.xy * u.field.z - u.field.xy));
+          var stored = vec4f(0.0, 0.0, 0.0, -1.0);
+          if (all(texel >= vec2i(0)) && all(texel < vec2i(textureDimensions(field2)))) {
+            stored = textureLoad(field2, texel, 0);
+          }
+          if (stored.w >= 0.0) {
+            let first = textureLoad(field0, texel, 0);
+            let rest = textureLoad(field1, texel, 0);
+            var paths: Paths;
+            paths.height = stored.w;
+            let green = xy + first.xy;
+            paths.normal = vec3f(first.zw, sqrt(max(1.0 - dot(first.zw, first.zw), 0.0)));
+            paths.red = vec3f(green + rest.xy, stored.x);
+            paths.green = vec3f(green, stored.y);
+            paths.blue = vec3f(green + rest.zw, stored.z);
+            shaded = glass_shade(screen_uv, glass_material(vec3f(xy, stored.w)), paths);
+          } else {
+            shaded = glass_trace(xy, screen_uv);
+          }
+          if (fade < 1.0) {
+            let approximate = glass_lookup(glass_field(xy), xy, screen_uv);
+            if (approximate.a >= 0.0 && shaded.a >= 0.0) {
+              shaded = mix(approximate, shaded, fade);
+            } else if (approximate.a >= 0.0) {
+              shaded = vec4f(approximate.rgb, approximate.a * (1.0 - fade));
+            } else if (shaded.a >= 0.0) {
+              shaded.a *= fade;
+            }
           }
         }`
 }
@@ -126,7 +134,13 @@ function traceTier(cached: boolean): string {
 export function createHybridVolumeShader(count: number, cached = false): string {
   const fields = cached
     ? /* wgsl */`${each(FIELD_TARGETS, i => `@group(1) @binding(${VOLUME_TEXTURES + 1 + i}) var field${i}: texture_2d<f32>;`)}
-${profileField(count)}`
+${profileField(count)}
+// 这个像素上求交结果的比例：整组的淡化，局部失效范围里取两者较小的一个，范围外缘 ${FIELD_FEATHER} 像素内过渡。
+fn field_fade(xy: vec2f) -> f32 {
+  let outside = max(max(u.dirty.x - xy.x, xy.x - u.dirty.z), max(u.dirty.y - xy.y, xy.y - u.dirty.w));
+  let inside = 1.0 - smoothstep(${wgslFloat(-FIELD_FEATHER)}, 0.0, outside);
+  return mix(u.field.w, min(u.field.w, u.shadow.z), inside);
+}`
     : ''
   return /* wgsl */`${volumeCommon(count)}${raymarchOptics(count)}${profileOptics()}${fields}
 @fragment
