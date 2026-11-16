@@ -43,7 +43,7 @@ for (let i = 0; i <= Number(runsArg); i++) {
   await sleep(9000)
   const json = JSON.parse(await evaluate(`document.querySelector('#scroll-result').textContent`))
   if (i === 0) continue
-  out.push({ gpuMean: +json.gpu.mean?.toFixed(2), gpuP50: +json.gpu.p50?.toFixed(2), gpuP95: +json.gpu.p95?.toFixed(2), gpuMax: +json.gpu.max?.toFixed(2), draw: +json.draw.mean.toFixed(2), paintMean: +json.paintInterval.mean.toFixed(1), paintP95: +json.paintInterval.p95.toFixed(1), paints: json.draw.count, errors: json.errors, bad: json.invalidReasons })
+  out.push({ gpuMean: +json.gpu.mean?.toFixed(2), gpuP50: +json.gpu.p50?.toFixed(2), gpuP95: +json.gpu.p95?.toFixed(2), gpuMax: +json.gpu.max?.toFixed(2), draw: +json.draw.mean.toFixed(2), paintMean: +json.paintInterval.mean.toFixed(1), paintP95: +json.paintInterval.p95.toFixed(1), paints: json.draw.count, glassDpr: json.metrics?.glassDpr, optics: json.metrics?.optics, errors: json.errors, bad: json.invalidReasons })
 }
 console.log(JSON.stringify(out))
 await send('Emulation.clearDeviceMetricsOverride')

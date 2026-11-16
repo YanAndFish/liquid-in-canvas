@@ -8,7 +8,7 @@ const WINDOW = 45
 /** 帧很慢时凑满 `WINDOW` 帧要好几秒，窗口改按时间结束：满这么多毫秒且不少于 `WINDOW_MIN` 帧。 */
 const WINDOW_MS = 1000
 const WINDOW_MIN = 12
-/** 间隔超过它视为绘制中断（页面静止或标签页在后台），丢弃当前窗口。 */
+/** 间隔超过它视为绘制中断（页面静止或标签页在后台），丢弃当前窗口；这么久没有连续的绘制也一样。 */
 const IDLE_GAP = 120
 /** 平均间隔超过它（约 51 帧）时降一级。 */
 const SLOW_INTERVAL = 19.5
@@ -69,6 +69,10 @@ const MEANS = 3
  * 但瓶颈是画布像素数时只有它有效）。升回时顺序相反。
  *
  * 检验跨越绘制中断：降级后页面静止再恢复绘制时，仍用中断前的间隔作基准。
+ *
+ * 只有紧接着上一个显示帧的绘制才取样（`FrameProbe`）。中间空过显示帧的绘制是页面按自己的节拍在更新，
+ * 例如只有 30 帧的视频在驱动重绘：间隔是 33 ms，却不是掉帧。这样的绘制不计入窗口，既不降级、不升回，
+ * 也不推进正在进行的检验，与绘制中断一样处理。
  */
 export class AdaptiveScale {
   /** 玻璃着色倍率的系数。 */
@@ -82,6 +86,8 @@ export class AdaptiveScale {
   /** 画布倍率系数的下限；1 表示不允许降低画布倍率。 */
   private canvasFloor = 1
   private last = 0
+  /** 上一次连续绘制的时间戳。 */
+  private sampled = 0
   private total = 0
   private count = 0
   private settle = 0
@@ -115,6 +121,7 @@ export class AdaptiveScale {
     this.relaxed = false
     this.canvasScale = 1
     this.last = 0
+    this.sampled = 0
     this.total = 0
     this.count = 0
     this.settle = 0
@@ -147,16 +154,23 @@ export class AdaptiveScale {
       this.canvasScale = this.canvasFloor
   }
 
-  /** 记录一次绘制的时间戳（毫秒）。光路或任一系数发生变化时返回 true。 */
-  sample(now: number): boolean {
+  /**
+   * 记录一次绘制的时间戳（毫秒）。光路或任一系数发生变化时返回 true。
+   *
+   * `continuous` 表示这次绘制紧接着上一次绘制所在的显示帧，只有这样的间隔才说明跟不跟得上显示器。
+   */
+  sample(now: number, continuous = true): boolean {
     const interval = now - this.last
     this.last = now
+    if (!continuous) {
+      // 夹在连续绘制之间的零星空帧只跳过这一次；一直没有连续的绘制时，之前攒下的窗口已经过时。
+      if (now - this.sampled > IDLE_GAP)
+        this.interrupt()
+      return false
+    }
+    this.sampled = now
     if (interval <= 0 || interval > IDLE_GAP) {
-      this.total = 0
-      this.count = 0
-      this.slowWindows = 0
-      this.slowMin = Infinity
-      this.fastSince = 0
+      this.interrupt()
       return false
     }
     if (this.settle > 0) {
@@ -243,6 +257,15 @@ export class AdaptiveScale {
     }
     this.fastSince = 0
     return false
+  }
+
+  /** 绘制中断：丢弃当前窗口与连续变慢、连续流畅的计数。已有的降级与正在进行的检验保持不变。 */
+  private interrupt(): void {
+    this.total = 0
+    this.count = 0
+    this.slowWindows = 0
+    this.slowMin = Infinity
+    this.fastSince = 0
   }
 
   /** 撤回最近一次升回。升回的手段已经失效（例如光路改为不能降级）时返回 false。 */

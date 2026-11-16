@@ -23,12 +23,15 @@ function ratio(devicePixelRatio: number, resolution: Partial<StageResolution> = 
   })
 }
 
-/** 以固定间隔连续绘制，返回期间状态变化的次数。固定间隔意味着任何降级都不见效。 */
-function run(adaptive: AdaptiveScale, clock: { now: number }, interval: number, frames: number): number {
+/**
+ * 以固定间隔连续绘制，返回期间状态变化的次数。固定间隔意味着任何降级都不见效。
+ * `continuous` 为 false 时每次绘制之前都空过显示帧（按视频帧节拍绘制）。
+ */
+function run(adaptive: AdaptiveScale, clock: { now: number }, interval: number, frames: number, continuous = true): number {
   let changes = 0
   for (let i = 0; i < frames; i++) {
     clock.now += interval
-    if (adaptive.sample(clock.now))
+    if (adaptive.sample(clock.now, continuous))
       changes++
   }
   return changes
@@ -212,6 +215,75 @@ describe('自适应降级', () => {
     // 跟得上时仍是 45 帧一个窗口，两个窗口后降级。
     const quick = new AdaptiveScale()
     expect(untilChange(quick, { now: 0 }, 20)).toBe(90)
+  })
+
+  it('按视频帧节拍绘制时不降级', () => {
+    const adaptive = new AdaptiveScale()
+    adaptive.setRelaxable(true)
+    adaptive.setCanvasFloor(0.5)
+    const clock = { now: 0 }
+    // 30 帧与 24 帧的视频：间隔 33 ms、42 ms，但每次绘制之前都空过显示帧。
+    expect(run(adaptive, clock, 33.4, 3000, false)).toBe(0)
+    expect(run(adaptive, clock, 41.7, 3000, false)).toBe(0)
+    expect(adaptive.scale).toBe(1)
+    expect(adaptive.relaxed).toBe(false)
+    expect(adaptive.canvasScale).toBe(1)
+  })
+
+  it('按视频帧节拍绘制时保持已有的降级，不升回', () => {
+    const adaptive = new AdaptiveScale()
+    const clock = { now: 0 }
+    const load: Load = { fixed: 8, glass: 14 }
+    untilChange(adaptive, clock, load)
+    // 这一级通过检验，之后流畅。
+    expect(drive(adaptive, clock, load, 200)).toBe(0)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    // 一分多钟只有视频在驱动重绘：没有能说明流畅的间隔。
+    expect(run(adaptive, clock, 33.4, 2000, false)).toBe(0)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    // 恢复逐显示帧的绘制后，仍需流畅约四秒才升回：视频节拍之前攒下的流畅时间不算。
+    run(adaptive, clock, 16.7, 200)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    run(adaptive, clock, 16.7, 300)
+    expect(adaptive.scale).toBe(1)
+  })
+
+  it('按视频帧节拍绘制期间检验暂停，恢复连续绘制后接着检验', () => {
+    const adaptive = new AdaptiveScale()
+    const clock = { now: 0 }
+    const load: Load = { fixed: 8, glass: 14 }
+    untilChange(adaptive, clock, load)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    // 刚降一级就只剩视频在动：33 ms 的间隔不能当作“没有见效”而撤回。
+    expect(run(adaptive, clock, 33.4, 600, false)).toBe(0)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    // 恢复连续绘制：这一级确实见效，保留。
+    expect(drive(adaptive, clock, load, 200)).toBe(0)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+  })
+
+  it('夹在连续绘制之间的零星空帧不抹掉变慢的证据', () => {
+    const adaptive = new AdaptiveScale()
+    const clock = { now: 0 }
+    // 每三次慢的连续绘制之后空一帧再画一次。
+    let changes = 0
+    for (let i = 0; i < 40 && !changes; i++) {
+      changes += run(adaptive, clock, 28, 3)
+      changes += run(adaptive, clock, 45, 1, false)
+    }
+    expect(changes).toBe(1)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+  })
+
+  it('一段视频节拍把前后两段变慢隔开，各自不足以降级', () => {
+    const adaptive = new AdaptiveScale()
+    const clock = { now: 0 }
+    for (let i = 0; i < 6; i++) {
+      // 刚好一个慢窗口，随后只有视频在驱动重绘。
+      expect(run(adaptive, clock, 28, 40)).toBe(0)
+      expect(run(adaptive, clock, 33.4, 30, false)).toBe(0)
+    }
+    expect(adaptive.scale).toBe(1)
   })
 
   it('恢复流畅一段时间后升回', () => {

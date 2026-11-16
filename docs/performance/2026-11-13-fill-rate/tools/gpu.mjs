@@ -50,7 +50,7 @@ for (let i = 0; i <= Number(runsArg); i++) {
     else groups.blur += v
   }
   if (process.env.PASSES) console.error(JSON.stringify(Object.fromEntries(Object.entries(agg).map(([k,v])=>[k,+v.toFixed(2)]))))
-  out.push({ gpuMean: +json.gpu.mean?.toFixed(2), gpuP50: +json.gpu.p50?.toFixed(2), gpuP95: +json.gpu.p95?.toFixed(2), canvas: +groups.canvas.toFixed(2), blur: +groups.blur.toFixed(2), backdrop: +groups.backdrop.toFixed(2), draw: +json.draw.mean.toFixed(2), paintMean: +json.paintInterval.mean.toFixed(1), paintP95: +json.paintInterval.p95.toFixed(1), paints: json.draw.count, errors: json.errors, bad: json.invalidReasons })
+  out.push({ gpuMean: +json.gpu.mean?.toFixed(2), gpuP50: +json.gpu.p50?.toFixed(2), gpuP95: +json.gpu.p95?.toFixed(2), canvas: +groups.canvas.toFixed(2), blur: +groups.blur.toFixed(2), backdrop: +groups.backdrop.toFixed(2), draw: +json.draw.mean.toFixed(2), paintMean: +json.paintInterval.mean.toFixed(1), paintP95: +json.paintInterval.p95.toFixed(1), paints: json.draw.count, glassDpr: json.metrics?.glassDpr, optics: json.metrics?.optics, errors: json.errors, bad: json.invalidReasons })
 }
 console.log(JSON.stringify(out))
 ws.close()
