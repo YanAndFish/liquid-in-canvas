@@ -215,6 +215,29 @@ resetGlassDefaults()
 
 Materials have `light` and `dark` variants. The theme comes from the `theme` mount option or `glass.setTheme()`, then `<html data-theme="light|dark">`, then the system color scheme.
 
+## Glass tuner
+
+`liquid-in-canvas/tuner` ships a framework-agnostic tuning panel: a draggable round glass button that opens a panel for editing the global defaults live (materials, bevel profile with a ray diagram, fusion, liquid motion). **Copy JSON** produces an object you can pass straight to `setGlassDefaults()`. Given a mount, it also adjusts resolution limits, adaptive fallback and optics, and shows the actual pixel ratios.
+
+```ts
+import { mountLiquidGlass } from 'liquid-in-canvas'
+import { createGlassTuner } from 'liquid-in-canvas/tuner'
+
+const glass = await mountLiquidGlass({ root })
+// Create it after your framework has mounted into root: the panel is appended to root,
+// so in canvas mode it is drawn along with the rest of the page.
+const tuner = createGlassTuner({ mount: glass })
+
+tuner.setHidden(true) // hide the button while a modal is open
+tuner.destroy()
+```
+
+- `container`: where the panel is appended. Defaults to `mount.root`, or `document.body` without a mount. In canvas mode it must be inside the root.
+- `renderer`: a custom source for the renderer section (`GlassTunerRenderer`). Switching renderers means `dispose()` and mounting again, so you implement `setMode`; `rendererFromMount(() => currentMount, { setMode })` follows the new mount after a remount. Call `tuner.update()` when the renderer changes outside the panel.
+- `locale` (`'zh' | 'en'`, defaults to `<html lang>`), `theme` (follows the page theme like the stage by default; the panel edits the current theme's materials), `layer` (glass layer while open, default 1), `zIndex`, `position`, `hidden`, `open`.
+- The panel injects its own stylesheet into `<head>` and does not rely on a CSS reset. Colors come from custom properties such as `--lg-tuner-text`, `--lg-tuner-line` and `--lg-tuner-accent`; override them on `.lg-tuner` to match your page.
+- The button and the panel share a `data-glass-morph` name: in canvas mode the panel's glass flows out of the button; the fallbacks use a scale transition.
+
 ## Resolution and performance
 
 Canvas resolution controls how sharply page text is drawn. Glass shading has its own resolution. Reducing that resolution is less visible because the backdrop is already refracted and blurred.

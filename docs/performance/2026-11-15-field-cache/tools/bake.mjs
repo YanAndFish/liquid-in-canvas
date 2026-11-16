@@ -1,5 +1,5 @@
 // 停在一个滚动位置，按间隔点击让几何反复变化又停下，统计写入折射场缓存（`field` 遍）的帧的 GPU 时间。
-// 用法: [CDP_PORT=9333] [CLICK='.tuner-launcher'] [CLICK_MS=900] [VIDEO=1] node bake.mjs <url 带 ?gpu&hold=…>
+// 用法: [CDP_PORT=9333] [CLICK='.lg-tuner-launcher'] [CLICK_MS=900] [VIDEO=1] node bake.mjs <url 带 ?gpu&hold=…>
 const [url] = process.argv.slice(2)
 const port = process.env.CDP_PORT ?? '9333'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -27,7 +27,7 @@ await sleep(5000)
 const hold = Number(new URL(url).searchParams.get('hold') ?? 0)
 await evaluate(`document.getElementById('stage-scroll').scrollTo({ top: ${hold}, behavior: 'instant' })`)
 await sleep(1500)
-const selector = process.env.CLICK ?? '.tuner-launcher'
+const selector = process.env.CLICK ?? '.lg-tuner-launcher'
 const interval = Number(process.env.CLICK_MS ?? 900)
 await evaluate(`document.querySelector('aside button').click()`)
 if (process.env.VIDEO) { await sleep(50); await evaluate(`Promise.all([...document.querySelectorAll('video')].map(video => video.play().then(() => 1).catch(() => 0)))`) }

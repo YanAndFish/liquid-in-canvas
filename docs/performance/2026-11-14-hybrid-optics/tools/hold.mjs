@@ -30,7 +30,7 @@ const hold = Number(new URL(url).searchParams.get('hold') ?? 0)
 if (!await evaluate(`!!document.querySelector('#stage')`)) { console.error(await evaluate('document.body.innerText.slice(0, 300)')); process.exit(2) }
 await evaluate(`document.getElementById('stage-scroll').scrollTo({ top: ${hold}, behavior: 'instant' })`)
 await sleep(1500)
-if (process.env.OPEN_PANEL) { await evaluate(`document.querySelector('.tuner-launcher').click()`); await sleep(1500) }
+if (process.env.OPEN_PANEL) { await evaluate(`document.querySelector('.lg-tuner-launcher').click()`); await sleep(1500) }
 const selector = process.env.CLICK
 const interval = Number(process.env.CLICK_MS ?? 700)
 const out = []

@@ -117,7 +117,7 @@ GPU 时间（`?cache=0` 是无缓存版；与其他会话共用 GPU 时先取锁
 CDP_PORT=9412 DPR=2 node docs/performance/2026-11-13-fill-rate/tools/gpu.mjs "http://127.0.0.1:4212/?gpu&adaptive=0&optics=hybrid" 1
 CDP_PORT=9412 OPEN_PANEL=1 DPR=2 node docs/performance/2026-11-13-fill-rate/tools/gpu.mjs "http://127.0.0.1:4212/?gpu&adaptive=0&optics=hybrid" 1
 CDP_PORT=9412 VIDEO=1 DPR=2 node docs/performance/2026-11-14-hybrid-optics/tools/hold.mjs "http://127.0.0.1:4212/?gpu&adaptive=0&optics=hybrid&hold=600" 1
-CDP_PORT=9412 CLICK='.tuner-launcher' CLICK_MS=900 DPR=2 node docs/performance/2026-11-14-hybrid-optics/tools/hold.mjs "http://127.0.0.1:4212/?gpu&adaptive=0&optics=hybrid&hold=1100" 1
+CDP_PORT=9412 CLICK='.lg-tuner-launcher' CLICK_MS=900 DPR=2 node docs/performance/2026-11-14-hybrid-optics/tools/hold.mjs "http://127.0.0.1:4212/?gpu&adaptive=0&optics=hybrid&hold=1100" 1
 CDP_PORT=9412 VIDEO=1 CLICK='.scene-controls button' CLICK_MS=600 DPR=2 node docs/performance/2026-11-14-hybrid-optics/tools/hold.mjs "http://127.0.0.1:4212/?gpu&adaptive=0&optics=hybrid&hold=330" 1
 CDP_PORT=9412 CLICK_MS=2600 VIDEO=1 node docs/performance/2026-11-15-field-cache/tools/bake.mjs "http://127.0.0.1:4212/?gpu&adaptive=0&optics=hybrid&hold=1100"
 ```

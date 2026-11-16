@@ -52,7 +52,7 @@ if (!support.stage) {
   process.exit(2)
 }
 if (process.env.OPEN_PANEL) {
-  await evaluate(`document.querySelector('.tuner-launcher').click()`)
+  await evaluate(`document.querySelector('.lg-tuner-launcher').click()`)
   await sleep(1500)
 }
 const round = value => value == null ? null : +value.toFixed(1)

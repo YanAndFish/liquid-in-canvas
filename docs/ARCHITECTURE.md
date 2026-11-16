@@ -9,7 +9,7 @@ tools/eslint-plugin-hot     热路径规则：*.hot.ts 里每帧执行的函数�
 docs                        设计记录、视觉依据与性能记录
 ```
 
-库不认识任何 Vue 组件，没有运行时依赖：画布渲染器直接使用 WebGPU。演示商店只从 `liquid-in-canvas` 和 `liquid-in-canvas/motion` 两个入口引入，tsconfig 用 `liquid-in-canvas/vue` 检查模板里的 `data-*` 属性，不引用库的内部文件；性能测量页和画面检查页另外从 `liquid-in-canvas/canvas` 直接使用 `CanvasStage`。
+库不认识任何 Vue 组件，没有运行时依赖：画布渲染器直接使用 WebGPU。演示商店只从 `liquid-in-canvas`、`liquid-in-canvas/motion` 和 `liquid-in-canvas/tuner` 三个入口引入，tsconfig 用 `liquid-in-canvas/vue` 检查模板里的 `data-*` 属性，不引用库的内部文件；性能测量页和画面检查页另外从 `liquid-in-canvas/canvas` 直接使用 `CanvasStage`。
 
 主入口不静态引入画布渲染器。`mountLiquidGlass()` 确认浏览器支持画布渲染后才动态加载 `CanvasStage`，只能使用回退实现的浏览器不会下载它（演示的生产构建里这一块压缩后 66 kB、gzip 23 kB；基于 three.js 时是 854 kB、gzip 232 kB）。
 
@@ -36,6 +36,7 @@ src/frame.hot.ts        每帧的 uniform、绘制列表、编码与元素上传
 src/frame.ts            每帧编码用到的常量、类型与扩容（冷路径）
 src/support.ts          能力检测
 src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas/motion 导出
+src/tuner/, tuner.ts    调参面板（原生 DOM），经 liquid-in-canvas/tuner 导出
 ```
 
 ### 三种渲染方式
@@ -237,7 +238,7 @@ src/shared/, motion.ts  弹簧与减少动态效果查询，经 liquid-in-canvas
 ```
 src/main.ts                 启动：能力检测、渲染方式控制器、说明页
 src/pages, src/components   Vue 视图：只通过 DOM 属性声明在舞台中的角色
-src/composables, src/stores 视图状态：主题、语言、弹簧、购物袋、共享动画、渲染方式、默认参数
+src/composables, src/stores 视图状态：主题、语言、弹簧、购物袋、共享动画、渲染方式
 src/domain, src/i18n        纯业务逻辑：商品、金额、购物袋计算与持久化
 src/shared                  偏好存储与滚动容器
 ```
@@ -246,7 +247,7 @@ src/shared                  偏好存储与滚动容器
 
 `main.ts` 先检测能力。支持时以 `canvas` 方式挂载商店；不支持、初始化失败或运行时出错时卸载商店并显示 `UnsupportedView`。演示不使用 `auto`：说明页上有“使用回退版本继续”按钮，由用户决定是否以 `svg` 方式重新挂载（浏览器不支持滤镜时库自动使用 `css`）。
 
-`RendererController`（`composables/useRenderer.ts`）通过 provide 交给调参面板，用来在应用保持挂载的情况下切换渲染方式和调整分辨率。切换时根元素在文档中移动，控制器负责恢复滚动位置和视频播放。
+调参面板是库的 `liquid-in-canvas/tuner`（`src/tuner/`，原生 DOM，不依赖框架），演示的 `components/tuner/GlassTuner.vue` 只是把它插入应用 DOM 的薄封装。`RendererController`（`composables/useRenderer.ts`）通过 provide 交给这个封装，转成面板的 `GlassTunerRenderer`，用来在应用保持挂载的情况下切换渲染方式和调整分辨率。切换时根元素在文档中移动，控制器负责恢复滚动位置和视频播放。
 
 商店内部还有三个不经过舞台的约定：`#stage-scroll`（唯一滚动容器，见 `shared/scroll.ts`）、`[data-product-image]`（共享动画的起点和终点）与 `[data-bag-target]`（加入购物袋动画的终点）。
 

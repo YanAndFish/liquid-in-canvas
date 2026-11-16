@@ -71,7 +71,7 @@ const scenarios = {
     await open('/?adaptive=0')
     await evaluate(prepareStore)
     await evaluate(scrollTo(1100))
-    await evaluate(`document.querySelector('.tuner-launcher').click()`)
+    await evaluate(`document.querySelector('.lg-tuner-launcher').click()`)
     await sleep(2500)
     await shot('store-tuner-1100')
   },

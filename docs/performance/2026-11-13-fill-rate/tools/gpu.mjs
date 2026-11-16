@@ -28,7 +28,7 @@ await sleep(5000)
 const support = await evaluate(`({ stage: !!document.querySelector('#stage'), viewport: [innerWidth, innerHeight, devicePixelRatio], canvas: [document.querySelector('#stage')?.width, document.querySelector('#stage')?.height] })`)
 console.error(JSON.stringify(support))
 if (!support.stage) { console.error(await evaluate('document.body.innerText.slice(0, 300)')); process.exit(2) }
-if (process.env.OPEN_PANEL) { await evaluate(`document.querySelector('.tuner-launcher').click()`); await sleep(1500) }
+if (process.env.OPEN_PANEL) { await evaluate(`document.querySelector('.lg-tuner-launcher').click()`); await sleep(1500) }
 const out = []
 for (let i = 0; i <= Number(runsArg); i++) {
   await evaluate(`document.querySelector('aside button').click()`)

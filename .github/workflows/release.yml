@@ -1,0 +1,56 @@
+name: Release
+
+# `pnpm release`（bumpp）推送 `v*` 标签后发布库到 npm，并生成 GitHub Release。
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  # npm provenance 与 trusted publishing 需要 OIDC 令牌。
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check tag matches package version
+        run: |
+          version=$(node -p "require('./packages/liquid-in-canvas/package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match liquid-in-canvas@$version"
+            exit 1
+          fi
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      # 必须用 pnpm publish：只有它会把 publishConfig.exports（指向 dist）换进发布的 package.json。
+      # prepublishOnly 会先构建库。带预发布号的版本（如 1.0.0-beta.1）发布到 next 标签。
+      - name: Publish to npm
+        working-directory: packages/liquid-in-canvas
+        run: |
+          tag=latest
+          case "$GITHUB_REF_NAME" in *-*) tag=next ;; esac
+          pnpm publish --access public --no-git-checks --provenance --tag "$tag"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: GitHub Release
+        run: npx changelogithub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

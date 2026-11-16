@@ -102,7 +102,7 @@ console.log(glass.mode) // 'canvas'、'svg' 或 'css'
 
 [STILL](https://liquid-in-canvas.netlify.app/) 是用这个库搭建的中英双语小商店：视频背景上的玻璃导航、带液体标签的商品筛选、购物袋、深浅主题，并跟随系统的减少动态效果和减少透明度设置。不会创建真实订单。
 
-右下角的圆形按钮打开**调参面板**，可以切换渲染方式和分辨率上限，实时修改全局默认参数（材质、倒角截面、融合、液体流动）。**复制参数**得到的 JSON 可以直接传给 `setGlassDefaults()`。
+右下角的圆形按钮打开**调参面板**，可以切换渲染方式和分辨率上限，实时修改全局默认参数（材质、倒角截面、融合、液体流动）。**复制参数**得到的 JSON 可以直接传给 `setGlassDefaults()`。这个面板由库的 `liquid-in-canvas/tuner` 提供，不依赖前端框架，你的页面也可以直接使用。
 
 |                                调参面板                                |                                      浅色主题                                       |
 | :--------------------------------------------------------------------: | :---------------------------------------------------------------------------------: |
@@ -127,7 +127,7 @@ apps/demo                   演示商店 STILL（Vue 3），直接引用库的�
 docs                        架构、视觉依据与性能记录
 ```
 
-发布库要用 `pnpm publish`，不要用 `npm publish`：只有 pnpm 会把指向源码的 `exports` 换成 `publishConfig` 里指向 `dist` 的版本。修改渲染器前请先读 [ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+发布用 `pnpm release`：[bumpp](https://github.com/antfu-collective/bumpp) 修改根与库的版本号，提交、打 `v*` 标签并推送，标签触发 `.github/workflows/release.yml` 检查、构建并发布到 npm（预发布版本使用 `next` 标签），再生成 GitHub Release。工作流需要仓库密钥 `NPM_TOKEN`，或在 npm 上为这个工作流配置 trusted publishing。手动发布也必须用 `pnpm publish`，不要用 `npm publish`：只有 pnpm 会把指向源码的 `exports` 换成 `publishConfig` 里指向 `dist` 的版本。修改渲染器前请先读 [ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## 已知问题
 

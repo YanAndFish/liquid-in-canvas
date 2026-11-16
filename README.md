@@ -102,7 +102,7 @@ The [library README](packages/liquid-in-canvas/README.md) documents render modes
 
 [STILL](https://liquid-in-canvas.netlify.app/) is a small bilingual storefront built on the library: video backgrounds behind glass navigation, product filters with liquid tabs, a cart drawer, light and dark themes, and reduced-motion / reduced-transparency support. No real orders are created.
 
-The round button in the bottom-right corner opens a **glass tuner**. It switches renderers and resolution limits and edits the global defaults live (materials, bevel profile, fusion, liquid motion). **Copy JSON** produces an object you can pass straight to `setGlassDefaults()`.
+The round button in the bottom-right corner opens a **glass tuner**. It switches renderers and resolution limits and edits the global defaults live (materials, bevel profile, fusion, liquid motion). **Copy JSON** produces an object you can pass straight to `setGlassDefaults()`. The tuner ships in the library as `liquid-in-canvas/tuner`, framework-agnostic, so your own pages can use it too.
 
 |                                        Glass tuner                                         |                                                  Light theme                                                  |
 | :----------------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------------------------------: |
@@ -127,7 +127,7 @@ apps/demo                   the STILL demo (Vue 3), uses the library source dire
 docs                        architecture, visual references and performance records
 ```
 
-Publish the library with `pnpm publish`, not `npm publish`: only pnpm swaps the source `exports` for the `dist` ones in `publishConfig`. See [ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing the renderer.
+Release with `pnpm release`: [bumpp](https://github.com/antfu-collective/bumpp) bumps the root and library versions, commits, tags `v*` and pushes. The tag triggers `.github/workflows/release.yml`, which checks, builds and publishes to npm (prereleases go to the `next` dist-tag) and creates a GitHub Release. The workflow needs an `NPM_TOKEN` repository secret, or trusted publishing configured for it on npm. If you publish by hand, use `pnpm publish`, not `npm publish`: only pnpm swaps the source `exports` for the `dist` ones in `publishConfig`. See [ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing the renderer.
 
 ## Known issues
 

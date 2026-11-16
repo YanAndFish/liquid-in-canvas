@@ -1,6 +1,6 @@
-import { glassProfile, glassProfileOutline } from 'liquid-in-canvas'
 import { describe, expect, it } from 'vitest'
-import { traceProfileRays } from '@/components/tuner/profile-rays'
+import { glassProfile, glassProfileOutline } from '../../src/liquid-glass/profile'
+import { traceProfileRays } from '../../src/tuner/profile-rays'
 
 const MATERIAL = {
   refraction: 24,

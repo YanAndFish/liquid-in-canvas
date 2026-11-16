@@ -37,6 +37,8 @@ export interface MountLiquidGlassOptions extends Pick<CanvasStageOptions, 'resol
 }
 
 export interface LiquidGlassMount {
+  /** 挂载时传入的页面根元素。 */
+  readonly root: HTMLElement
   /** 当前实际使用的渲染方式。`auto` 模式下画布运行中出错后会变为 `svg` 或 `css`。 */
   readonly mode: GlassRenderMode
   /** 画布模式下的舞台，可用于调整分辨率；回退实现下为 null。 */
@@ -184,6 +186,7 @@ export async function mountLiquidGlass(options: MountLiquidGlassOptions): Promis
   }
 
   return {
+    root,
     get mode() {
       if (canvasBackend)
         return 'canvas'

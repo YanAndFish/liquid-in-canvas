@@ -97,7 +97,7 @@ CDP_PORT=9377 DPR=3 W=412 H=915 node docs/performance/2026-11-13-fill-rate/tools
 CDP_PORT=9377 OPEN_PANEL=1 DPR=2 node docs/performance/2026-11-13-fill-rate/tools/gpu.mjs "http://127.0.0.1:4197/?gpu&adaptive=0&optics=hybrid" 2
 CDP_PORT=9377 VIDEO=1 DPR=2 node docs/performance/2026-11-14-hybrid-optics/tools/hold.mjs "http://127.0.0.1:4197/?gpu&adaptive=0&optics=hybrid&hold=600" 2
 CDP_PORT=9377 VIDEO=1 CLICK='.scene-controls button' CLICK_MS=600 DPR=2 node docs/performance/2026-11-14-hybrid-optics/tools/hold.mjs "http://127.0.0.1:4197/?gpu&adaptive=0&optics=hybrid&hold=330" 2
-CDP_PORT=9377 CLICK='.tuner-launcher' CLICK_MS=900 DPR=2 node docs/performance/2026-11-14-hybrid-optics/tools/hold.mjs "http://127.0.0.1:4197/?gpu&adaptive=0&optics=hybrid&hold=1100" 2
+CDP_PORT=9377 CLICK='.lg-tuner-launcher' CLICK_MS=900 DPR=2 node docs/performance/2026-11-14-hybrid-optics/tools/hold.mjs "http://127.0.0.1:4197/?gpu&adaptive=0&optics=hybrid&hold=1100" 2
 CDP_PORT=9377 DPR=3 W=2560 H=1440 node docs/performance/2026-11-13-fill-rate/tools/gpu.mjs "http://127.0.0.1:4197/?gpu&adaptive=0&glass=0&maxPixelRatio=2.5" 1
 CDP_PORT=9377 QUERY="optics=hybrid" node docs/performance/2026-11-13-webgpu/tools/shots.mjs http://127.0.0.1:4197 /tmp/shots/hybrid
 python3 docs/performance/2026-11-13-webgpu/tools/diff.py /tmp/shots/raymarch /tmp/shots/hybrid 2
