@@ -48,7 +48,7 @@ fn bake(in: VertexOutput) -> FieldOutput {
   // 换算成画面上对应像素的坐标，与混合着色器的计算逐位相同。
   let screen_uv = (in.position.xy + u.field.xy) / u.screen.xy;
   let xy = screen_uv * u.screen.zw;
-${hybridOwner(count)}
+${hybridOwner()}
   var out: FieldOutput;
   out.first = vec4f(0.0);
   out.rest = vec4f(0.0);

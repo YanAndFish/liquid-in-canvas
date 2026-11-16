@@ -1,6 +1,6 @@
 import { wgslFloat } from '../gpu'
-import { LUT_ROWS_PER_PROFILE, LUT_SAMPLES, MAX_TRAVEL } from './optics-lut'
-import { clipCoverage, each, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
+import { BASE_IOR, LUT_ROWS_PER_PROFILE, LUT_SAMPLES, MAX_TRAVEL } from './optics-lut'
+import { clipCoverage, each, fuseDominance, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
 
 /**
  * 剖面查表：查找表的绑定，以及按到轮廓的距离查表并着色。
@@ -22,6 +22,13 @@ struct Field {
   bevel: f32,
   row: f32,
   tone: vec2f,
+  // 融合处距离场的梯度长度：小于 1 时截面沿法向被拉宽，倒角的坡度按这个比例变缓。单块玻璃上为 1。
+  stretch: f32,
+  // 融合处厚度渐变带来的平顶与底面坡度（高度对平面坐标的梯度）。单块玻璃上为 0。
+  top_slope: vec2f,
+  bottom_slope: vec2f,
+  // 顶面倒角的高度与曲线指数，用来算倒角上实际的厚度（只在坡度不为 0 时用到）。
+  shape: vec2f,
 }
 
 fn member_bevel(m: Member) -> f32 {
@@ -45,12 +52,23 @@ fn glass_lookup(field: Field, xy: vec2f, screen_uv: vec2f) -> vec4f {
   let validity = lut_at(field, 2.0);
   if (validity.w <= 0.5) { return vec4f(0.0, 0.0, 0.0, -1.0); }
   let material_color = field.colored.rgb / max(field.optics.z, 0.0001);
-  let offsets = clamp(shift.xyz * field.half_depth + slope.xyz * field.elevation, vec3f(-${wgslFloat(MAX_TRAVEL)}), vec3f(${wgslFloat(MAX_TRAVEL)}));
-  let red_uv = clamp((xy + field.gradient * offsets.x + field.lens) / viewport, u.valid.xy, u.valid.zw);
-  let green_uv = clamp((xy + field.gradient * offsets.y + field.lens) / viewport, u.valid.xy, u.valid.zw);
-  let blue_uv = clamp((xy + field.gradient * offsets.z + field.lens) / viewport, u.valid.xy, u.valid.zw);
+  // 截面被拉宽时坡度变缓，偏移与法线的倾斜按一阶近似同比缩小。
+  let offsets = clamp((shift.xyz * field.half_depth + slope.xyz * field.elevation) * field.stretch, vec3f(-${wgslFloat(MAX_TRAVEL)}), vec3f(${wgslFloat(MAX_TRAVEL)}));
+  // 厚度渐变的坡度按薄棱镜近似。倒角上截面的高度只占半厚度的 c（平顶为 1、轮廓处趋于 0）：
+  // 顶面坡度是中面坡度加 c 倍的半厚度坡度，底面减去同样的量，玻璃厚 2c 倍半厚度。
+  // 顶面的坡度让光线在玻璃内偏向高处（偏移随厚度增长），出射后按上下表面的坡度差继续偏折。
+  let bevel_u = clamp(1.0 + field.distance / field.bevel, 0.0, 1.0);
+  let power = max(field.shape.y, 1.0);
+  let c = 1.0 - field.shape.x / max(field.half_depth, 0.001) * (1.0 - pow(1.0 - pow(bevel_u, power), 1.0 / power));
+  let half_slope = 0.5 * (field.top_slope - field.bottom_slope);
+  let top_tilt = 0.5 * (field.top_slope + field.bottom_slope) + c * half_slope;
+  let prism = top_tilt * (${wgslFloat(1 - 1 / BASE_IOR)} * 2.0 * c * field.half_depth) + half_slope * (${wgslFloat(2 * (BASE_IOR - 1))} * c * field.elevation);
+  let shifted = xy + field.lens + clamp(prism, vec2f(-${wgslFloat(MAX_TRAVEL)}), vec2f(${wgslFloat(MAX_TRAVEL)}));
+  let red_uv = clamp((shifted + field.gradient * offsets.x) / viewport, u.valid.xy, u.valid.zw);
+  let green_uv = clamp((shifted + field.gradient * offsets.y) / viewport, u.valid.xy, u.valid.zw);
+  let blue_uv = clamp((shifted + field.gradient * offsets.z) / viewport, u.valid.xy, u.valid.zw);
   let transmitted = glass_tone(sample_blur_rgb(red_uv, green_uv, blue_uv, field.optics.x), field.tone);
-  let normal = normalize(vec3f(field.gradient * shift.w, slope.w));
+  let normal = normalize(vec3f(field.gradient * shift.w * field.stretch - top_tilt * slope.w, slope.w));
   // 反射方向由法线决定；有限距离的页面环境近似用柔化采样表示表面粗糙度。
   let reflection = reflect(vec3f(0.0, 0.0, -1.0), normal);
   let environment_uv = clamp(screen_uv + reflection.xy * 48.0 / viewport, u.valid.xy, u.valid.zw);
@@ -75,39 +93,51 @@ fn glass_lookup(field: Field, xy: vec2f, screen_uv: vec2f) -> vec4f {
 /** 二维平滑合并后的距离场与外观（`glass_field`），剖面光学与混合光路切换时的交叉淡化共用。 */
 export function profileField(count: number): string {
   return /* wgsl */`
-// 平滑合并后的距离场与外观。外观、截面尺寸与距离用同一个合并权重；查找表的行取权重占优的成员。
+// 平滑合并后的距离场与外观。距离与外法向用平面平滑合并（与三维求交的合并轮廓相同）；
+// 截面尺寸与外观由较厚成员主导（与三维求交的 glass_body、glass_material 相同），查找表的行取权重占优的成员。
 fn glass_field(xy: vec2f) -> Field {
-  let first = glass_contour(xy, u.members[0]);
+${each(count, i => `  let c${i} = glass_contour(xy, u.members[${i}]);
+  let d${i} = c${i}.x;`)}
   var f: Field;
-  f.distance = first.x;
-  f.gradient = first.yz;
-  f.optics = u.members[0].appearance;
-  f.colored = u.members[0].color;
-  f.lens = glass_lens(xy, u.members[0]);
-  f.half_depth = u.members[0].depth.x;
-  f.elevation = u.members[0].depth.y;
-  f.bevel = member_bevel(u.members[0]);
-  f.row = u.members[0].extra.x;
-  f.tone = u.members[0].extra.yz;
+  f.distance = d0;
+  f.gradient = c0.yz;
   var fusion = u.members[0].depth.z;
 ${each(count, i => `  {
     let m = u.members[${i}];
-    let other = glass_contour(xy, m);
     let k = max(min(fusion, m.depth.z) * 2.0, 0.001);
-    let h = clamp(0.5 + 0.5 * (other.x - f.distance) / k, 0.0, 1.0);
-    f.optics = mix(m.appearance, f.optics, h);
-    f.colored = mix(m.color, f.colored, h);
-    f.lens = mix(glass_lens(xy, m), f.lens, h);
-    f.half_depth = mix(m.depth.x, f.half_depth, h);
-    f.elevation = mix(m.depth.y, f.elevation, h);
-    f.bevel = mix(member_bevel(m), f.bevel, h);
-    f.row = select(m.extra.x, f.row, h >= 0.5);
-    f.tone = mix(m.extra.yz, f.tone, h);
-    f.gradient = mix(other.yz, f.gradient, h);
-    f.distance = mix(other.x, f.distance, h) - k * h * (1.0 - h);
+    let h = clamp(0.5 + 0.5 * (d${i} - f.distance) / k, 0.0, 1.0);
+    f.gradient = mix(c${i}.yz, f.gradient, h);
+    f.distance = mix(d${i}, f.distance, h) - k * h * (1.0 - h);
     fusion = max(fusion, m.depth.z);
   }`, 1)}
+  f.stretch = min(length(f.gradient), 1.0);
   f.gradient = normalize(f.gradient + vec2f(0.0, 0.00001));
+${count > 1
+  ? `  var grads = array<vec2f, ${count}>(${Array.from({ length: count }, (_, i) => `c${i}.yz`).join(', ')});`
+  : ''}
+${fuseDominance(count, `      f.top_slope = vec2f(0.0);
+      f.bottom_slope = vec2f(0.0);
+      f.optics = m.appearance;
+      f.colored = m.color;
+      f.lens = glass_lens(xy, m);
+      f.half_depth = m.depth.x;
+      f.elevation = m.depth.y;
+      f.bevel = member_bevel(m);
+      f.shape = m.profile.yz;
+      f.row = m.extra.x;
+      f.tone = m.extra.yz;`, `      let w = ramp.x;
+      // mix(a, c, w) 的梯度是 (1 − w)·∇a + (c − a)·∇w，∇w 是 falloff。
+      f.top_slope = (1.0 - w) * f.top_slope + (m.depth.y + 2.0 * m.depth.x - f.elevation - 2.0 * f.half_depth) * falloff;
+      f.bottom_slope = (1.0 - w) * f.bottom_slope + (m.depth.y - f.elevation) * falloff;
+      f.optics = mix(f.optics, m.appearance, w);
+      f.colored = mix(f.colored, m.color, w);
+      f.lens = mix(f.lens, glass_lens(xy, m), w);
+      f.half_depth = mix(f.half_depth, m.depth.x, w);
+      f.elevation = mix(f.elevation, m.depth.y, w);
+      f.bevel = mix(f.bevel, member_bevel(m), w);
+      f.shape = mix(f.shape, m.profile.yz, w);
+      f.row = select(f.row, m.extra.x, w >= 0.5);
+      f.tone = mix(f.tone, m.extra.yz, w);`, true)}
   return f;
 }
 `

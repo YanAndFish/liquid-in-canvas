@@ -15,9 +15,102 @@ export const VOLUME_TEXTURES = 1 + BLUR_SIGMAS.length
 /** 反射取样在透射方差之上附加的粗糙度，单位为 CSS 像素的平方。 */
 export const REFLECTION_VARIANCE = 64
 
+/**
+ * 圆角至少比倒角窄这么多（CSS 像素），才认为拐角里有截面查表不准确的一带（见 `glass_corner`）。
+ * 差得更少时那一带不到一个像素，与逐步求交的差别看不出来。
+ */
+export const CORNER_MARGIN = 0.5
+
 /** 依次对每个成员展开一段代码。 */
 export function each(count: number, body: (i: number) => string, from = 0): string {
   return Array.from({ length: count - from }, (_, j) => body(j + from)).join('\n')
+}
+
+/**
+ * 成员按顶面高度（底面高度 + 厚度）从低到高的次序，`fusion_order()` 返回每一名次对应的成员下标。
+ * 顶面一样高时下标小的在前。只取决于 uniform，每个像素算出的次序相同。
+ */
+function fusionOrder(count: number): string {
+  const tops = each(count, i => `  let t${i} = u.members[${i}].depth.y + 2.0 * u.members[${i}].depth.x;`)
+  const ranks = each(count, (i) => {
+    // 名次是排在它前面的成员数：顶面更低，或一样高且下标更小。
+    const before = Array.from({ length: count }, (_, j) => j)
+      .filter(j => j !== i)
+      .map((j) => {
+        const op = j < i
+          ? '<='
+          : '<'
+        return `select(0, 1, t${j} ${op} t${i})`
+      })
+    const rank = before.length > 0
+      ? before.join(' + ')
+      : '0'
+    return `  order[${rank}] = ${i};`
+  })
+  return /* wgsl */`
+// 成员按顶面从低到高的次序（下标）。
+fn fusion_order() -> array<i32, ${count}> {
+  var order: array<i32, ${count}>;
+${tops}
+${ranks}
+  return order;
+}`
+}
+
+/**
+ * 截面参数与外观的合并：按顶面从低到高依次并入，较厚（顶面较高）的成员在自己的平顶范围内完全主导，
+ * 往外按 `fusion_ramp` 平滑地让给已经合并的较薄成员。
+ *
+ * 平面轮廓的平滑合并权重只适合合并距离：它在截断处只有一阶连续，又带着各成员距离场在中轴（对角线、圆心）上的折点，
+ * 拿它混合厚度时，小玻璃放进大玻璃中间会在顶面压出一个带棱的浅坑，较薄成员在融合处也会把较厚成员的边缘削薄一圈。
+ * 这里的权重只取决于较厚成员轮廓附近的距离，在它的平顶范围内恒为 1：大玻璃完整盖住小玻璃时形体就是大玻璃本身，
+ * 中轴上的折点也不会进入截面参数。
+ *
+ * 让出的范围从轮廓往外延伸“两者较小的融合距离 × (1 + 接近程度)”：刚分进同一组时（矩形间距等于融合距离）
+ * 较薄成员离较厚成员的轮廓至少一个融合距离，权重为 0，分组前后画面不跳变；贴在一起时延伸到两倍融合距离。
+ * 较薄成员靠近的地方，让出的范围再从较厚成员的平顶边缘开始（往里一个倒角宽度，按较薄成员的远近平滑地缩放）：
+ * 厚度相差很大时坡度分摊到较厚成员的倒角与较薄成员两边，不至于在较薄成员上立起一面陡墙。
+ *
+ * 要求作用域里已有各成员的平面距离 `d0`、`d1`……；`gradients` 为 true 时还要有它们的外法向数组 `grads`。
+ * `first` 写入顶面最低的成员 `m` 的值；`blend` 在之后的每一步并入成员 `m`（下标 `index`），可以用权重 `ramp.x`、
+ * 权重梯度长度的上界 `slope`，`gradients` 为 true 时还有权重的梯度（一阶近似）`falloff`。
+ */
+export function fuseDominance(count: number, first: string, blend: string, gradients = false): string {
+  if (count === 1) {
+    return /* wgsl */`  {
+    let m = u.members[0];
+${first}
+  }`
+  }
+  return /* wgsl */`  {
+    var order = fusion_order();
+    var dist = array<f32, ${count}>(${each(count, i => `d${i}`).split('\n').join(', ')});
+    var reach = 0.0;
+    // 已经合并的较薄成员里离这里最近的平面距离${gradients ? '与它的外法向' : ''}。
+    var base_distance = 0.0;${gradients ? '\n    var base_gradient = vec2f(0.0);' : ''}
+    {
+      let m = u.members[order[0]];
+${first}
+      reach = m.depth.z;
+      base_distance = dist[order[0]];${gradients ? '\n      base_gradient = grads[order[0]];' : ''}
+    }
+    for (var r = 1; r < ${count}; r++) {
+      let index = order[r];
+      let m = u.members[index];
+      let width = min(m.depth.z, reach) * (1.0 + m.extra.w);
+      let bevel_width = min(m.profile.x, min(m.box.z, m.box.w));
+      let near = fusion_ramp(base_distance, width);
+      let inset = bevel_width * near.x;
+      let ramp = fusion_ramp(dist[index] + inset, width + inset);
+      // ∇(d + inset) 不超过 1 + 倒角宽度 × near.y；宽度随 inset 变化的部分并入同一个上界。
+      let slope = ramp.y * (1.0 + 2.0 * bevel_width * near.y);${gradients ? '\n      let falloff = -ramp.y * (grads[index] - bevel_width * near.y * base_gradient);' : ''}
+${blend}
+      reach = max(reach, m.depth.z);
+      if (dist[index] < base_distance) {
+        base_distance = dist[index];${gradients ? '\n        base_gradient = grads[index];' : ''}
+      }
+    }
+  }`
 }
 
 /**
@@ -82,11 +175,21 @@ struct Member {
   color: vec4f,
   // 顶面倒角的宽度与高度、倒角曲线的超椭圆指数、底面倒角比例。
   profile: vec4f,
-  // 剖面查找表的行号（剖面光学与混合光路）、透射背景的饱和度与亮度倍数，最后一项保留。
+  // 剖面查找表的行号（剖面光学与混合光路）、透射背景的饱和度与亮度倍数，
+  // 以及与较薄成员的接近程度（见 writeFusionProximity）。
   extra: vec4f,
 }`)}
 @group(1) @binding(0) var source: texture_2d<f32>;
 ${BLUR_SIGMAS.map((_, i) => `@group(1) @binding(${i + 1}) var blur${i}: texture_2d<f32>;`).join('\n')}
+
+// 像素所在象限的圆角半径（不超过短边的一半），以及拐角里等距线不再缩小的圆角半径 rounding（见 glass_contour）。
+fn glass_rounding(local: vec2f, m: Member) -> vec2f {
+  let radii = m.radius;
+  let narrow = min(m.box.z, m.box.w);
+  let radius = min(select(select(radii.z, radii.y, local.y < 0.0), select(radii.w, radii.x, local.y < 0.0), local.x < 0.0), narrow);
+  let bevel = min(m.profile.x, narrow);
+  return vec2f(radius, max(min(min(radius, bevel - radius), narrow - bevel), 0.0));
+}
 
 // 成员轮廓的有向距离与朝外的单位法向。
 //
@@ -99,18 +202,16 @@ ${BLUR_SIGMAS.map((_, i) => `@group(1) @binding(${i + 1}) var blur${i}: texture_
 // 求交步长仍然安全。
 fn glass_contour(xy: vec2f, m: Member) -> vec3f {
   let b = m.box;
-  let radii = m.radius;
   let local = xy - b.xy;
-  let narrow = min(b.z, b.w);
-  let radius = min(select(select(radii.z, radii.y, local.y < 0.0), select(radii.w, radii.x, local.y < 0.0), local.x < 0.0), narrow);
+  let corner = glass_rounding(local, m);
+  let radius = corner.x;
+  let rounding = corner.y;
   let w = abs(local) - b.zw + radius;
   let side = select(vec2f(-1.0), vec2f(1.0), local >= vec2f(0.0));
   let q = max(w, vec2f(0.0));
   let l = length(q);
   let g = max(w.x, w.y);
   let exact = select(g, l, g > 0.0) - radius;
-  let bevel = min(m.profile.x, narrow);
-  let rounding = max(min(min(radius, bevel - radius), narrow - bevel), 0.0);
   let shift = radius - rounding;
   if (rounding <= 0.0 || exact >= -shift) {
     let inner = select(vec2f(0.0, 1.0), vec2f(1.0, 0.0), w.x > w.y);
@@ -126,6 +227,30 @@ fn glass_contour(xy: vec2f, m: Member) -> vec3f {
 // 成员轮廓的有向距离。
 fn glass_outline(xy: vec2f, m: Member) -> f32 {
   return glass_contour(xy, m).x;
+}
+
+// 光线在玻璃内横向走 lateral 以内时，能否走进拐角里截面查表不准确的一带。
+// 圆角比倒角窄时，轮廓距离场的中轴（拐角的对角线）有一段落在倒角里：等距线在那里折成直角，
+// 或按 glass_contour 换成半径为 rounding、不再缩小的圆弧（距离场不再是到轮廓的真实距离）。
+// 光线走到那一带就离开了截面平面，按截面查表与逐步求交的结果不同。
+// 象限内的圆弧部分是绕圆角圆心的旋转体，光线沿径向走、不越过 rounding 那一圈时查表仍然准确；
+// 直边部分的光线只沿法向走，离对角线不近于 rounding + lateral 时也准确。圆角不比倒角窄时中轴不在倒角里。
+fn glass_corner(xy: vec2f, m: Member, lateral: f32) -> bool {
+  let local = xy - m.box.xy;
+  let corner = glass_rounding(local, m);
+  if (corner.x >= min(m.profile.x, min(m.box.z, m.box.w)) - ${wgslFloat(CORNER_MARGIN)}) { return false; }
+  let w = abs(local) - m.box.zw + corner.x;
+  let reach = corner.y + lateral;
+  if (w.x >= 0.0 && w.y >= 0.0) { return length(w) < reach; }
+  return abs(w.x - w.y) < reach;
+}
+${fusionOrder(count)}
+// 较厚成员的截面参数与外观向轮廓外延伸的权重与它对平面距离的导数：轮廓内为 1，到 reach 处降到 0，
+// 两端的一阶、二阶导数都为零，合并后的顶面没有折线。
+fn fusion_ramp(distance: f32, reach: f32) -> vec2f {
+  let width = max(reach, 0.001);
+  let t = clamp(distance / width, 0.0, 1.0);
+  return vec2f(1.0 - t * t * t * (t * (t * 6.0 - 15.0) + 10.0), 30.0 * t * t * (1.0 - t) * (1.0 - t) / width);
 }
 
 // 凸透镜在背景平面上产生的取样偏移。
@@ -188,32 +313,55 @@ ${extra(i)}
 }
 
 /**
- * 开始合并截面（`Body`）：声明 `first`、`b`、`distance` 与 `fusion`，写入第一名成员的值。
- * `planar` 与 `clipped` 是第一名成员的平面距离与裁剪距离的表达式，可以用 `first`。
+ * 合并后的轮廓与截面（`glass_body`）。每名成员的平面距离与裁剪距离只算一次：
  *
- * 裁剪距离按同一个权重混合，混合前截到不深于“半厚度 + 1”：截面的距离不小于负的半厚度，
- * 更深的裁剪距离不起作用；截短后，没有裁剪的成员只把相邻成员的裁剪切面在融合范围内平滑地推开，
- * 不会把它整个抹掉。所有成员共用同一个裁剪范围时结果与逐成员裁剪相同。
+ * - 轮廓按成员顺序做平面平滑合并（`fuseOutlines`）。裁剪距离用同一个权重混合，混合前截到不深于“半厚度 + 1”：
+ *   截面的距离不小于负的半厚度，更深的裁剪距离不起作用；截短后，没有裁剪的成员只把相邻成员的裁剪切面
+ *   在融合范围内平滑地推开，不会把它整个抹掉。所有成员共用同一个裁剪范围时结果与逐成员裁剪相同。
+ * - 同时记下最近与次近成员（含裁剪）的距离和最近成员的下标，供混合光路分档。
+ * - 厚度、底面高度、倒角与曲线由较厚成员主导（`fuseDominance`），并累计它们在平面上的坡度上界：
+ *   厚度不同的成员融合时顶面有坡，距离场不再是 1-Lipschitz，求交步长要按 `lipschitz` 缩小，否则会越过表面。
  */
-export function bodyFirst(planar: string, clipped: string): string {
-  return /* wgsl */`  let first = u.members[0];
+function glassBody(count: number): string {
+  return /* wgsl */`fn glass_body(xy: vec2f) -> Body {
   var b: Body;
-  b.clip = max(${clipped}, -first.depth.x - 1.0);
-  b.middle = first.depth.y + first.depth.x;
-  b.half_depth = first.depth.x;
-  b.bevel = vec2f(min(first.profile.x, min(first.box.z, first.box.w)), first.profile.y);
-  b.shape = first.profile.zw;
-  var distance = ${planar};
-  var fusion = first.depth.z;`
-}
-
-/** 在 `fuseOutlines()` 的循环里按权重 `h` 并入成员 `m` 的截面参数。`clipped` 是这名成员的裁剪距离。 */
-export function bodyMix(clipped: string): string {
-  return /* wgsl */`    b.clip = mix(max(${clipped}, -m.depth.x - 1.0), b.clip, h);
-    b.middle = mix(m.depth.y + m.depth.x, b.middle, h);
-    b.half_depth = mix(m.depth.x, b.half_depth, h);
-    b.bevel = mix(vec2f(min(m.profile.x, min(m.box.z, m.box.w)), m.profile.y), b.bevel, h);
-    b.shape = mix(m.profile.zw, b.shape, h);`
+${each(count, i => `  let d${i} = glass_outline(xy, u.members[${i}]);
+  let c${i} = glass_clip(xy, u.members[${i}].clip);`)}
+  var distance = d0;
+  var fusion = u.members[0].depth.z;
+  b.clip = max(c0, -u.members[0].depth.x - 1.0);
+  b.owner = 0;
+  b.nearest = max(d0, c0);
+  b.second = 1000000.0;
+${fuseOutlines(count, i => `d${i}`, i => `    b.clip = mix(max(c${i}, -m.depth.x - 1.0), b.clip, h);
+    let apart = max(d${i}, c${i});
+    if (apart < b.nearest) {
+      b.second = b.nearest;
+      b.nearest = apart;
+      b.owner = ${i};
+    } else {
+      b.second = min(b.second, apart);
+    }`)}
+  b.planar = distance;
+  var top_slope = 0.0;
+  var bottom_slope = 0.0;
+  var bevel_slope = 0.0;
+${fuseDominance(count, `      b.middle = m.depth.y + m.depth.x;
+      b.half_depth = m.depth.x;
+      b.bevel = vec2f(min(m.profile.x, min(m.box.z, m.box.w)), m.profile.y);
+      b.shape = m.profile.zw;`, `      let w = ramp.x;
+      let bevel = vec2f(min(m.profile.x, min(m.box.z, m.box.w)), m.profile.y);
+      // mix(a, c, w) 的梯度不超过 (1 − w)·|∇a| + |c − a|·|∇w|，|∇w| 不超过 slope。
+      top_slope = (1.0 - w) * top_slope + abs(m.depth.y + 2.0 * m.depth.x - b.middle - b.half_depth) * slope;
+      bottom_slope = (1.0 - w) * bottom_slope + abs(m.depth.y - b.middle + b.half_depth) * slope;
+      bevel_slope = (1.0 - w) * bevel_slope + max(abs(bevel.x - b.bevel.x), abs(bevel.y - b.bevel.y)) * slope;
+      b.middle = mix(b.middle, m.depth.y + m.depth.x, w);
+      b.half_depth = mix(b.half_depth, m.depth.x, w);
+      b.bevel = mix(b.bevel, bevel, w);
+      b.shape = mix(b.shape, m.profile.zw, w);`)}
+  b.lipschitz = 1.0 + max(top_slope, bottom_slope) + bevel_slope;
+  return b;
+}`
 }
 
 /**
@@ -222,13 +370,14 @@ export function bodyMix(clipped: string): string {
  * 坐标使用视口的 CSS 像素，z 轴垂直于屏幕指向观察者，背景平面在 z = 0。
  *
  * 融合的实体不是各成员三维实体的平滑合并，而是先在平面上平滑合并轮廓，再按到合并轮廓的距离套截面：
- * 截面参数（厚度、底面高度、倒角）与外观用同一个合并权重混合。各成员的倒角不会在连接处相交出折痕，
- * 连接处与剖面查表一样是一整块玻璃，三种光路的轮廓与形体一致。
+ * 各成员的倒角不会在连接处相交出折痕，连接处与剖面查表一样是一整块玻璃，三种光路的轮廓与形体一致。
+ * 截面参数（厚度、底面高度、倒角）与外观由较厚成员主导，见 `fuseDominance`。
  */
 export function raymarchOptics(count: number): string {
   return /* wgsl */`
-// 平面平滑合并后的轮廓与截面：到合并轮廓的平面距离、裁剪距离、中面高度、半厚度、顶面倒角的宽高、
-// 倒角曲线的超椭圆指数与底面倒角比例。
+// 合并后的轮廓与截面：到合并轮廓的平面距离、裁剪距离、中面高度、半厚度、顶面倒角的宽高、
+// 倒角曲线的超椭圆指数与底面倒角比例；距离场的 Lipschitz 常数上界；
+// 最近成员（含裁剪）的下标、到它与到次近成员的距离（混合光路分档用）。
 struct Body {
   planar: f32,
   clip: f32,
@@ -236,14 +385,13 @@ struct Body {
   half_depth: f32,
   bevel: vec2f,
   shape: vec2f,
+  lipschitz: f32,
+  owner: i32,
+  nearest: f32,
+  second: f32,
 }
 
-fn glass_body(xy: vec2f) -> Body {
-${bodyFirst('glass_outline(xy, first)', 'glass_clip(xy, first.clip)')}
-${fuseOutlines(count, () => 'glass_outline(xy, m)', () => bodyMix('glass_clip(xy, m.clip)'))}
-  b.planar = distance;
-  return b;
-}
+${glassBody(count)}
 
 // 截面，planar 是到轮廓的平面距离，height 是相对实体中面的高度。
 // 截面是一块平板，边缘按超椭圆弧倒角；指数大于 2 时曲率在平面接合处趋于零，
@@ -268,6 +416,16 @@ fn glass_section(planar: f32, height: f32, b: Body) -> f32 {
 fn glass_distance(p: vec3f) -> f32 {
   let b = glass_body(p.xy);
   return max(glass_section(b.planar, p.z - b.middle, b), b.clip);
+}
+
+// 求交用的距离：x 是距离场的值，用来判断是否到达表面；y 是沿 direction 前进时不会越过表面的步长。
+// 截面对高度的导数不超过 1，所以竖直的光线按原值前进总是安全的；厚度不同的成员融合处顶面有坡，
+// 距离场在平面方向的变化率可以超过 1（glass_body 的 lipschitz），斜着走的光线按方向把两部分合起来缩小步长，
+// 否则会越过表面，连接处出现锯齿与碎边。
+fn glass_march(p: vec3f, direction: vec3f) -> vec2f {
+  let b = glass_body(p.xy);
+  let d = max(glass_section(b.planar, p.z - b.middle, b), b.clip);
+  return vec2f(d, d / (abs(direction.z) + b.lipschitz * length(direction.xy)));
 }
 
 // 最宽截面（中面）处的投影距离。任意高度的距离都不小于它。
@@ -304,8 +462,8 @@ fn glass_exit(entry: vec3f, normal: vec3f, ior: f32) -> vec4f {
   var path = 0.12;
   var bounced = false;
   for (var i = 0; i < 64; i++) {
-    let d = glass_distance(p);
-    if (d > -0.025) {
+    let d = glass_march(p, direction);
+    if (d.x > -0.025) {
       let outward = glass_normal(p);
       let outgoing = refract(direction, -outward, ior);
       if (dot(outgoing, outgoing) > 0.01) {
@@ -318,7 +476,7 @@ fn glass_exit(entry: vec3f, normal: vec3f, ior: f32) -> vec4f {
       p += direction * 0.5;
       bounced = true;
     } else {
-      let step = max(-d * 0.85, 0.035);
+      let step = max(-d.y * 0.85, 0.035);
       p += direction * step;
       path += step;
     }
@@ -334,19 +492,21 @@ struct Material {
   tone: vec2f,
 }
 
-// 外观与截面使用同一个平面合并权重（与剖面光学的 \`glass_field\` 相同），过渡区域随合并轮廓移动。
+// 外观与截面参数用同一个权重合并（较厚成员主导，见 fuseDominance），过渡区域随合并轮廓移动。
 fn glass_material(p: vec3f) -> Material {
   let xy = p.xy;
-  var optics = u.members[0].appearance;
-  var colored = u.members[0].color;
-  var lens = glass_lens(xy, u.members[0]);
-  var tone = u.members[0].extra.yz;
-  var distance = glass_outline(xy, u.members[0]);
-  var fusion = u.members[0].depth.z;
-${fuseOutlines(count, () => 'glass_outline(xy, m)', () => `    optics = mix(m.appearance, optics, h);
-    colored = mix(m.color, colored, h);
-    lens = mix(glass_lens(xy, m), lens, h);
-    tone = mix(m.extra.yz, tone, h);`)}
+${each(count, i => `  let d${i} = glass_outline(xy, u.members[${i}]);`)}
+  var optics: vec4f;
+  var colored: vec4f;
+  var lens: vec2f;
+  var tone: vec2f;
+${fuseDominance(count, `      optics = m.appearance;
+      colored = m.color;
+      lens = glass_lens(xy, m);
+      tone = m.extra.yz;`, `      optics = mix(optics, m.appearance, ramp.x);
+      colored = mix(colored, m.color, ramp.x);
+      lens = mix(lens, glass_lens(xy, m), ramp.x);
+      tone = mix(tone, m.extra.yz, ramp.x);`)}
   var material: Material;
   material.optics = optics;
   // 透明材质的染色值不应把不透明一端的颜色冲淡。

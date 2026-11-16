@@ -1,7 +1,7 @@
 import { wgslFloat } from '../gpu'
 import { FIELD_TARGETS } from './volume-field-shader'
 import { profileField, profileOptics } from './volume-profile-shader'
-import { bodyFirst, bodyMix, clipCoverage, each, fuseOutlines, raymarchOptics, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
+import { clipCoverage, each, raymarchOptics, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
 
 /**
  * 查找表里的横向范围换算成像素时乘的余量与附加的像素数。
@@ -19,32 +19,14 @@ export function hybridLateral(reach: number, halfDepth: number): number {
 }
 
 /**
- * 每名成员的轮廓距离只算一次：合并出投影距离（与 `glass_projection` 逐位相同），同时找出最近与次近的成员。
- * 声明 `owner`、`nearest`、`second` 与 `outline`，要求作用域里已有 `xy`。混合着色器与折射场缓存的写入共用。
+ * 合并后的轮廓（`glass_body`）：投影距离与 `glass_projection` 逐位相同，同时给出最近与次近的成员。
+ * 声明 `b`、`owner`、`second` 与 `outline`，要求作用域里已有 `xy`。混合着色器与折射场缓存的写入共用。
  */
-export function hybridOwner(count: number): string {
-  return /* wgsl */`  var owner = 0;
-  var nearest = 0.0;
-  var second = 1000000.0;
-  var outline = 0.0;
-  {
-    let planar = glass_outline(xy, u.members[0]);
-    let clipped = glass_clip(xy, u.members[0].clip);
-${bodyFirst('planar', 'clipped')}
-    nearest = max(planar, clipped);
-${fuseOutlines(count, () => 'glass_outline(xy, m)', i => `    let cut = glass_clip(xy, m.clip);
-${bodyMix('cut')}
-    let apart = max(other, cut);
-    if (apart < nearest) {
-      second = nearest;
-      nearest = apart;
-      owner = ${i};
-    } else {
-      second = min(second, apart);
-    }`)}
-    b.planar = distance;
-    outline = max(glass_section(b.planar, 0.0, b), b.clip);
-  }`
+export function hybridOwner(): string {
+  return /* wgsl */`  let b = glass_body(xy);
+  let owner = b.owner;
+  let second = b.second;
+  let outline = max(glass_section(b.planar, 0.0, b), b.clip);`
 }
 
 /**
@@ -66,11 +48,16 @@ export function hybridTier(): string {
     field.bevel = member_bevel(m);
     field.row = m.extra.x;
     field.tone = m.extra.yz;
+    field.stretch = 1.0;
+    field.top_slope = vec2f(0.0);
+    field.bottom_slope = vec2f(0.0);
+    field.shape = m.profile.yz;
     let on_slab = contour.x + field.bevel < -0.5 && clipped < -1.0 && second >= u.params.w;
     // 光线在玻璃内离开入射位置的最大横向距离。裁剪边还要再远一个半厚度，
     // 否则它会成为距离场里最近的面，求交的步长随之变小。
+    // 圆角比倒角窄时，拐角里有一带距离场不是到轮廓的真实距离（见 glass_corner），光路可能经过那里的像素也要求交。
     let lateral = lut_at(field, 3.0).x * m.depth.x * ${wgslFloat(HYBRID_REACH_SCALE)} + ${wgslFloat(HYBRID_REACH_PAD)};
-    let alone = second >= u.params.w + lateral && clipped <= -(lateral + m.depth.x);`
+    let alone = second >= u.params.w + lateral && clipped <= -(lateral + m.depth.x) && !glass_corner(xy, m, lateral);`
 }
 
 /**
@@ -147,7 +134,7 @@ fn volume(in: VertexOutput) -> @location(0) vec4f {
   let viewport = u.screen.zw;
   let screen_uv = in.position.xy / u.screen.xy;
   let xy = screen_uv * viewport;
-${hybridOwner(count)}
+${hybridOwner()}
   let distance = glass_projection(xy - vec2f(0.0, 4.0));
   var shadow_alpha = exp(max(distance, 0.0) / max(u.shadow.y, 1.0) * -4.0) * u.shadow.x;
   if (outline > 0.0 && shadow_alpha > 0.002) {

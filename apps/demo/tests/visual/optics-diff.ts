@@ -7,9 +7,13 @@ import { DrawList } from '../../../../packages/liquid-in-canvas/src/frame.hot'
  * 只需要 WebGPU，不需要 `drawElementImageToTexture()`，可以在不支持 HTML-in-Canvas 的浏览器里检查光路。
  *
  * 查询参数：
- * - `dx`、`dy`：圆形中心相对胶囊右端圆心的偏移（CSS 像素），缺省是演示里调参按钮贴着「浏览系列」的位置。
+ * - `scene`：`capsule`（缺省）是演示里调参按钮贴着「浏览系列」；`square` 是 200 × 200 的柔和方块与 64 像素的调参按钮。
+ * - `dx`、`dy`：圆形中心的偏移（CSS 像素）。胶囊场景相对胶囊右端圆心，方块场景相对方块中心。
+ * - `alone`：只画胶囊或方块，不画圆形。
+ * - `ratio`：设备像素比，缺省 1。
  * - `scale`：显示倍数。
  * - `clip`：胶囊的裁剪框右边相对胶囊右端的位置，缺省不裁剪。
+ * - `width`、`height`、`radius`、`refraction`：覆盖胶囊或方块的尺寸、圆角与厚度参考值。
  */
 import { SLOT_CANVAS, StageGpu, TEXTURE_USAGE } from '../../../../packages/liquid-in-canvas/src/gpu'
 import { linearTint, srgbToLinear } from '../../../../packages/liquid-in-canvas/src/liquid-glass/color'
@@ -17,6 +21,7 @@ import { createFieldTextures } from '../../../../packages/liquid-in-canvas/src/l
 import { BLUR_SIGMAS } from '../../../../packages/liquid-in-canvas/src/liquid-glass/gaussian'
 import { ProfileTable } from '../../../../packages/liquid-in-canvas/src/liquid-glass/optics-lut'
 import { profileBevelHeight, profileBevelWidth, profileHalfDepth } from '../../../../packages/liquid-in-canvas/src/liquid-glass/profile'
+import { writeFusionProximity } from '../../../../packages/liquid-in-canvas/src/liquid-glass/volume-members.hot'
 import { bindVolumeTextures, createFieldBakePipelines, createVolumePipelines, VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from '../../../../packages/liquid-in-canvas/src/liquid-glass/volume-shader'
 
 interface Glass {
@@ -38,29 +43,63 @@ interface Glass {
 }
 
 const query = new URLSearchParams(location.search)
-const W = 520
-const H = 300
+const square = query.get('scene') === 'square'
+const W = square ? 360 : 520
+const H = square ? 400 : 300
+const ratio = Number(query.get('ratio') ?? 1)
 const scale = Number(query.get('scale') ?? 2)
-const capsule: Glass = {
-  x: 40,
-  y: 70,
-  width: 292,
-  height: 76,
-  radius: 38,
-  fusion: 32,
-  clip: [-1e5, -1e5, 1e5, 1e5],
-  blur: 0,
-  refraction: 80,
-  tint: '#131b20',
-  tintAlpha: 0.1,
-  specular: 0.9,
-  saturation: 1.15,
-  dispersion: 0.05,
-  lens: 0,
+const capsule: Glass = square
+  ? {
+      x: 80,
+      y: 60,
+      width: 200,
+      height: 200,
+      radius: 28,
+      fusion: 32,
+      clip: [-1e5, -1e5, 1e5, 1e5],
+      blur: 0,
+      refraction: 80,
+      tint: '#f6f6f8',
+      tintAlpha: 0.1,
+      specular: 0.7,
+      saturation: 1.3,
+      dispersion: 0.05,
+      lens: 0,
+    }
+  : {
+      x: 40,
+      y: 70,
+      width: 292,
+      height: 76,
+      radius: 38,
+      fusion: 32,
+      clip: [-1e5, -1e5, 1e5, 1e5],
+      blur: 0,
+      refraction: 80,
+      tint: '#131b20',
+      tintAlpha: 0.1,
+      specular: 0.9,
+      saturation: 1.15,
+      dispersion: 0.05,
+      lens: 0,
+    }
+// 主体玻璃的尺寸、圆角与厚度可以覆盖，用来检查不同的圆角与倒角组合。
+for (const key of [
+  'width',
+  'height',
+  'radius',
+  'refraction',
+] as const) {
+  if (query.has(key))
+    capsule[key] = Number(query.get(key))
 }
-const dx = Number(query.get('dx') ?? 66)
-const dy = Number(query.get('dy') ?? 42)
-const circleCenterX = capsule.x + capsule.width - capsule.height / 2 + dx
+const dx = Number(query.get('dx') ?? (square
+  ? -47
+  : 66))
+const dy = Number(query.get('dy') ?? (square ? 155 : 42))
+const circleCenterX = square
+  ? capsule.x + capsule.width / 2 + dx
+  : capsule.x + capsule.width - capsule.height / 2 + dx
 const circleCenterY = capsule.y + capsule.height / 2 + dy
 const circle: Glass = {
   ...capsule,
@@ -72,6 +111,8 @@ const circle: Glass = {
   fusion: 40,
   tint: '#ffffff',
   tintAlpha: 0.01,
+  specular: 0.9,
+  saturation: 1.15,
 }
 if (query.has('clip')) {
   capsule.clip = [
@@ -88,7 +129,9 @@ if (query.has('depth')) {
   depthOverride.set(capsule, Number(query.get('depth')))
   depthOverride.set(circle, Number(query.get('depth')))
 }
-const glasses = [capsule, circle]
+const glasses = query.has('alone')
+  ? [capsule]
+  : [capsule, circle]
 const crop = (query.get('crop') ?? '').split(',').map(Number)
 
 function halfDepthOf(glass: Glass): number {
@@ -106,18 +149,40 @@ async function main(): Promise<void> {
   const format: GPUTextureFormat = 'rgba8unorm-srgb'
   const gpu = new StageGpu(device, format)
 
-  // 背景：海报按高度铺满，取中间一段。
-  const poster = await loadImage('/media/liquid-glass-flower-poster.jpg')
+  const PW = Math.round(W * ratio)
+  const PH = Math.round(H * ratio)
   const source = device.createTexture({
-    size: { width: W, height: H },
+    size: { width: PW, height: PH },
     format: 'rgba8unorm-srgb',
     usage: TEXTURE_USAGE.TEXTURE_BINDING | TEXTURE_USAGE.COPY_DST | TEXTURE_USAGE.RENDER_ATTACHMENT,
   })
-  const backdrop = new OffscreenCanvas(W, H)
+  const backdrop = new OffscreenCanvas(PW, PH)
   const context = backdrop.getContext('2d')!
-  const ratio = Math.max(W / poster.width, H / poster.height) * 1.6
-  context.drawImage(poster, (W - poster.width * ratio) / 2 - 80, (H - poster.height * ratio) / 2, poster.width * ratio, poster.height * ratio)
-  device.queue.copyExternalImageToTexture({ source: backdrop }, { texture: source }, { width: W, height: H })
+  context.scale(ratio, ratio)
+  if (square) {
+    // 背景：斜条纹，折射的偏移一眼可见。
+    const colors = [
+      '#ff5f6d',
+      '#ffc36a',
+      '#4ecdc4',
+      '#7c5cff',
+    ]
+    context.save()
+    context.translate(W / 2, H / 2)
+    context.rotate(-Math.PI / 4)
+    for (let i = -40; i < 40; i++) {
+      context.fillStyle = colors[(i + 400) % colors.length]!
+      context.fillRect(i * 22, -H * 2, 22, H * 4)
+    }
+    context.restore()
+  }
+  else {
+    // 背景：海报按高度铺满，取中间一段。
+    const poster = await loadImage('/media/liquid-glass-flower-poster.jpg')
+    const fit = Math.max(W / poster.width, H / poster.height) * 1.6
+    context.drawImage(poster, (W - poster.width * fit) / 2 - 80, (H - poster.height * fit) / 2, poster.width * fit, poster.height * fit)
+  }
+  device.queue.copyExternalImageToTexture({ source: backdrop }, { texture: source }, { width: PW, height: PH })
   const sourceView = source.createView()
   // 各级模糊都绑定原图：对照只关心光路，不关心模糊。
   const blurs = BLUR_SIGMAS.map(() => sourceView)
@@ -182,6 +247,7 @@ async function main(): Promise<void> {
       data[offset + 30] = 1
       offset += VOLUME_MEMBER_FLOATS
     }
+    writeFusionProximity(data, group + VOLUME_GROUP_FLOATS, count)
   }
 
   const kinds = [
@@ -192,36 +258,38 @@ async function main(): Promise<void> {
   ] as const
   const tables = Object.fromEntries(kinds.map(kind => [kind, createVolumePipelines(gpu, kind)[SLOT_CANVAS]!]))
   const bake = createFieldBakePipelines(gpu)
-  const fields = createFieldTextures(gpu, W, H)
+  const fields = createFieldTextures(gpu, PW, PH)
   const plain = bindVolumeTextures(gpu, sourceView, blurs, 0, profiles.view).group
   const raw = bindVolumeTextures(gpu, sourceView, blurs, 0).group
   const cached = bindVolumeTextures(gpu, sourceView, blurs, 0, profiles.view, fields.views).group
 
   const frame = gpu.frame
   frame.begin()
-  const background = frame.full(HEADER_FLOATS, W, H)
+  const background = frame.full(HEADER_FLOATS, PW, PH)
   const starts: Record<string, number> = {}
   for (const kind of kinds) {
-    const start = frame.rect(floats, 0, 0, W, H, W, H, W, H)
+    const start = frame.rect(floats, 0, 0, W, H, W, H, PW, PH)
     writeGroup(frame.data, start + HEADER_FLOATS)
     starts[kind] = start
   }
-  const bakeStart = frame.full(floats, W, H)
+  const bakeStart = frame.full(floats, PW, PH)
   writeGroup(frame.data, bakeStart + HEADER_FLOATS)
+  frame.data[bakeStart + 4] = PW
+  frame.data[bakeStart + 5] = PH
   frame.data[bakeStart + 6] = W
   frame.data[bakeStart + 7] = H
 
   const encoder = frame.beginEncoding()
   const bakeList = new DrawList()
   bakeList.push(0, bake.get(glasses.length), bakeStart * 4, plain)
-  frame.encodeFieldPass(encoder, fields.views, W, H, bakeList)
+  frame.encodeFieldPass(encoder, fields.views, PW, PH, bakeList)
 
   const targets: Record<string, GPUTexture> = {}
-  const rowBytes = Math.ceil(W * 4 / 256) * 256
+  const rowBytes = Math.ceil(PW * 4 / 256) * 256
   const buffers: Record<string, GPUBuffer> = {}
   for (const kind of kinds) {
     const target = device.createTexture({
-      size: { width: W, height: H },
+      size: { width: PW, height: PH },
       format,
       usage: TEXTURE_USAGE.RENDER_ATTACHMENT | TEXTURE_USAGE.COPY_SRC,
     })
@@ -234,9 +302,9 @@ async function main(): Promise<void> {
         ? cached
         : plain
     list.push(1, tables[kind]!.get(glasses.length), starts[kind]! * 4, textures)
-    frame.encodePass(encoder, kind, target.createView(), W, H, { r: 0, g: 0, b: 0, a: 1 }, list)
-    const buffer = device.createBuffer({ size: rowBytes * H, usage: 0x08 /* COPY_DST */ | 0x01 /* MAP_READ */ })
-    encoder.copyTextureToBuffer({ texture: target }, { buffer, bytesPerRow: rowBytes }, { width: W, height: H })
+    frame.encodePass(encoder, kind, target.createView(), PW, PH, { r: 0, g: 0, b: 0, a: 1 }, list)
+    const buffer = device.createBuffer({ size: rowBytes * PH, usage: 0x08 /* COPY_DST */ | 0x01 /* MAP_READ */ })
+    encoder.copyTextureToBuffer({ texture: target }, { buffer, bytesPerRow: rowBytes }, { width: PW, height: PH })
     buffers[kind] = buffer
   }
   device.queue.submit([
@@ -247,9 +315,9 @@ async function main(): Promise<void> {
   for (const kind of kinds) {
     await buffers[kind]!.mapAsync(1 /* GPUMapMode.READ */)
     const mapped = new Uint8Array(buffers[kind]!.getMappedRange())
-    const out = new Uint8ClampedArray(W * H * 4)
-    for (let y = 0; y < H; y++)
-      out.set(mapped.subarray(y * rowBytes, y * rowBytes + W * 4), y * W * 4)
+    const out = new Uint8ClampedArray(PW * PH * 4)
+    for (let y = 0; y < PH; y++)
+      out.set(mapped.subarray(y * rowBytes, y * rowBytes + PW * 4), y * PW * 4)
     pixels[kind] = out
   }
 
@@ -259,29 +327,31 @@ async function main(): Promise<void> {
     const caption = document.createElement('figcaption')
     caption.textContent = label
     const canvas = document.createElement('canvas')
-    const [x, y, w, h] = crop.length === 4
+    const [x, y, w, h] = (crop.length === 4
       ? crop
-      : [0, 0, W, H]
+      : [0, 0, W, H]).map(value => Math.round(value * ratio))
     canvas.width = w!
     canvas.height = h!
-    canvas.style.width = `${w! * scale / 2}px`
-    canvas.style.height = `${h! * scale / 2}px`
-    canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(data), W, H), -x!, -y!, x!, y!, w!, h!)
+    canvas.style.width = `${w! * scale / 2 / ratio}px`
+    canvas.style.height = `${h! * scale / 2 / ratio}px`
+    canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(data), PW, PH), -x!, -y!, x!, y!, w!, h!)
     figure.append(caption, canvas)
     grid.append(figure)
   }
 
   const reference = pixels.raymarch!
-  const lines: string[] = [`几何：胶囊 ${capsule.width}×${capsule.height}，圆形中心相对胶囊右端圆心 (${dx}, ${dy})`]
+  const lines: string[] = [`几何：${square ? '方块' : '胶囊'} ${capsule.width}×${capsule.height}，圆形中心偏移 (${dx}, ${dy})${glasses.length === 1
+    ? '（不画圆形）'
+    : ''}`]
   const stats: Record<string, { mean: number, max: number, over: number }> = {}
   show('raymarch（参照）', reference)
   for (const kind of ['hybrid', 'field', 'profile']) {
     const data = pixels[kind]!
-    const diff = new Uint8ClampedArray(W * H * 4)
+    const diff = new Uint8ClampedArray(PW * PH * 4)
     let sum = 0
     let max = 0
     let over = 0
-    for (let i = 0; i < W * H; i++) {
+    for (let i = 0; i < PW * PH; i++) {
       let d = 0
       for (let c = 0; c < 3; c++)
         d = Math.max(d, Math.abs(data[i * 4 + c]! - reference[i * 4 + c]!))
@@ -297,13 +367,14 @@ async function main(): Promise<void> {
       diff[i * 4 + 2] = 0
       diff[i * 4 + 3] = 255
     }
-    stats[kind] = { mean: sum / (W * H), max, over }
-    lines.push(`${kind}: 平均差 ${(sum / (W * H)).toFixed(3)}，最大差 ${max}，差 > 8 的像素 ${over}`)
+    stats[kind] = { mean: sum / (PW * PH), max, over }
+    lines.push(`${kind}: 平均差 ${(sum / (PW * PH)).toFixed(3)}，最大差 ${max}，差 > 8 的像素 ${over}`)
     show(kind, data)
     show(`${kind} − raymarch（×4）`, diff)
   }
   document.getElementById('stats')!.textContent = lines.join('\n');
-  (window as unknown as { opticsDiff: unknown }).opticsDiff = stats
+  (window as unknown as { opticsDiff: unknown }).opticsDiff = stats;
+  (window as unknown as { opticsPixels: unknown }).opticsPixels = { pixels, width: PW, height: PH, ratio }
 }
 
 main().catch((error: unknown) => {

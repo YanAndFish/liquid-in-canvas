@@ -19,6 +19,7 @@ import { createFieldCache, createProfileTable, createStackLevels, createVolumeBa
 import { profileBevelHeight, profileBevelWidth, profileHalfDepth } from './profile'
 import { assignStackLevels, MAX_STACK_LEVELS, stackMargin } from './stack.hot'
 import { HYBRID_CLIP_PAD, hybridLateral } from './volume-hybrid-shader'
+import { memberCornered, writeFusionProximity } from './volume-members.hot'
 import { bindVolumeTextures, createFieldBakePipelines, createVolumePipelines, VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from './volume-shader'
 
 /** 体积着色的分辨率设置。 */
@@ -228,8 +229,10 @@ export class VolumePlanner {
  * 把一组体积的参数写入 uniform，`start` 指向矩形与目标尺寸之后的位置。
  * 传入 `profiles` 时同时写入每名成员的剖面查找表行号（剖面光学与混合光路）。
  *
- * 返回裁剪范围是否切进了某名成员：裁剪边到玻璃的距离小于光线在玻璃内可能的横向位移加半厚度时，
- * 裁剪会改变光路，混合光路要对这一组逐像素判断。没有传入 `profiles` 时不判断，返回 false。
+ * 返回混合光路是否要对这一组逐像素判断（成员只有一名时）：
+ * - 裁剪范围切进了某名成员：裁剪边到玻璃的距离小于光线在玻璃内可能的横向位移加半厚度时，裁剪会改变光路；
+ * - 某名成员的圆角比倒角窄：拐角里有一带距离场不是到轮廓的真实距离，查表与求交的结果不同（见 `glass_corner`）。
+ * 没有传入 `profiles` 时不判断，返回 false。
  */
 export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGroupPlan, profiles: ProfileTable | null = null): boolean {
   // 背景已经含有遮罩。仅压暗新增的染色与高光，玻璃覆盖率保持不变。
@@ -298,9 +301,11 @@ export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGr
       const halfWidth = data[offset + 2]!
       const halfHeight = data[offset + 3]!
       cut ||= clip[0]! > x - halfWidth - pad || clip[1]! > y - halfHeight - pad || clip[2]! < x + halfWidth + pad || clip[3]! < y + halfHeight + pad
+      cut ||= memberCornered(data, offset)
     }
     offset += VOLUME_MEMBER_FLOATS
   }
+  writeFusionProximity(data, start + VOLUME_GROUP_FLOATS, plan.count)
   return cut
 }
 
@@ -318,9 +323,9 @@ export class VolumeGroups {
    * 每次都要重新编译着色器，造成数十毫秒的单帧卡顿。
    */
   private readonly pipelines: PipelineTable[]
-  /** 剖面光学的管线；混合光路里只有一名成员、裁剪也没有切进玻璃的组也用它。 */
+  /** 剖面光学的管线；混合光路里只有一名成员、裁剪没有切进玻璃、圆角也不比倒角窄的组也用它。 */
   private readonly profilePipelines: PipelineTable[]
-  /** 混合光路的管线：逐像素在查表与求交之间选择，用于多名成员的组与被裁剪切开的组。 */
+  /** 混合光路的管线：逐像素在查表与求交之间选择，用于多名成员的组、被裁剪切开的组与圆角比倒角窄的玻璃。 */
   private readonly hybridPipelines: PipelineTable[]
   /** 读取折射场缓存的混合管线：几何静止的组求交一次之后用它。 */
   private readonly fieldPipelines: PipelineTable[]
@@ -375,7 +380,7 @@ export class VolumeGroups {
     const optics = this.optics
     for (let i = 0; i < counts.length; i++) {
       const count = counts[i]!
-      // 混合光路里只有一名成员的组通常用剖面管线，被裁剪切开时才用混合管线，两条都预热。
+      // 混合光路里只有一名成员的组通常用剖面管线，被裁剪切开或圆角比倒角窄时才用混合管线，两条都预热。
       if (optics === 'hybrid' && count === 1) {
         this.profilePipelines[SLOT_CANVAS]!.warm(count)
         this.profilePipelines[SLOT_TARGET]!.warm(count)
@@ -405,7 +410,7 @@ export class VolumeGroups {
   }
 
   /**
-   * 打开或关闭混合光路的折射场缓存，缺省打开。关闭后融合的组与被裁剪切开的玻璃每帧逐步求交，
+   * 打开或关闭混合光路的折射场缓存，缺省打开。关闭后融合的组、被裁剪切开与圆角比倒角窄的玻璃每帧逐步求交，
    * 运动时也不改用查表。
    */
   setFieldCache(enabled: boolean): void {
@@ -561,7 +566,7 @@ export class VolumeGroups {
 
   /**
    * 一组体积使用的管线表。`traced` 表示这一组在混合光路下需要逐像素判断是否求交：
-   * 成员多于一名，或裁剪范围切进了玻璃；其余的组与剖面光学一样只查表。
+   * 成员多于一名、裁剪范围切进了玻璃，或圆角比倒角窄；其余的组与剖面光学一样只查表。
    */
   private table(traced: boolean): PipelineTable[] {
     const optics = this.optics
@@ -608,8 +613,7 @@ export class VolumeGroups {
       ? null
       : this.profiles
     const group = start + HEADER_FLOATS
-    const cut = writeVolumeGroup(this.frame.data, group, plan, profiles)
-    const traced = plan.count > 1 || cut
+    const traced = writeVolumeGroup(this.frame.data, group, plan, profiles) || plan.count > 1
     let pipelines = this.table(traced)
     let textures: GPUBindGroup | null = null
     const fields = this.fields

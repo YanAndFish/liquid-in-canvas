@@ -177,12 +177,12 @@ export const OPTICS: readonly { id: GlassOptics, label: Text, hint: Text }[] = [
   {
     id: 'profile',
     label: ['剖面', 'Profile'],
-    hint: ['剖面光学：按截面查表折射，开销最低；融合连接处是近似。', 'Profile optics: refraction looked up along the cross-section, cheapest; fused joints are approximate.'],
+    hint: ['剖面光学：按截面查表折射，开销最低；融合连接处与比倒角窄的圆角是近似。', 'Profile optics: refraction looked up along the cross-section, cheapest; fused joints and corners tighter than the bevel are approximate.'],
   },
   {
     id: 'hybrid',
     label: ['混合', 'Hybrid'],
-    hint: ['混合光路：融合连接处与裁剪边附近静止后求交一次并缓存，运动中与其余像素查表。', 'Hybrid optics: fused joints and clip edges are ray-marched once at rest and cached; looked up while moving and elsewhere.'],
+    hint: ['混合光路：融合连接处、裁剪边附近与比倒角窄的圆角静止后求交一次并缓存，运动中与其余像素查表。', 'Hybrid optics: fused joints, clip edges and corners tighter than the bevel are ray-marched once at rest and cached; looked up while moving and elsewhere.'],
   },
   {
     id: 'raymarch',

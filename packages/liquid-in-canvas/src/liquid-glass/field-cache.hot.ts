@@ -20,6 +20,7 @@ import {
   FIELD_TOLERANCE,
 } from './field-cache'
 import { HYBRID_CLIP_PAD, hybridLateral } from './volume-hybrid-shader'
+import { memberCornered } from './volume-members.hot'
 import { VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from './volume-shader'
 
 /** 查找表里一行的光线在玻璃内的最大横向位移，与半厚度之比。由 `ProfileTable` 实现。 */
@@ -325,9 +326,10 @@ export class FieldCache {
    * 求交档可能出现的范围，相对第一名成员的中心，写进 `left`、`top`、`right`、`bottom`。
    *
    * 求交档的像素要么离最近与次近的两名成员都不超过“其余成员不参与平滑合并的距离 + 横向位移”，
-   * 要么离所属成员的裁剪边不超过“横向位移 + 半厚度”。前者落在两名成员各自外扩之后的交集里，
-   * 而且有玻璃的像素离最近的成员不超过平滑合并鼓出来的距离（每合并一次最多半个融合距离），
-   * 所以再与其中一名成员外扩这段距离后的矩形相交；后者落在被切进的成员沿裁剪边的一条里。
+   * 要么离所属成员的裁剪边不超过“横向位移 + 半厚度”，要么在圆角比倒角窄的成员的拐角里。
+   * 第一种落在两名成员各自外扩之后的交集里，而且有玻璃的像素离最近的成员不超过平滑合并鼓出来的距离
+   * （每合并一次最多半个融合距离），所以再与其中一名成员外扩这段距离后的矩形相交；
+   * 第二种落在被切进的成员沿裁剪边的一条里；第三种在那名成员的矩形里。
    * 范围之外即使有求交档的像素也只是回到逐步求交。
    */
   private measure(data: Float32Array, group: number, count: number, profiles: ReachSource): void {
@@ -360,6 +362,9 @@ export class FieldCache {
       const clipTop = data[a + 13]! - anchorY
       const clipRight = data[a + 14]! - anchorX
       const clipBottom = data[a + 15]! - anchorY
+      // 圆角比倒角窄：拐角里那一带的光路要求交（见 glass_corner）。四个拐角的包围矩形通常就是整块玻璃。
+      if (memberCornered(data, a))
+        this.include(left, top, right, bottom)
       if (clipLeft > left - cut)
         this.include(left, top, Math.min(right, clipLeft + inner), bottom)
       if (clipRight < right + cut)
