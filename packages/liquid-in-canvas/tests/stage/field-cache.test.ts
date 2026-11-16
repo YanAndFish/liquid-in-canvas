@@ -516,6 +516,33 @@ describe('折射场缓存', () => {
     }
   })
 
+  it('圆角比倒角窄时单独一块也缓存，范围是整块玻璃；随滚动平移不影响缓存', () => {
+    const { run, frame, encode, fieldTextures } = setup()
+    const narrow = (dy = 0): VolumeSurface[] => {
+      const glass = surface(1, 300, 200 + dy)
+      glass.options = {
+        ...glass.options,
+        radius: [8, 8, 8, 8],
+      }
+      return [glass]
+    }
+    expect(run(SETTLE_FRAMES, narrow()).map(item => item.label)).toEqual(['volume-field:0:1'])
+    const texture = fieldTextures()[0]!
+    // 200 × 100 的玻璃 @2 至少 400 × 200，按 32 纹素取整。
+    expect(texture.width).toBeGreaterThanOrEqual(400)
+    expect(texture.height).toBeGreaterThanOrEqual(200)
+    for (const dy of [-30, 15]) {
+      expect(frame(narrow(dy)).map(item => item.label)).toEqual(['volume-field:0:1'])
+      expect(encode()).toHaveLength(0)
+    }
+    // 圆角不比倒角窄的单块玻璃仍然只查表，不建缓存。
+    const count = fieldTextures().length
+    expect(run(SETTLE_FRAMES, [
+      surface(2, 300),
+    ]).map(item => item.label)).toEqual(['volume-profile:0:1'])
+    expect(fieldTextures()).toHaveLength(count)
+  })
+
   it('一帧最多写一组缓存，其余的顺延', () => {
     const { frameAt, now, encode } = setup()
     const two = [

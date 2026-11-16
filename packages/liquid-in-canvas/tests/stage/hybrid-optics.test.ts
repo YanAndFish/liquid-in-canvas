@@ -119,6 +119,48 @@ describe('混合光路', () => {
     ]).map(item => item.label)).toEqual(['volume-hybrid:0:1'])
   })
 
+  it('圆角比倒角窄时，只有一名成员的组也用混合管线', () => {
+    const { groups, frame } = setup()
+    groups.setOptics('hybrid')
+    // 半厚度 30、倒角 24：圆角 28 不比倒角窄，查表准确。
+    expect(frame([
+      surface(1, 300),
+    ]).map(item => item.label)).toEqual(['volume-profile:0:1'])
+    // 圆角 8 比倒角窄：拐角里有一带要逐步求交。
+    const narrow = surface(1, 300)
+    narrow.options = {
+      ...narrow.options,
+      radius: [8, 8, 8, 8],
+    }
+    expect(frame([narrow]).map(item => item.label)).toEqual(['volume-hybrid:0:1'])
+    // 剖面光学与三维求交不受影响。
+    groups.setOptics('profile')
+    expect(frame([narrow]).map(item => item.label)).toEqual(['volume-profile:0:1'])
+    groups.setOptics('raymarch')
+    expect(frame([narrow]).map(item => item.label)).toEqual(['volume:0:1'])
+  })
+
+  it('混合着色器的查表档排除拐角里查表不准确的一带', () => {
+    const code = createHybridVolumeShader(1)
+    expect(code).toContain('!glass_corner(xy, m, lateral)')
+    expect(code).toContain('fn glass_corner(xy: vec2f, m: Member, lateral: f32) -> bool')
+  })
+
+  it('融合组的每名成员写入与较薄成员的接近程度', () => {
+    const { groups, frame, data } = setup()
+    groups.setOptics('hybrid')
+    const thick = surface(2, 205)
+    thick.options = { ...thick.options, refraction: 30 }
+    const thin = surface(1, 0)
+    thin.options = { ...thin.options, refraction: 12 }
+    const [item] = frame([thin, thick])
+    const members = item!.start + HEADER_FLOATS + VOLUME_GROUP_FLOATS
+    // 矩形间距 5，融合距离 32：接近程度 1 − smoothstep(5 / 32)。
+    const t = 5 / thick.fusion
+    expect(data()[members + VOLUME_MEMBER_FLOATS + 31]).toBeCloseTo(1 - t * t * (3 - 2 * t), 5)
+    expect(data()[members + 31]).toBe(0)
+  })
+
   it('降低着色分辨率时用离屏目标格式的同一种管线', () => {
     const { groups, frame, pipelines } = setup()
     groups.setOptics('hybrid')
