@@ -205,6 +205,28 @@ resetGlassDefaults()
 
 材质按主题分为 `light` 和 `dark`。主题的来源依次是：挂载时的 `theme` 选项或 `glass.setTheme()` → `<html data-theme="light|dark">` → 系统配色。
 
+## 调参面板
+
+`liquid-in-canvas/tuner` 提供一个不依赖前端框架的调参面板：可拖动的圆形玻璃入口，点击后展开面板，实时修改全局默认参数（材质、倒角截面与光路示意、融合、液体流动），“复制参数”得到的 JSON 可以直接传给 `setGlassDefaults()`。传入挂载结果时还能调整分辨率上限、自适应降级和光路，并显示实际倍率。
+
+```ts
+import { mountLiquidGlass } from 'liquid-in-canvas'
+import { createGlassTuner } from 'liquid-in-canvas/tuner'
+
+const glass = await mountLiquidGlass({ root })
+// 框架应用挂载到 root 之后再创建，面板插入 root 末尾，画布模式下随根元素一起画出来。
+const tuner = createGlassTuner({ mount: glass })
+
+tuner.setHidden(true) // 模态界面打开期间隐藏入口
+tuner.destroy()
+```
+
+- `container`：面板插入的元素，缺省为 `mount.root`，没有 `mount` 时为 `document.body`。画布模式下必须位于根元素之内。
+- `renderer`：自定义“渲染方式”一节的数据来源（`GlassTunerRenderer`）。切换渲染方式需要 `dispose()` 后重新挂载，由你实现 `setMode`；`rendererFromMount(() => currentMount, { setMode })` 可以在重新挂载后跟随新的挂载。渲染器在面板之外变化时调用 `tuner.update()`。
+- `locale`（`'zh' | 'en'`，缺省按 `<html lang>`）、`theme`（缺省与舞台一样跟随页面主题，调整的是当前主题的材质）、`layer`（展开时的玻璃层，缺省 1）、`zIndex`、`position`、`hidden`、`open`。
+- 面板自带样式表（创建时插入 `<head>`），不依赖页面的 CSS 重置；颜色来自 `--lg-tuner-text`、`--lg-tuner-line`、`--lg-tuner-accent` 等自定义属性，在 `.lg-tuner` 上覆盖即可使用页面自己的配色。
+- 入口与面板声明了同名的 `data-glass-morph`：画布渲染下面板的玻璃从入口里流出来，回退实现里用缩放过渡。
+
 ## 分辨率与性能
 
 画布分辨率和玻璃着色分辨率分开控制。页面文字画在画布上，画布倍率低于设备倍率时文字会变软；玻璃后的背景本来就经过折射和模糊，单独降低它的着色分辨率几乎看不出来。

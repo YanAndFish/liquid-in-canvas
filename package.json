@@ -15,11 +15,13 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "release": "bumpp"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^10.0.0",
     "@unocss/eslint-plugin": "^66.12.0",
+    "bumpp": "^12.3.0",
     "eslint": "^10.14.0",
     "typescript": "~6.0.3"
   }

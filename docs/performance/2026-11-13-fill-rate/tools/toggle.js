@@ -1,6 +1,6 @@
 (async () => {
   const canvas = document.querySelector('#stage')
-  const launcher = document.querySelector('.tuner-launcher')
+  const launcher = document.querySelector('.lg-tuner-launcher')
   const proto = GPUQueue.prototype
   const orig = proto.drawElementImageToTexture
   let upload = 0; let uploads = 0

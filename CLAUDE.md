@@ -27,6 +27,7 @@ pnpm typecheck      # all packages (tsc / vue-tsc -b)
 pnpm test           # vitest run in every package
 pnpm build          # library (packages/liquid-in-canvas/dist) then demo
 pnpm build:lib      # library only
+pnpm release        # bumpp: bump version, commit, tag v*, push (CI publishes to npm)
 ```
 
 CI runs `lint → typecheck → test → build` on Node 22.
@@ -43,7 +44,7 @@ pnpm --filter liquid-in-canvas exec vitest run -t "test name substring"
 
 Perf/visual harness (run from `apps/demo`): `pnpm exec vite build --config tests/perf/vite.config.ts --outDir <dir> --emptyOutDir`, copy the desired entry (`tests/perf/index.html` or `scroll.html`) to `<dir>/index.html`, then `pnpm exec vite preview --outDir <dir>`. See `docs/performance/*/README.md` for full procedures and the `summarize*.py` scripts.
 
-Publishing must use `pnpm publish`: the library's `exports` point at `src/` for in-repo use, and only pnpm swaps in `publishConfig.exports` (pointing at `dist`). The demo consumes library source directly, so no library build is needed during development.
+Releases: `pnpm release` runs bumpp (`bump.config.ts`: bumps root + library versions, commits `chore: release vX`, tags `vX`, pushes); the `v*` tag triggers `.github/workflows/release.yml` (lint/typecheck/test, `pnpm build:lib`, `pnpm pack` to apply `publishConfig`, then `npm publish <tarball> --provenance` with npm ≥ 11.5.1 so npm trusted publishing (OIDC) works, falling back to the `NPM_TOKEN` secret; `next` dist-tag for prereleases; changelogithub GitHub Release). Publishing must go through pnpm (`pnpm publish`, or `pnpm pack` then `npm publish` the tarball), never `npm publish` in the package directory: the library's `exports` point at `src/` for in-repo use, and only pnpm swaps in `publishConfig.exports` (pointing at `dist`). The demo consumes library source directly, so no library build is needed during development.
 
 ## Architecture essentials
 
@@ -52,6 +53,7 @@ Publishing must use `pnpm publish`: the library's `exports` point at `src/` for 
 - `liquid-in-canvas` (`src/index.ts`): public API. It must **not** statically import the canvas renderer; `mountLiquidGlass()` (`src/mount.ts`) dynamically imports `CanvasStage` only after capability checks pass, so fallback-only browsers never download it.
 - `liquid-in-canvas/canvas` exports `CanvasStage` directly (used by perf/visual pages only).
 - `liquid-in-canvas/motion` exports springs and reduced-motion queries.
+- `liquid-in-canvas/tuner` (`src/tuner/`) exports `createGlassTuner()`: the framework-agnostic glass tuning panel in plain DOM (own injected stylesheet, `--lg-tuner-*` color variables, `lg-tuner-*` classes). It reads/writes global defaults and, through a `GlassTunerRenderer` (or `rendererFromMount()`), resolution, optics and render mode. DOM writes are diffed because every change in canvas mode re-snapshots the page.
 - `liquid-in-canvas/vue` / `liquid-in-canvas/react` are type-only (`src/vue.d.ts`, `src/react.d.ts`, copied to `dist` by the build): they add `LiquidGlassAttributes` (`src/attributes.ts`) to the framework's native element attributes. When adding a `data-*` hook or glass option, also add it to `LiquidGlassAttributes`; `tests/types/attributes.test.ts` fails typecheck if the two drift.
 
 `mountLiquidGlass({ root, mode })` picks one of three implementations that all read the same `data-glass-*` attributes, the same global defaults (`liquid-glass/defaults.ts`, `setGlassDefaults()`), and the same theme source (`liquid-glass/theme.ts`):
@@ -86,8 +88,8 @@ Files named `*.hot.ts` contain code that runs every frame during scroll/animatio
 ### Demo app
 
 - `src/main.ts` checks capabilities and mounts with `mode: 'canvas'` (not `auto`); on unsupported/fault it shows `UnsupportedView`, whose button remounts with `svg` (library degrades to `css` if needed).
-- `composables/useRenderer.ts` (`RendererController`, provided to the tuner) switches modes/resolution while the app stays mounted, restoring scroll position and video playback after the root moves.
-- The demo imports only from `liquid-in-canvas` and `liquid-in-canvas/motion` (plus `liquid-in-canvas/vue` in tsconfig `types`) — never library internals (perf/visual pages are the exception).
+- `components/tuner/GlassTuner.vue` is a thin wrapper around the library tuner (hidden while the cart is open). `composables/useRenderer.ts` (`RendererController`, provided to that wrapper and adapted to `GlassTunerRenderer`) switches modes/resolution while the app stays mounted, restoring scroll position and video playback after the root moves.
+- The demo imports only from `liquid-in-canvas`, `liquid-in-canvas/motion` and `liquid-in-canvas/tuner` (plus `liquid-in-canvas/vue` in tsconfig `types`) — never library internals (perf/visual pages are the exception).
 - Demo-only DOM conventions outside the stage contract: `#stage-scroll` (the single scroll container; `window` doesn't scroll in canvas mode), `[data-product-image]` (shared-element transitions), `[data-bag-target]` (add-to-bag animation target).
 - UnoCSS (`apps/demo/uno.config.ts`), `@` alias → `apps/demo/src`.
 

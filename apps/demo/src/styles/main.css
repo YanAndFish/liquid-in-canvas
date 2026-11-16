@@ -257,3 +257,18 @@ button, a { -webkit-tap-highlight-color: transparent; }
   [data-liquid-glass] { background: var(--panel); }
   .showcase-frame [data-liquid-glass] { background: #22292b; }
 }
+
+/* 调参面板（liquid-in-canvas/tuner）使用商店自己的配色。 */
+.lg-tuner {
+  --lg-tuner-text: var(--text);
+  --lg-tuner-text-soft: var(--text-soft);
+  --lg-tuner-muted: var(--muted);
+  --lg-tuner-line: var(--line);
+  --lg-tuner-line-strong: var(--line-strong);
+  --lg-tuner-hover: var(--hover);
+  --lg-tuner-inset: var(--inset);
+  --lg-tuner-accent: var(--accent);
+  --lg-tuner-accent-soft: var(--accent-soft);
+  --lg-tuner-accent-line: var(--accent-line);
+  --lg-tuner-pressed-text: var(--bg);
+}

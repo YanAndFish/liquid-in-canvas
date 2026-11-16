@@ -3,6 +3,13 @@
   "type": "module",
   "version": "0.1.0",
   "description": "Liquid glass for live HTML, rendered with HTML-in-Canvas and WebGPU.",
+  "homepage": "https://github.com/YanAndFish/liquid-in-canvas#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YanAndFish/liquid-in-canvas.git",
+    "directory": "packages/liquid-in-canvas"
+  },
+  "bugs": "https://github.com/YanAndFish/liquid-in-canvas/issues",
   "keywords": [
     "liquid-glass",
     "html-in-canvas",
@@ -13,6 +20,7 @@
     ".": "./src/index.ts",
     "./canvas": "./src/canvas.ts",
     "./motion": "./src/motion.ts",
+    "./tuner": "./src/tuner.ts",
     "./vue": {
       "types": "./src/vue.d.ts"
     },
@@ -37,6 +45,10 @@
       "./motion": {
         "types": "./dist/motion.d.ts",
         "import": "./dist/motion.js"
+      },
+      "./tuner": {
+        "types": "./dist/tuner.d.ts",
+        "import": "./dist/tuner.js"
       },
       "./vue": {
         "types": "./dist/vue.d.ts"
