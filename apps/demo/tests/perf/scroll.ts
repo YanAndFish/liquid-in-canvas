@@ -64,6 +64,11 @@ const resolutionOverride = {
   ...(query.has('adaptive')
     ? { adaptive: query.get('adaptive') !== '0' }
     : {}),
+  ...(query.has('minPixelRatio')
+    ? {
+        minPixelRatio: Number(query.get('minPixelRatio')),
+      }
+    : {}),
 }
 /** `?hold=600` 在八秒里停在给定的滚动位置，用于测量某个画面持续重绘时的开销（需要视频或动画保持重绘）。 */
 const hold = query.has('hold')
@@ -83,6 +88,37 @@ let gpuPassSums: number[] = []
 let gpuPassTimes: number[][] = []
 let gpuPassInfo: PassInfo[][] = []
 let positions: number[] = []
+/** 自适应降级的变化记录：`[距测量开始的毫秒数, 画布倍率, 玻璃着色倍率, 光路]`，第一项是测量开始时的状态。 */
+let adaptation: [number, number, number, string][] = []
+let measurementStart = 0
+let lastState = ''
+/** 自页面加载起的全部变化：`[距页面加载的毫秒数, 画布倍率, 玻璃着色倍率, 光路]`，不随测量重置。 */
+const adaptationLog: [number, number, number, string][] = []
+let lastLoggedState = ''
+
+/** 记录舞台当前的实际倍率与光路，有变化时追加到两份记录里。 */
+function recordAdaptation(stage: ObservedStage, now: number): void {
+  const metrics = stage.getMetrics()
+  const state = `${metrics.dpr.toFixed(3)} ${metrics.glassDpr.toFixed(3)} ${metrics.optics}`
+  if (state !== lastLoggedState) {
+    lastLoggedState = state
+    adaptationLog.push([
+      Math.round(now),
+      +metrics.dpr.toFixed(3),
+      +metrics.glassDpr.toFixed(3),
+      metrics.optics,
+    ])
+  }
+  if (active && state !== lastState) {
+    lastState = state
+    adaptation.push([
+      Math.round(now - measurementStart),
+      +metrics.dpr.toFixed(3),
+      +metrics.glassDpr.toFixed(3),
+      metrics.optics,
+    ])
+  }
+}
 let adapterInfo: Record<string, string | boolean> | null = null
 
 applyGlassQuery(query)
@@ -144,12 +180,14 @@ prototype.draw = function (event) {
   }
   if (!active) {
     draw.call(this, event)
+    recordAdaptation(this, performance.now())
     return
   }
   const start = performance.now()
   draw.call(this, event)
   durations.push(performance.now() - start)
   paints.push(start)
+  recordAdaptation(this, start)
 }
 window.addEventListener('error', event => errors.push(event.message))
 window.addEventListener('unhandledrejection', event => errors.push(String(event.reason)))
@@ -199,6 +237,9 @@ button.onclick = () => {
   gpuPassInfo = []
   measurement++
   positions = []
+  adaptation = []
+  lastState = ''
+  measurementStart = performance.now()
   errors.length = 0
   active = true
   button.disabled = true
@@ -230,6 +271,8 @@ button.onclick = () => {
         elapsed,
         viewport: [innerWidth, innerHeight, devicePixelRatio],
         metrics: readMetrics?.() ?? null,
+        adaptation,
+        adaptationLog,
         distance,
         hold,
         maxScroll: Math.max(...positions),

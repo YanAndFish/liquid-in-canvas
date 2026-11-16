@@ -26,7 +26,7 @@ vi.mock('@/composables/useTheme', async () => {
 })
 
 /** 创建不接触 GPU 的渲染控制器，记录面板发出的调用。 */
-function createRenderer(canvasSupported = true, svgSupported = true): RendererController {
+function createRenderer(canvasSupported = true, svgSupported = true, dpr = 2): RendererController {
   const mode = ref<GlassRenderMode>(canvasSupported
     ? 'canvas'
     : svgSupported ? 'svg' : 'css')
@@ -45,7 +45,8 @@ function createRenderer(canvasSupported = true, svgSupported = true): RendererCo
       cssHeight: 800,
       pixelWidth: 2000,
       pixelHeight: 1600,
-      dpr: 2,
+      dpr,
+      targetDpr: 2,
       glassDpr: 1.5,
       optics: 'profile' as GlassOptics,
     }),
@@ -183,6 +184,32 @@ describe('渲染方式开关', () => {
     await wrapper.get('.tuner-launcher').trigger('click')
     expect(wrapper.get('[data-role="ratios"]').text()).toContain('2.00×')
     expect(wrapper.get('[data-role="ratios"]').text()).toContain('1.50×')
+  })
+
+  it('自适应降低画布倍率时在倍率旁说明原来的倍率', async () => {
+    wrapper = mountTuner()
+    await wrapper.get('.tuner-launcher').trigger('click')
+    expect(wrapper.get('[data-role="ratios"]').text()).not.toContain('已自动降低')
+    wrapper.unmount()
+    wrapper = mountTuner(createRenderer(true, true, 1.5))
+    await wrapper.get('.tuner-launcher').trigger('click')
+    const text = wrapper.get('[data-role="ratios"]').text()
+    expect(text).toContain('1.50×')
+    expect(text).toContain('已自动降低')
+    expect(text).toContain('2.00×')
+  })
+
+  it('可以禁止自适应降级降低画布倍率', async () => {
+    const renderer = createRenderer()
+    wrapper = mountTuner(renderer)
+    await wrapper.get('.tuner-launcher').trigger('click')
+    const box = wrapper.get<HTMLInputElement>('[data-field="adaptiveCanvas"]')
+    expect(box.element.checked).toBe(true)
+    await box.setValue(false)
+    expect(renderer.setResolution).toHaveBeenCalledWith({ minPixelRatio: Infinity })
+    expect(box.element.checked).toBe(false)
+    await box.setValue(true)
+    expect(renderer.setResolution).toHaveBeenCalledWith({ minPixelRatio: 1 })
   })
 
   it('不支持画布的浏览器禁用画布选项', async () => {
