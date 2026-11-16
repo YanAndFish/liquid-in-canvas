@@ -38,17 +38,28 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
-      # 必须用 pnpm publish：只有它会把 publishConfig.exports（指向 dist）换进发布的 package.json。
-      # prepublishOnly 会先构建库。带预发布号的版本（如 1.0.0-beta.1）发布到 next 标签。
-      - name: Publish to npm
+      - name: Build library
+        run: pnpm build:lib
+
+      # 用 pnpm 打包：只有它会把 publishConfig.exports（指向 dist）换进包里的 package.json。
+      # pnpm pack 不运行 prepublishOnly，所以上一步先构建。
+      - name: Pack
         working-directory: packages/liquid-in-canvas
         run: |
+          mkdir -p "$RUNNER_TEMP/package"
+          pnpm pack --pack-destination "$RUNNER_TEMP/package"
+
+      # 用 npm CLI 发布打好的包：npm 11.5.1 起支持 trusted publishing（OIDC，免令牌），
+      # 在 npm 上为这个工作流配置了 trusted publisher 时直接使用；否则使用仓库密钥 NPM_TOKEN。
+      # 带预发布号的版本（如 1.0.0-beta.1）发布到 next 标签。
+      - name: Publish to npm
+        run: |
+          npm install -g npm@^11.5.1
           tag=latest
           case "$GITHUB_REF_NAME" in *-*) tag=next ;; esac
-          pnpm publish --access public --no-git-checks --provenance --tag "$tag"
+          npm publish "$RUNNER_TEMP"/package/*.tgz --access public --provenance --tag "$tag"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
 
       - name: GitHub Release
         run: npx changelogithub

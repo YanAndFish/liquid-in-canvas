@@ -127,7 +127,7 @@ apps/demo                   the STILL demo (Vue 3), uses the library source dire
 docs                        architecture, visual references and performance records
 ```
 
-Release with `pnpm release`: [bumpp](https://github.com/antfu-collective/bumpp) bumps the root and library versions, commits, tags `v*` and pushes. The tag triggers `.github/workflows/release.yml`, which checks, builds and publishes to npm (prereleases go to the `next` dist-tag) and creates a GitHub Release. The workflow needs an `NPM_TOKEN` repository secret, or trusted publishing configured for it on npm. If you publish by hand, use `pnpm publish`, not `npm publish`: only pnpm swaps the source `exports` for the `dist` ones in `publishConfig`. See [ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing the renderer.
+Release with `pnpm release`: [bumpp](https://github.com/antfu-collective/bumpp) bumps the root and library versions, commits, tags `v*` and pushes. The tag triggers `.github/workflows/release.yml`: it checks and builds, packs with `pnpm pack`, publishes the tarball with the npm CLI and provenance (prereleases go to the `next` dist-tag), and creates a GitHub Release. The first release needs an `NPM_TOKEN` repository secret (an npm granular access token with read-write access that bypasses 2FA). Once the package exists, register `release.yml` in `YanAndFish/liquid-in-canvas` as a Trusted Publisher in the npm package settings and the token is no longer needed. If you publish by hand, use `pnpm publish` (or `npm publish` a tarball made by `pnpm pack`), never `npm publish` in the package directory: only pnpm swaps the source `exports` for the `dist` ones in `publishConfig`. See [ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing the renderer.
 
 ## Known issues
 

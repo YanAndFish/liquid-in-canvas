@@ -127,7 +127,7 @@ apps/demo                   演示商店 STILL（Vue 3），直接引用库的�
 docs                        架构、视觉依据与性能记录
 ```
 
-发布用 `pnpm release`：[bumpp](https://github.com/antfu-collective/bumpp) 修改根与库的版本号，提交、打 `v*` 标签并推送，标签触发 `.github/workflows/release.yml` 检查、构建并发布到 npm（预发布版本使用 `next` 标签），再生成 GitHub Release。工作流需要仓库密钥 `NPM_TOKEN`，或在 npm 上为这个工作流配置 trusted publishing。手动发布也必须用 `pnpm publish`，不要用 `npm publish`：只有 pnpm 会把指向源码的 `exports` 换成 `publishConfig` 里指向 `dist` 的版本。修改渲染器前请先读 [ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+发布用 `pnpm release`：[bumpp](https://github.com/antfu-collective/bumpp) 修改根与库的版本号，提交、打 `v*` 标签并推送，标签触发 `.github/workflows/release.yml`：检查、构建，用 `pnpm pack` 打包后由 npm CLI 带 provenance 发布到 npm（预发布版本使用 `next` 标签），再生成 GitHub Release。首次发布需要仓库密钥 `NPM_TOKEN`（npm 的 Granular Access Token，读写权限，允许绕过双重验证）；包发布之后可以在 npm 包设置的 Trusted Publisher 里登记 `YanAndFish/liquid-in-canvas` 的 `release.yml`，之后不再需要令牌。手动发布要用 `pnpm publish`（或先 `pnpm pack` 再 `npm publish` 打好的包），不要在包目录里直接 `npm publish`：只有 pnpm 会把指向源码的 `exports` 换成 `publishConfig` 里指向 `dist` 的版本。修改渲染器前请先读 [ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## 已知问题
 
