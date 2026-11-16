@@ -1,6 +1,6 @@
 import { wgslFloat } from '../gpu'
 import { BASE_IOR, LUT_ROWS_PER_PROFILE, LUT_SAMPLES, MAX_TRAVEL } from './optics-lut'
-import { clipCoverage, each, fuseDominance, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
+import { clipCoverage, each, fuseDominance, gradientArray, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
 
 /**
  * 剖面查表：查找表的绑定，以及按到轮廓的距离查表并着色。
@@ -112,9 +112,7 @@ ${each(count, i => `  {
   }`, 1)}
   f.stretch = min(length(f.gradient), 1.0);
   f.gradient = normalize(f.gradient + vec2f(0.0, 0.00001));
-${count > 1
-  ? `  var grads = array<vec2f, ${count}>(${Array.from({ length: count }, (_, i) => `c${i}.yz`).join(', ')});`
-  : ''}
+${gradientArray(count, 'c')}
 ${fuseDominance(count, `      f.top_slope = vec2f(0.0);
       f.bottom_slope = vec2f(0.0);
       f.optics = m.appearance;

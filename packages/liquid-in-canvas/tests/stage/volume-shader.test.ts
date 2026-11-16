@@ -34,7 +34,7 @@ describe('体积着色器', () => {
     const material = /fn glass_material\(p: vec3f\) -> Material \{([\s\S]*?)\n\}/.exec(code)?.[1] ?? ''
     for (const part of [fused, material]) {
       expect(part).toContain('fusion_order()')
-      expect(part).toContain('fusion_ramp(dist[index] + inset, width + inset)')
+      expect(part).toContain('fusion_ramp(dist[index], min(m.depth.z, reach) * (1.0 + m.extra.w))')
     }
     // 平面平滑合并的权重只用来合并距离与裁剪，不再混合厚度。
     expect(fused).not.toMatch(/b\.half_depth = mix\([^)]*, h\)/)

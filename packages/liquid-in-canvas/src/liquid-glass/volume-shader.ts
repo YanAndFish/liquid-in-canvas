@@ -57,23 +57,28 @@ ${ranks}
 }`
 }
 
+/** 各成员外法向的数组 `grads`，`prefix` 是 `glass_contour` 结果的变量名前缀。只有一名成员时不需要。 */
+export function gradientArray(count: number, prefix: string): string {
+  if (count === 1)
+    return ''
+  return `  var grads = array<vec2f, ${count}>(${Array.from({ length: count }, (_, i) => `${prefix}${i}.yz`).join(', ')});`
+}
+
 /**
- * 截面参数与外观的合并：按顶面从低到高依次并入，较厚（顶面较高）的成员在自己的平顶范围内完全主导，
+ * 截面参数与外观的合并：按顶面从低到高依次并入，较厚（顶面较高）的成员在自己的轮廓内完全主导，
  * 往外按 `fusion_ramp` 平滑地让给已经合并的较薄成员。
  *
  * 平面轮廓的平滑合并权重只适合合并距离：它在截断处只有一阶连续，又带着各成员距离场在中轴（对角线、圆心）上的折点，
  * 拿它混合厚度时，小玻璃放进大玻璃中间会在顶面压出一个带棱的浅坑，较薄成员在融合处也会把较厚成员的边缘削薄一圈。
- * 这里的权重只取决于较厚成员轮廓附近的距离，在它的平顶范围内恒为 1：大玻璃完整盖住小玻璃时形体就是大玻璃本身，
- * 中轴上的折点也不会进入截面参数。
+ * 这里的权重只取决于较厚成员轮廓外的距离，在轮廓内恒为 1：大玻璃完整盖住小玻璃（包括拖动时藏在按钮里的拖尾）时
+ * 形体就是大玻璃本身，中轴上的折点也不会进入截面参数。
  *
  * 让出的范围从轮廓往外延伸“两者较小的融合距离 × (1 + 接近程度)”：刚分进同一组时（矩形间距等于融合距离）
  * 较薄成员离较厚成员的轮廓至少一个融合距离，权重为 0，分组前后画面不跳变；贴在一起时延伸到两倍融合距离。
- * 较薄成员靠近的地方，让出的范围再从较厚成员的平顶边缘开始（往里一个倒角宽度，按较薄成员的远近平滑地缩放）：
- * 厚度相差很大时坡度分摊到较厚成员的倒角与较薄成员两边，不至于在较薄成员上立起一面陡墙。
  *
- * 要求作用域里已有各成员的平面距离 `d0`、`d1`……；`gradients` 为 true 时还要有它们的外法向数组 `grads`。
- * `first` 写入顶面最低的成员 `m` 的值；`blend` 在之后的每一步并入成员 `m`（下标 `index`），可以用权重 `ramp.x`、
- * 权重梯度长度的上界 `slope`，`gradients` 为 true 时还有权重的梯度（一阶近似）`falloff`。
+ * 要求作用域里已有各成员的平面距离 `d0`、`d1`……；`gradients` 为 true 时还要有它们的外法向数组 `grads`
+ * （见 `gradientArray`）。`first` 写入顶面最低的成员 `m` 的值；`blend` 在之后的每一步并入成员 `m`（下标 `index`），
+ * 可以用权重 `ramp.x` 与它对平面距离的导数的绝对值 `ramp.y`，`gradients` 为 true 时还有权重的梯度 `falloff`。
  */
 export function fuseDominance(count: number, first: string, blend: string, gradients = false): string {
   if (count === 1) {
@@ -86,29 +91,17 @@ ${first}
     var order = fusion_order();
     var dist = array<f32, ${count}>(${each(count, i => `d${i}`).split('\n').join(', ')});
     var reach = 0.0;
-    // 已经合并的较薄成员里离这里最近的平面距离${gradients ? '与它的外法向' : ''}。
-    var base_distance = 0.0;${gradients ? '\n    var base_gradient = vec2f(0.0);' : ''}
     {
       let m = u.members[order[0]];
 ${first}
       reach = m.depth.z;
-      base_distance = dist[order[0]];${gradients ? '\n      base_gradient = grads[order[0]];' : ''}
     }
     for (var r = 1; r < ${count}; r++) {
       let index = order[r];
       let m = u.members[index];
-      let width = min(m.depth.z, reach) * (1.0 + m.extra.w);
-      let bevel_width = min(m.profile.x, min(m.box.z, m.box.w));
-      let near = fusion_ramp(base_distance, width);
-      let inset = bevel_width * near.x;
-      let ramp = fusion_ramp(dist[index] + inset, width + inset);
-      // ∇(d + inset) 不超过 1 + 倒角宽度 × near.y；宽度随 inset 变化的部分并入同一个上界。
-      let slope = ramp.y * (1.0 + 2.0 * bevel_width * near.y);${gradients ? '\n      let falloff = -ramp.y * (grads[index] - bevel_width * near.y * base_gradient);' : ''}
+      let ramp = fusion_ramp(dist[index], min(m.depth.z, reach) * (1.0 + m.extra.w));${gradients ? '\n      let falloff = -ramp.y * grads[index];' : ''}
 ${blend}
       reach = max(reach, m.depth.z);
-      if (dist[index] < base_distance) {
-        base_distance = dist[index];${gradients ? '\n        base_gradient = grads[index];' : ''}
-      }
     }
   }`
 }
@@ -351,10 +344,10 @@ ${fuseDominance(count, `      b.middle = m.depth.y + m.depth.x;
       b.bevel = vec2f(min(m.profile.x, min(m.box.z, m.box.w)), m.profile.y);
       b.shape = m.profile.zw;`, `      let w = ramp.x;
       let bevel = vec2f(min(m.profile.x, min(m.box.z, m.box.w)), m.profile.y);
-      // mix(a, c, w) 的梯度不超过 (1 − w)·|∇a| + |c − a|·|∇w|，|∇w| 不超过 slope。
-      top_slope = (1.0 - w) * top_slope + abs(m.depth.y + 2.0 * m.depth.x - b.middle - b.half_depth) * slope;
-      bottom_slope = (1.0 - w) * bottom_slope + abs(m.depth.y - b.middle + b.half_depth) * slope;
-      bevel_slope = (1.0 - w) * bevel_slope + max(abs(bevel.x - b.bevel.x), abs(bevel.y - b.bevel.y)) * slope;
+      // mix(a, c, w) 的梯度不超过 (1 − w)·|∇a| + |c − a|·|∇w|，|∇w| 不超过 ramp.y（距离场的梯度不超过 1）。
+      top_slope = (1.0 - w) * top_slope + abs(m.depth.y + 2.0 * m.depth.x - b.middle - b.half_depth) * ramp.y;
+      bottom_slope = (1.0 - w) * bottom_slope + abs(m.depth.y - b.middle + b.half_depth) * ramp.y;
+      bevel_slope = (1.0 - w) * bevel_slope + max(abs(bevel.x - b.bevel.x), abs(bevel.y - b.bevel.y)) * ramp.y;
       b.middle = mix(b.middle, m.depth.y + m.depth.x, w);
       b.half_depth = mix(b.half_depth, m.depth.x, w);
       b.bevel = mix(b.bevel, bevel, w);
