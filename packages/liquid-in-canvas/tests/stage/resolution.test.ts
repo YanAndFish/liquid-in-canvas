@@ -171,11 +171,11 @@ describe('自适应降级', () => {
     const clock = { now: 0 }
     // 28 → 20.1 → 15.7 ms。
     const load: Load = { fixed: 10, glass: 18 }
-    const first = untilChange(adaptive, clock, load)
+    untilChange(adaptive, clock, load)
     expect(adaptive.scale).toBeCloseTo(0.75)
-    const second = untilChange(adaptive, clock, load)
+    // 忽略 10 帧，两个窗口检验见效（各 45 帧），随即降下一级，不再另等两个慢窗口。
+    expect(untilChange(adaptive, clock, load)).toBe(100)
     expect(adaptive.scale).toBeCloseTo(0.5625)
-    expect(second).toBeLessThan(first)
     expect(drive(adaptive, clock, load, 200)).toBe(0)
   })
 
@@ -406,6 +406,59 @@ describe('见效判断', () => {
     expect(adaptive.scale).toBe(1)
   })
 
+  it('只有一个窗口碰巧变快时不算见效', () => {
+    const adaptive = new AdaptiveScale()
+    const clock = { now: 0 }
+    untilChange(adaptive, clock, 33.3)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    // 忽略 10 帧后，第一个窗口快了一成（约一秒），第二个窗口又回到原样：撤回。
+    expect(run(adaptive, clock, 33.3, 10)).toBe(0)
+    expect(run(adaptive, clock, 30, 34)).toBe(0)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    untilChange(adaptive, clock, 33.3)
+    expect(adaptive.scale).toBe(1)
+  })
+
+  it('降级前的基准取两个慢窗口中较快的一个', () => {
+    const adaptive = new AdaptiveScale()
+    const clock = { now: 0 }
+    // 两个慢窗口分别是 30 ms 与 36 ms（第二个里碰巧有卡顿），基准是 30 ms。
+    expect(run(adaptive, clock, 16.7, 45)).toBe(0)
+    expect(run(adaptive, clock, 30, 34)).toBe(0)
+    expect(run(adaptive, clock, 36, 28)).toBe(1)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    // 降级后是 29 ms：比 36 ms 快了 7 ms，但与基准相比不到 5%，撤回。
+    untilChange(adaptive, clock, 29)
+    expect(adaptive.scale).toBe(1)
+  })
+
+  it('升回后过了几秒才变慢也算升回失败', () => {
+    const adaptive = new AdaptiveScale()
+    const clock = { now: 0 }
+    untilChange(adaptive, clock, 28)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    // 降级后流畅：检验通过，约四秒后升回。
+    untilChange(adaptive, clock, 16.7)
+    expect(adaptive.scale).toBe(1)
+    // 流畅五秒（滚到画面里不贵的一段）后又变慢：回到 0.75，不重新走降级阶梯。
+    expect(run(adaptive, clock, 16.7, 300)).toBe(0)
+    untilChange(adaptive, clock, 28)
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    // 下一次升回要等约八秒。
+    const unraised = clock.now
+    untilChange(adaptive, clock, 16.7)
+    expect(adaptive.scale).toBe(1)
+    expect(clock.now - unraised).toBeGreaterThan(8000)
+    // 这一次维持了二十秒：等待时间恢复为四秒。
+    expect(run(adaptive, clock, 16.7, 1300)).toBe(0)
+    untilChange(adaptive, clock, { fixed: 8, glass: 14 })
+    expect(adaptive.scale).toBeCloseTo(0.75)
+    const lowered = clock.now
+    untilChange(adaptive, clock, 16.7)
+    expect(adaptive.scale).toBe(1)
+    expect(clock.now - lowered).toBeLessThan(6500)
+  })
+
   it('无效的手段在一段时间内不再尝试，之后的间隔加倍', () => {
     const adaptive = new AdaptiveScale()
     const clock = { now: 0 }
@@ -543,6 +596,23 @@ describe('见效判断', () => {
     expect(touched).toBe(false)
     // 四秒、八秒、十六秒后各试一次，下一次要等三十二秒。
     expect(raised).toBe(3)
+  })
+
+  it('升回失败时回到升回前的档位，而不是按比例另算一级', () => {
+    const adaptive = new AdaptiveScale()
+    adaptive.setCanvasFloor(1 / 3)
+    const clock = { now: 0 }
+    // 40 ms：第一级按比例把像素数减到 44%，再限制为一半。之后 20 ms 仍偏慢，再减四分之一到 15 ms。
+    const load: Load = { canvas: 40 }
+    for (let i = 0; i < 10 && adaptive.canvasScale > 0.65; i++)
+      untilChange(adaptive, clock, load)
+    const settled = adaptive.canvasScale
+    expect(settled).toBeCloseTo(Math.sqrt(0.5 * 0.75))
+    // 升回一级（20 ms，偏慢）后撤回，正好回到原来的档位。
+    untilChange(adaptive, clock, load)
+    expect(adaptive.canvasScale).toBeGreaterThan(settled)
+    untilChange(adaptive, clock, load)
+    expect(adaptive.canvasScale).toBe(settled)
   })
 
   it('最后一小级不见效时撤回它，换下一种手段', () => {

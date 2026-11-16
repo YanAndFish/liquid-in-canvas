@@ -90,6 +90,33 @@ let positions: number[] = []
 let adaptation: [number, number, number, string][] = []
 let measurementStart = 0
 let lastState = ''
+/** 自页面加载起的全部变化：`[距页面加载的毫秒数, 画布倍率, 玻璃着色倍率, 光路]`，不随测量重置。 */
+const adaptationLog: [number, number, number, string][] = []
+let lastLoggedState = ''
+
+/** 记录舞台当前的实际倍率与光路，有变化时追加到两份记录里。 */
+function recordAdaptation(stage: ObservedStage, now: number): void {
+  const metrics = stage.getMetrics()
+  const state = `${metrics.dpr.toFixed(3)} ${metrics.glassDpr.toFixed(3)} ${metrics.optics}`
+  if (state !== lastLoggedState) {
+    lastLoggedState = state
+    adaptationLog.push([
+      Math.round(now),
+      +metrics.dpr.toFixed(3),
+      +metrics.glassDpr.toFixed(3),
+      metrics.optics,
+    ])
+  }
+  if (active && state !== lastState) {
+    lastState = state
+    adaptation.push([
+      Math.round(now - measurementStart),
+      +metrics.dpr.toFixed(3),
+      +metrics.glassDpr.toFixed(3),
+      metrics.optics,
+    ])
+  }
+}
 let adapterInfo: Record<string, string | boolean> | null = null
 
 applyGlassQuery(query)
@@ -151,23 +178,14 @@ prototype.draw = function (event) {
   }
   if (!active) {
     draw.call(this, event)
+    recordAdaptation(this, performance.now())
     return
   }
   const start = performance.now()
   draw.call(this, event)
   durations.push(performance.now() - start)
   paints.push(start)
-  const metrics = this.getMetrics()
-  const state = `${metrics.dpr.toFixed(3)} ${metrics.glassDpr.toFixed(3)} ${metrics.optics}`
-  if (state !== lastState) {
-    lastState = state
-    adaptation.push([
-      Math.round(start - measurementStart),
-      +metrics.dpr.toFixed(3),
-      +metrics.glassDpr.toFixed(3),
-      metrics.optics,
-    ])
-  }
+  recordAdaptation(this, start)
 }
 window.addEventListener('error', event => errors.push(event.message))
 window.addEventListener('unhandledrejection', event => errors.push(String(event.reason)))
@@ -252,6 +270,7 @@ button.onclick = () => {
         viewport: [innerWidth, innerHeight, devicePixelRatio],
         metrics: readMetrics?.() ?? null,
         adaptation,
+        adaptationLog,
         distance,
         hold,
         maxScroll: Math.max(...positions),

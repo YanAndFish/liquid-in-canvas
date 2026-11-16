@@ -22,6 +22,9 @@ export interface CanvasStageOptions {
   optics?: GlassOptics
 }
 
+/** 开始绘制或修改分辨率限制后这么多毫秒内不做自适应判定：页面刚开始绘制时图片解码、字体加载会拖慢几帧，不代表常态。 */
+const ADAPTIVE_WARMUP = 2000
+
 function sameSize(a: StageMetrics, b: StageMetrics): boolean {
   return a.cssWidth === b.cssWidth
     && a.cssHeight === b.cssHeight
@@ -45,6 +48,8 @@ export class CanvasStage {
   private pendingSize: StageMetrics | null = null
   private resolution: StageResolution
   private readonly adaptive = new AdaptiveScale()
+  /** 这个时间之前不把绘制间隔交给自适应降级。 */
+  private adaptiveAfter = 0
   private theme: GlassTheme | null
   private optics: GlassOptics
   private cssSize = { width: 0, height: 0 }
@@ -122,6 +127,7 @@ export class CanvasStage {
       ...resolution,
     }
     this.adaptive.reset()
+    this.adaptiveAfter = performance.now() + ADAPTIVE_WARMUP
     this.glass?.setOptics(this.effectiveOptics())
     this.requestResize()
     this.invalidate()
@@ -155,6 +161,7 @@ export class CanvasStage {
       throw new Error('CanvasStage root must be a descendant of the stage canvas')
 
     this.root = root
+    this.adaptiveAfter = performance.now() + ADAPTIVE_WARMUP
     root.setAttribute('drawable', '')
     this.canvas.addEventListener('paint', this.handlePaint)
     root.addEventListener('scroll', this.handleInvalidate, { capture: true, passive: true })
@@ -255,7 +262,8 @@ export class CanvasStage {
       return
 
     // 自适应降级可能改变光路、玻璃着色倍率或画布倍率；画布尺寸的变化与其他来源的一样，在这一帧里应用。
-    if (this.root && this.resolution.adaptive && this.adaptive.sample(performance.now())) {
+    const now = performance.now()
+    if (this.root && this.resolution.adaptive && now >= this.adaptiveAfter && this.adaptive.sample(now)) {
       this.glass?.setOptics(this.effectiveOptics())
       this.requestResize()
     }

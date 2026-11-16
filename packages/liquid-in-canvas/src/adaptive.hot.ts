@@ -32,14 +32,19 @@ const RETRY_DELAY_MAX = 64000
 const SLOW_WINDOWS = 2
 /** 调整后忽略的帧数。重新分配绘制目标本身会造成一两帧卡顿，不应计入下一次判定。 */
 const SETTLE_FRAMES = 10
-/** 升回后需要连续这么多个窗口不变慢，才认为这一级可以维持。 */
-const PROBATION_WINDOWS = 4
+/**
+ * 升回后的观察期，单位毫秒。期间再次变慢就撤回这次升级；维持这么久才把升回的等待时间恢复为初值。
+ * 要长于常见的滚动往返，否则画面里贵的一段每次滚到都会触发一次升回、撤回。
+ */
+const PROBATION_MS = 20000
 /**
  * 降一级后平均间隔至少要缩短这么多毫秒、且不少于原来的这个比例才算见效，否则撤回这一级。
  * 间隔很长时窗口之间的波动就有几毫秒，只看绝对值会把噪声当成见效。
  */
 const GAIN_MIN = 1
 const GAIN_RATIO = 0.05
+/** 降级后要连续这么多个窗口都见效才保留。帧间隔按刷新周期量化，单个窗口的均值会因几帧卡顿偏离好几毫秒。 */
+const TRIAL_WINDOWS = 2
 /** 一种手段无效后跳过它多久，单位毫秒；再次无效则加倍。 */
 const SKIP_DELAY = 30000
 const SKIP_DELAY_MAX = 240000
@@ -55,9 +60,9 @@ const MEANS = 3
  * 根据连续绘制的间隔调整渲染质量。
  *
  * 绘制由浏览器按显示器刷新驱动，间隔只能说明“是否跟得上”，不能说明还有多少余量，也不能说明慢在哪里。
- * 因此持续变慢时降一级，再用下一个窗口检验：间隔没有缩短就撤回这一级、在一段时间内跳过这种手段，
- * 直接换下一种；见效但仍然偏慢就继续降。流畅一段时间后试着升一级，如果升回后不久又变慢，
- * 就撤回这次升级并把下次尝试推后一倍。
+ * 因此持续变慢时降一级，再用随后的窗口检验：与降级前两个窗口中较快的一个相比，间隔没有缩短就撤回这一级、
+ * 在一段时间内跳过这种手段，直接换下一种；见效但仍然偏慢就继续降。
+ * 流畅一段时间后试着升一级，如果升回后不久又变慢，就回到升回前的状态并把下次尝试推后一倍。
  *
  * 手段按损失从小到大排列：光路不是剖面查表时先改用查表（只有融合连接处与裁剪边变成近似，清晰度不变）；
  * 然后逐级降低玻璃着色倍率（所有玻璃的轮廓与高光变软）；最后逐级降低画布倍率（整页文字变软，
@@ -81,18 +86,25 @@ export class AdaptiveScale {
   private count = 0
   private settle = 0
   private slowWindows = 0
+  /** 连续变慢的各窗口里最小的均值，降级时作为基准。偶尔一个窗口里有卡顿，不应抬高基准。 */
+  private slowMin = Infinity
   private retryDelay = RETRY_DELAY
   private fastSince = 0
-  /** 升回后剩余的观察窗口数，大于零时再次变慢视为升回失败。 */
-  private probation = 0
-  /** 最近一次升回的手段，升回失败时撤回它。 */
+  /** 观察期内最近一次升回的手段，升回失败时撤回它；观察期结束后为 `NONE`。 */
   private raised = NONE
+  /** 升回前的系数，升回失败时直接恢复。 */
+  private raisedFrom = 1
+  /** 最近一次升回的时间。 */
+  private raisedAt = 0
   /** 正在检验是否见效的手段。 */
   private trial = NONE
   /** 这一级生效前的平均间隔。 */
   private trialBefore = 0
   /** 这一级生效前的系数，撤回时恢复。 */
   private trialPrevious = 1
+  /** 这一级已经通过检验的窗口数与其中最小的均值。 */
+  private trialWindows = 0
+  private trialMin = Infinity
   /** 各手段在这个时间之前不再尝试。 */
   private readonly skipUntil = new Float64Array(MEANS)
   private readonly skipDelay = new Float64Array(MEANS).fill(SKIP_DELAY)
@@ -107,9 +119,9 @@ export class AdaptiveScale {
     this.count = 0
     this.settle = 0
     this.slowWindows = 0
+    this.slowMin = Infinity
     this.retryDelay = RETRY_DELAY
     this.fastSince = 0
-    this.probation = 0
     this.raised = NONE
     this.trial = NONE
     this.skipUntil.fill(0)
@@ -143,6 +155,7 @@ export class AdaptiveScale {
       this.total = 0
       this.count = 0
       this.slowWindows = 0
+      this.slowMin = Infinity
       this.fastSince = 0
       return false
     }
@@ -158,56 +171,67 @@ export class AdaptiveScale {
     this.total = 0
     this.count = 0
 
+    // 升回后维持了一段时间：这一级站稳了，之后再变慢按新的瓶颈处理。
+    if (this.raised !== NONE && now - this.raisedAt >= PROBATION_MS) {
+      this.raised = NONE
+      this.retryDelay = RETRY_DELAY
+    }
+
     const trial = this.trial
     if (trial !== NONE) {
-      this.trial = NONE
-      if (this.trialBefore - mean < Math.max(GAIN_MIN, this.trialBefore * GAIN_RATIO)) {
+      const before = this.trialBefore
+      if (before - mean < Math.max(GAIN_MIN, before * GAIN_RATIO)) {
         // 没有见效：撤回这一级，暂时跳过这种手段；仍然偏慢时直接换下一种，基准仍是这一级之前的间隔。
+        this.trial = NONE
         this.restore(trial)
         this.skipUntil[trial] = now + this.skipDelay[trial]!
         this.skipDelay[trial] = Math.min(this.skipDelay[trial]! * 2, SKIP_DELAY_MAX)
         if (mean > SLOW_INTERVAL)
-          this.lower(this.next(now), this.trialBefore)
+          this.lower(this.next(now), before)
         return true
       }
+      this.trialMin = Math.min(this.trialMin, mean)
+      if (++this.trialWindows < TRIAL_WINDOWS)
+        return false
+      this.trial = NONE
       this.skipDelay[trial] = SKIP_DELAY
-      // 见效但仍然偏慢：不必再等两个窗口，接着降。
-      if (mean > SLOW_INTERVAL)
-        return this.lower(this.next(now), mean)
+      // 见效但仍然偏慢：不必再等两个窗口，以检验期间较快的窗口为基准接着降。
+      if (this.trialMin > SLOW_INTERVAL)
+        return this.lower(this.next(now), this.trialMin)
     }
 
     if (mean > SLOW_INTERVAL) {
       this.fastSince = 0
+      this.slowMin = Math.min(this.slowMin, mean)
       if (++this.slowWindows < SLOW_WINDOWS)
         return false
+      const before = this.slowMin
       this.slowWindows = 0
-      let means = NONE
-      if (this.probation > 0) {
-        // 升回后不久又变慢：推迟下一次尝试，并撤回刚升的那一级。
+      this.slowMin = Infinity
+      if (this.raised !== NONE) {
+        // 升回后不久又变慢：推迟下一次尝试，直接回到升回前的状态。那一级之前检验过，不必再检验。
         this.retryDelay = Math.min(this.retryDelay * 2, RETRY_DELAY_MAX)
-        if (this.available(this.raised))
-          means = this.raised
+        if (this.unraise())
+          return true
       }
-      this.probation = 0
-      if (means === NONE)
-        means = this.next(now)
-      return this.lower(means, mean)
+      return this.lower(this.next(now), before)
     }
     this.slowWindows = 0
-    if (this.probation > 0 && --this.probation === 0)
-      this.retryDelay = RETRY_DELAY
+    this.slowMin = Infinity
     if (mean < FAST_INTERVAL && (this.canvasScale < 1 || this.scale < 1 || this.relaxed)) {
       this.fastSince ||= now
       if (now - this.fastSince < this.retryDelay)
         return false
       this.fastSince = 0
-      this.probation = PROBATION_WINDOWS
+      this.raisedAt = now
       this.settle = SETTLE_FRAMES
       if (this.canvasScale < 1) {
+        this.raisedFrom = this.canvasScale
         this.canvasScale = snap(Math.min(1, this.canvasScale / CANVAS_STEP), CANVAS_STEP)
         this.raised = CANVAS
       }
       else if (this.scale < 1) {
+        this.raisedFrom = this.scale
         this.scale = snap(Math.min(1, this.scale / STEP), STEP)
         this.raised = GLASS
       }
@@ -219,6 +243,29 @@ export class AdaptiveScale {
     }
     this.fastSince = 0
     return false
+  }
+
+  /** 撤回最近一次升回。升回的手段已经失效（例如光路改为不能降级）时返回 false。 */
+  private unraise(): boolean {
+    const raised = this.raised
+    this.raised = NONE
+    if (raised === OPTICS) {
+      if (!this.relaxable || this.relaxed)
+        return false
+      this.relaxed = true
+    }
+    else if (raised === GLASS) {
+      this.scale = Math.min(this.scale, this.raisedFrom)
+    }
+    else if (raised === CANVAS) {
+      this.canvasScale = Math.min(this.canvasScale, Math.max(this.canvasFloor, this.raisedFrom))
+    }
+    else {
+      return false
+    }
+    this.settle = SETTLE_FRAMES
+    this.fastSince = 0
+    return true
   }
 
   /** 这种手段是否还有可降的一级。 */
@@ -259,8 +306,11 @@ export class AdaptiveScale {
     }
     this.trial = means
     this.trialBefore = before
+    this.trialWindows = 0
+    this.trialMin = Infinity
     this.settle = SETTLE_FRAMES
     this.slowWindows = 0
+    this.slowMin = Infinity
     this.fastSince = 0
     return true
   }
