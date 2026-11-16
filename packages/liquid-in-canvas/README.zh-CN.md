@@ -216,8 +216,8 @@ await mountLiquidGlass({
     maxPixelRatio: 3, // 画布倍率上限，决定文字清晰度，缺省 3
     maxPixels: Infinity, // 画布像素总数上限，缺省不限
     maxGlassPixelRatio: 2, // 玻璃着色倍率上限，缺省 2
-    adaptive: true, // 持续掉帧时自动降级（剖面光学 → 玻璃着色倍率 → 画布倍率），流畅后升回，缺省开启
-    minPixelRatio: 1, // 自适应降级可以把画布倍率降到的下限，缺省 1；Infinity 表示不降低画布倍率
+    adaptive: true, // 持续掉帧时自动降级（剖面光学 → 玻璃着色倍率），流畅后升回，缺省开启
+    minPixelRatio: Infinity, // 允许自适应降级把画布倍率降到的下限；缺省 Infinity，不降低，文字不变软
   },
 })
 
@@ -225,9 +225,9 @@ glass.stage?.setResolution({ maxGlassPixelRatio: 1.5 })
 glass.stage?.getMetrics() // { dpr: 画布实际倍率, targetDpr: 降级前的画布倍率, glassDpr: 玻璃实际着色倍率, … }
 ```
 
-- `adaptive` 按损失从小到大降级：`optics` 是 `hybrid` 或 `raymarch` 时第一级先改用 `profile`（只有融合连接处与裁剪边变成近似），之后调整玻璃着色倍率（每级 ×0.75，最低到一半），最后才降低画布倍率（每级像素数 ×0.75，慢得多时一级最多减半，文字随之变软）；升回时顺序相反。每降一级都会检验：绘制间隔没有缩短 1 ms 且 5% 以上就撤回这一级，并在一段时间内跳过这种手段，所以不会为了没有效果的降级损失画质。实际使用的光路与倍率见 `stage.getMetrics()` 的 `optics`、`glassDpr`、`dpr`。
-- 整页快照、页面绘制和模糊的开销与画布像素数成正比，不受玻璃着色倍率影响。画布很大时（例如 5K 屏幕上的全屏窗口）浏览器把整页画进画布本身就跟不上，只有降低画布分辨率有效：自适应降级会在其余手段无效后自动降低，下限是 `minPixelRatio`（缺省 1，实际不低于 1 与设备倍率中的较小值）。不希望文字自动变软时把 `minPixelRatio` 设为 `Infinity`，改用 `maxPixelRatio` 或 `maxPixels` 自己决定画布分辨率。画布倍率不会低于 1。
-- `optics` 选择光路计算方式（`mountLiquidGlass`、`CanvasStage` 的选项，或 `stage.setOptics()`）：`profile`（缺省）按到轮廓的距离查预先沿截面追踪的光路；`raymarch` 在三维距离场里逐步求交。单块玻璃上两者结果一致，`profile` 在融合连接处与小圆角拐角是近似，GPU 开销约为 `raymarch` 的三分之一。`hybrid` 逐像素混合两者：只有一块玻璃的组查表，融合的组与被 `data-glass-clip` 切开的玻璃里只有连接处与裁剪边附近求交，静止的画面在这些地方与 `raymarch` 一致。
+- `adaptive` 按损失从小到大降级：`optics` 是 `hybrid` 或 `raymarch` 时第一级先改用 `profile`（只有融合连接处与裁剪边变成近似），之后调整玻璃着色倍率（每级 ×0.75，最低到一半）；设置了 `minPixelRatio` 时最后才降低画布倍率（每级像素数 ×0.75，慢得多时一级最多减半，文字随之变软）。升回时顺序相反。每降一级都会检验：绘制间隔没有缩短 1 ms 且 5% 以上就撤回这一级，并在一段时间内跳过这种手段，所以不会为了没有效果的降级损失画质。实际使用的光路与倍率见 `stage.getMetrics()` 的 `optics`、`glassDpr`、`dpr`。
+- 整页快照、页面绘制和模糊的开销与画布像素数成正比，不受玻璃着色倍率影响。画布很大时（例如 5K 屏幕上的全屏窗口）浏览器把整页画进画布本身就跟不上，只有降低画布分辨率有效。自适应降级缺省不这样做，文字清晰度是底线；能接受文字变软时把 `minPixelRatio` 设为较小的值（例如 1，实际不低于 1 与设备倍率中的较小值），或用 `maxPixelRatio`、`maxPixels` 自己决定画布分辨率。画布倍率不会低于 1。
+- `optics` 选择光路计算方式（`mountLiquidGlass`、`CanvasStage` 的选项，或 `stage.setOptics()`）：`profile` 按到轮廓的距离查预先沿截面追踪的光路；`raymarch` 在三维距离场里逐步求交。单块玻璃上两者结果一致，`profile` 在融合连接处与小圆角拐角是近似，GPU 开销约为 `raymarch` 的三分之一。`hybrid`（缺省）逐像素混合两者：只有一块玻璃的组查表，融合的组与被 `data-glass-clip` 切开的玻璃里只有连接处与裁剪边附近求交，静止的画面在这些地方与 `raymarch` 一致。
 - `fieldCache`（`mountLiquidGlass`、`CanvasStage` 的选项，或 `stage.setFieldCache()`，缺省 `true`）只对 `hybrid` 有意义：连接处的求交结果（折射场）在几何静止约 0.1 秒后算一次并缓存，之后每帧读回、照常取样背景，视频与页面滚动不受影响；成员相对运动、按压或液体迁移期间这一组改用查表，停下后再求交并淡入。缓存按着色倍率分配，总量不超过 48 MB。设为 `false` 时连接处每帧逐步求交，运动中也与 `raymarch` 一致，开销随连接处的面积变化。
 - 上层玻璃盖在下层玻璃上时，上层取样一张画好下层玻璃的背景（最多三级），只在需要的范围内额外合成与模糊；互不交叠时没有额外开销。
 - 同层玻璃靠近或重叠时会并入同一个融合组，组内每个像素都要对所有成员求距离。大面积的面板请用 `data-glass-layer` 放到单独的层，避免和它下方的控件融合。

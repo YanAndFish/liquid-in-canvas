@@ -23,7 +23,7 @@ export interface LiquidGlassLayerOptions {
   getBackdrop: () => SampledTexture | null
   /** 固定主题；缺省时读取 `<html data-theme>`，再退回系统配色。 */
   theme?: GlassTheme | null
-  /** 光路计算方式，缺省为 `profile`。 */
+  /** 光路计算方式，缺省为 `hybrid`。 */
   optics?: GlassOptics
   /** 混合光路是否使用折射场缓存，缺省为 true。 */
   fieldCache?: boolean
@@ -122,7 +122,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.themeSource = new GlassThemeSource(() => this.refreshAll(), options.theme ?? null)
     this.onInvalidate = options.onInvalidate
     this.onFault = options.onFault
-    this.optics = options.optics ?? 'profile'
+    this.optics = options.optics ?? 'hybrid'
     this.fieldCache = options.fieldCache ?? true
   }
 
