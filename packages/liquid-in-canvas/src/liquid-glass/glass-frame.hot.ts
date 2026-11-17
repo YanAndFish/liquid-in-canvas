@@ -939,7 +939,8 @@ export class GlassFrame {
       return
     }
     const options = surface.options
-    flow.configure(options.morphStretch, options.morphBounce, options.morphWobble, morphFusion(options.fusion, 0))
+    const radius = options.radius
+    flow.configure(options.morphStretch, options.morphBounce, options.morphWobble, morphFusion(options.fusion, 0), Math.max(radius[0], radius[1], radius[2], radius[3]))
     if (flow.retarget(surface.layout)) {
       const layout = surface.layout
       if (resting && surface.reveal >= 1 && options.materialize && layout.width * layout.height > volume.width * volume.height * GROW_RATIO)

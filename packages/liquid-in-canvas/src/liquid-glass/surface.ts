@@ -219,6 +219,7 @@ export function createSurface(init: SurfaceInit): GlassSurface {
       host: init.host?.id ?? null,
       link: null,
       linkFusion: 0,
+      round: true,
     },
     hasTail: false,
     under: [],

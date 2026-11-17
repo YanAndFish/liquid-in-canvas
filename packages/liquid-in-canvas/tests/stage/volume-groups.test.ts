@@ -173,4 +173,20 @@ describe('三维玻璃组', () => {
     expect(data[member + 26]).toBe(2.75)
     expect(data[member + 27]).toBe(1)
   })
+  it('液体尾巴取满圆角：方形玻璃拖出的是圆形液滴', () => {
+    const planner = new VolumePlanner()
+    const tail = {
+      ...surface(1, 0, { 'data-glass-radius': '28' }),
+      width: 120,
+      height: 80,
+      round: true,
+    }
+    planner.build([tail], 1, 1000, 600)
+    const data = new Float32Array(HEADER_FLOATS + VOLUME_GROUP_FLOATS + VOLUME_MEMBER_FLOATS)
+    writeVolumeGroup(data, 0, planner.plans[0]!)
+    const member = VOLUME_GROUP_FLOATS
+    expect([
+      ...data.slice(member + 4, member + 8),
+    ]).toEqual([40, 40, 40, 40])
+  })
 })

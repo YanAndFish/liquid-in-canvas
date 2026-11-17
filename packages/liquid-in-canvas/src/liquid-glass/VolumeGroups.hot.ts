@@ -205,10 +205,19 @@ export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGr
     const radius = options.radius
     const clip = member.clip
     writePressedBox(data, offset, member)
-    data[offset + 4] = radius[0]
-    data[offset + 5] = radius[1]
-    data[offset + 6] = radius[2]
-    data[offset + 7] = radius[3]
+    if (member.round) {
+      const round = Math.min(data[offset + 2]!, data[offset + 3]!)
+      data[offset + 4] = round
+      data[offset + 5] = round
+      data[offset + 6] = round
+      data[offset + 7] = round
+    }
+    else {
+      data[offset + 4] = radius[0]
+      data[offset + 5] = radius[1]
+      data[offset + 6] = radius[2]
+      data[offset + 7] = radius[3]
+    }
     const halfDepth = volumeHalfDepth(member)
     const amount = settled(member)
     const tintAlpha = options.tintAlpha * amount

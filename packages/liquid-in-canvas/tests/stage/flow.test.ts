@@ -260,6 +260,42 @@ describe('液体迁移', () => {
     expect(rectOf(flow)).toEqual(corner)
   })
 
+  it('斜向移动时圆形拖尾始终贴着圆角本体，不脱成单独的液滴', () => {
+    const radius = 28
+    const join = 32
+    const flow = new LiquidFlow({
+      left: 400,
+      top: 0,
+      width: 200,
+      height: 200,
+    })
+    flow.configure(2, 0.1, 0.1, join, radius)
+    flow.retarget({
+      left: 0,
+      top: 400,
+      width: 200,
+      height: 200,
+    })
+    const tail = { left: 0, top: 0, width: 0, height: 0 }
+    let widest = -Infinity
+    let seen = 0
+    for (let frame = 0; frame < 240 && flow.active; frame++) {
+      flow.advance(1 / 120)
+      if (!flow.tail(tail))
+        continue
+      seen++
+      const body = rectOf(flow)
+      const corner = Math.min(radius, body.width / 2, body.height / 2)
+      const qx = Math.abs(tail.left + tail.width / 2 - body.left - body.width / 2) - body.width / 2 + corner
+      const qy = Math.abs(tail.top + tail.height / 2 - body.top - body.height / 2) - body.height / 2 + corner
+      const outside = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - corner
+      widest = Math.max(widest, outside - Math.min(tail.width, tail.height) / 2)
+    }
+    expect(seen).toBeGreaterThan(10)
+    expect(widest).toBeLessThan(join * 0.2 + 2)
+    expect(widest).toBeGreaterThan(-40)
+  })
+
   it('跳到别处时拖尾留在出发点附近，被本体拉走后并回本体', () => {
     const flow = new LiquidFlow(FROM)
     flow.configure(1, 0.1, 0.1)
