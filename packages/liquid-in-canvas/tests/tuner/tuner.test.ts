@@ -123,11 +123,12 @@ describe('调参面板', () => {
     expect(document.activeElement).toBe(launcher())
   })
 
-  it('面板与入口共用液体迁移名，展开时入口移到面板所在的层', () => {
+  it('面板从入口分出、关闭时流回入口，展开时入口移到面板所在的层', () => {
     expect(launcher().dataset.glassLayer).toBe('0')
     tuner.open()
     const panel = $('[role="dialog"]')
-    expect(panel.dataset.glassMorph).toBe(launcher().dataset.glassMorph)
+    expect(panel.dataset.glassMorphFrom).toBe(launcher().dataset.glassMorph)
+    expect(panel.dataset.glassMorph).not.toBe(launcher().dataset.glassMorph)
     expect(panel.dataset.glassLayer).toBe('1')
     expect(launcher().dataset.glassLayer).toBe('1')
   })

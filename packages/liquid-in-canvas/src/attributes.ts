@@ -86,6 +86,19 @@ export interface LiquidGlassAttributes {
    * 0.3.0 起 `true` / `false` 才是开关，更早的版本把它们当作迁移的名字。
    */
   'data-glass-morph'?: string | boolean | null
+  /**
+   * 出现时从哪块玻璃里分出来，只对画布渲染有效。值是空格分隔的 `data-glass-morph` 名字，按顺序取第一块在场的；
+   * 名字先在最近的 `data-glass-scope` 里查找，再到外层。没有声明时取 `data-glass-morph-to`；两者都没有时只做同名交接。
+   * 声明后即使没有 `data-glass-morph` 也打开液体迁移。不从 `data-glass-scope` 继承。
+   * @since 0.5.0
+   */
+  'data-glass-morph-from'?: string | null
+  /**
+   * 消失时并入哪块玻璃，只对画布渲染有效。值的写法与查找规则同 `data-glass-morph-from`；没有声明时取 `data-glass-morph-from`。
+   * 不从 `data-glass-scope` 继承。
+   * @since 0.5.0
+   */
+  'data-glass-morph-to'?: string | null
   /** 液体迁移的拉伸，0–2。缺省来自全局默认参数。 */
   'data-glass-morph-stretch'?: GlassNumberAttribute | null
   /** 液体迁移的回弹，0–1。缺省来自全局默认参数。 */

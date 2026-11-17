@@ -30,6 +30,8 @@ export function rampedFusion(limit: number, distance: number): number {
   return Math.min(limit, Math.max(0.5, distance * FUSION_PER_DISTANCE))
 }
 const TAIL_VISIBLE = 0.75
+const JUMP_TAIL = 0.25
+const TAIL_JOIN = 0.2
 const MOVE_EPSILON = 0.5
 const REST_DISTANCE = 0.05
 const REST_SPEED = 0.5
@@ -114,6 +116,8 @@ export class LiquidFlow {
   private stretch = 1
   private bounce = 1 / 3
   private wobble = 0
+  private join = 0
+  private span = 0
 
   constructor(start: FlowRect) {
     this.left = new EdgeSpring(start.left)
@@ -136,7 +140,14 @@ export class LiquidFlow {
         || Math.abs(this.restHeight.target - this.restHeight.value) >= MOVE_EPSILON)
   }
 
-  configure(stretch: number, bounce: number, wobble: number): void {
+  progress(): number {
+    if (!this.moving || this.span <= 0)
+      return 1
+    return Math.min(1, Math.max(0, 1 - this.remaining() / this.span))
+  }
+
+  configure(stretch: number, bounce: number, wobble: number, join = 0): void {
+    this.join = Math.max(0, join)
     this.stretch = Math.max(0, stretch)
     this.bounce = Math.min(1, Math.max(0, bounce))
     this.wobble = Math.min(1, Math.max(0, wobble))
@@ -164,19 +175,29 @@ export class LiquidFlow {
       : 0
     const leadingDamping = 1 - (1 - LEADING_BOUNCY_DAMPING) * this.bounce
     const trailingDamping = 1 - (1 - TRAILING_BOUNCY_DAMPING) * this.bounce
-    const leading = tracking
+    const alongX = this.directionX * this.directionX
+    const alongY = this.directionY * this.directionY
+    const stretchX = this.stretch * Math.max(0, alongX - alongY)
+    const stretchY = this.stretch * Math.max(0, alongY - alongX)
+    aim(this.left, this.right, target.left, right, tracking
       ? TRACK_STIFFNESS
-      : BASE_STIFFNESS * LEADING_RATIO ** this.stretch
-    const trailing = tracking
+      : BASE_STIFFNESS * LEADING_RATIO ** stretchX, tracking
       ? TRACK_STIFFNESS
-      : BASE_STIFFNESS * TRAILING_RATIO ** this.stretch
-    aim(this.left, this.right, target.left, right, leading, trailing, leadingDamping, tracking ? leadingDamping : trailingDamping)
-    aim(this.top, this.bottom, target.top, bottom, leading, trailing, leadingDamping, tracking ? leadingDamping : trailingDamping)
+      : BASE_STIFFNESS * TRAILING_RATIO ** stretchX, leadingDamping, tracking ? leadingDamping : trailingDamping)
+    aim(this.top, this.bottom, target.top, bottom, tracking
+      ? TRACK_STIFFNESS
+      : BASE_STIFFNESS * LEADING_RATIO ** stretchY, tracking
+      ? TRACK_STIFFNESS
+      : BASE_STIFFNESS * TRAILING_RATIO ** stretchY, leadingDamping, tracking ? leadingDamping : trailingDamping)
     this.restWidth.aim(BASE_STIFFNESS, leadingDamping, target.width)
     this.restHeight.aim(BASE_STIFFNESS, leadingDamping, target.height)
+    if (!tracking && this.departs(target) && shift / 2 >= JUMP_TAIL * Math.min(target.width, target.height, this.restWidth.value, this.restHeight.value))
+      this.tailFree = true
     this.retargeted = true
     this.sinceRetarget = 0
     this.moving = true
+    if (!tracking)
+      this.span = this.remaining()
     return true
   }
 
@@ -200,6 +221,7 @@ export class LiquidFlow {
     this.retargeted = false
     this.tracking = false
     this.moving = false
+    this.span = 0
   }
 
   advance(seconds: number): boolean {
@@ -291,14 +313,18 @@ export class LiquidFlow {
     const centerX = (this.left.value + this.right.value) / 2
     const centerY = (this.top.value + this.bottom.value) / 2
     const distance = Math.hypot(this.tailX - centerX, this.tailY - centerY)
-    const reach = this.tailReach()
-    if (!this.moving || reach <= 0 || distance < TAIL_VISIBLE)
+    if (!this.moving || this.stretch <= 0 || distance < TAIL_VISIBLE)
       return false
-    const size = Math.max(1, Math.min(this.restWidth.value, this.restHeight.value) * TAIL_SIZE * (1 - TAIL_TAPER * Math.min(1, distance / reach)))
-    out.left = this.tailX - size / 2
-    out.top = this.tailY - size / 2
-    out.width = size
-    out.height = size
+    const reach = this.tailReach((this.tailX - centerX) / distance, (this.tailY - centerY) / distance)
+    if (reach <= 0)
+      return false
+    const scale = TAIL_SIZE * (1 - TAIL_TAPER * Math.min(1, distance / reach))
+    const width = Math.max(1, this.restWidth.value * scale)
+    const height = Math.max(1, this.restHeight.value * scale)
+    out.left = this.tailX - width / 2
+    out.top = this.tailY - height / 2
+    out.width = width
+    out.height = height
     return true
   }
 
@@ -307,8 +333,27 @@ export class LiquidFlow {
     return rampedFusion(limit, distance)
   }
 
-  private tailReach(): number {
-    return this.stretch * TAIL_REACH * Math.min(this.restWidth.value, this.restHeight.value)
+  private departs(target: FlowRect): boolean {
+    const x = (this.left.value + this.right.value) / 2
+    const y = (this.top.value + this.bottom.value) / 2
+    return x < target.left || x > target.left + target.width || y < target.top || y > target.top + target.height
+  }
+
+  private remaining(): number {
+    return Math.max(
+      Math.abs(this.left.target - this.left.value),
+      Math.abs(this.top.target - this.top.value),
+      Math.abs(this.right.target - this.right.value),
+      Math.abs(this.bottom.target - this.bottom.value),
+    )
+  }
+
+  private tailReach(unitX: number, unitY: number): number {
+    const width = this.restWidth.value
+    const height = this.restHeight.value
+    const across = (Math.abs(unitX) * width + Math.abs(unitY) * height) / 2
+    const joined = across * (1 + TAIL_SIZE * (1 - TAIL_TAPER)) + this.join * TAIL_JOIN
+    return Math.min(this.stretch * TAIL_REACH * Math.min(width, height), joined)
   }
 
   private stepTail(step: number, damping: number): void {
@@ -328,11 +373,13 @@ export class LiquidFlow {
     const offsetX = this.tailX - centerX
     const offsetY = this.tailY - centerY
     const distance = Math.hypot(offsetX, offsetY)
-    const reach = this.tailReach()
-    if (distance <= reach || distance === 0)
+    if (distance === 0)
       return
     const unitX = offsetX / distance
     const unitY = offsetY / distance
+    const reach = this.tailReach(unitX, unitY)
+    if (distance <= reach)
+      return
     this.tailX = centerX + unitX * reach
     this.tailY = centerY + unitY * reach
     const outward = this.tailVelocityX * unitX + this.tailVelocityY * unitY

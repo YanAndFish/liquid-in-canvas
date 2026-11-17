@@ -131,8 +131,8 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
   fusion: 32,
   elevation: 16,
   morphStretch: 1,
-  morphBounce: 0.33,
-  morphWobble: 0.35,
+  morphBounce: 0.1,
+  morphWobble: 0.1,
   materials: {
     regular: {
       dark: {

@@ -324,7 +324,7 @@ describe('玻璃内容纹理', () => {
     })
   }
 
-  it('同名玻璃仍在页面上时，新玻璃从它里面流出来；移除后体积流回它并被吸收', async () => {
+  it('data-glass-morph-from 的玻璃从来源靠近自己的一侧分出来，连接随迁移断开；移除后流回来源并被吸收', async () => {
     const { layer, element, anchor, sync } = setup()
     const advance = (seconds: number) => (layer as unknown as { frame: { advanceMotion: (s: number, p: null, r: boolean) => boolean } })
       .frame
@@ -340,40 +340,230 @@ describe('玻璃内容纹理', () => {
       const source = layer.surfaces.find(surface => surface.element === button)!
 
       panel.dataset.liquidGlass = ''
-      panel.dataset.glassMorph = 'pop'
+      panel.dataset.glassMorph = 'pop-panel'
+      panel.dataset.glassMorphFrom = 'pop'
       await flush()
       sync()
       const grown = layer.surfaces.find(surface => surface.element === panel)!
       expect(grown.partner).toBe(source)
       expect(grown.flow?.active).toBe(true)
-      expect(grown.volume.left).toBeLessThan(110)
-      expect(grown.volume.fusion).toBeLessThan(grown.options.fusion)
+      expect(grown.volume.left).toBeGreaterThanOrEqual(source.volume.left)
+      expect(grown.volume.left + grown.volume.width).toBeLessThanOrEqual(source.volume.left + source.volume.width + 0.5)
+      expect(grown.volume.width).toBeLessThan(15)
+      expect(grown.volume.left + grown.volume.width).toBeCloseTo(source.volume.left + source.volume.width, 0)
+      expect(grown.volume.link).toBe(source.volume)
+      expect(grown.volume.linkFusion).toBeGreaterThan(0)
+      expect(grown.volume.fusion).toBe(grown.options.fusion)
       expect(grown.materialize.value).toBe(1)
       expect(grown.revealGrowing).toBe(true)
-      expect(grown.revealX).toBeCloseTo(136, 0)
-      expect(grown.revealClip[0]).toBeCloseTo(106, 0)
-      sync()
-      expect(source.handedOver).toBe(false)
+      expect(layer.ghosts).toHaveLength(0)
+      let linked = 0
       for (let frame = 0; frame < 120; frame++) {
         advance(1 / 60)
         sync()
+        linked = grown.volume.link ? frame : linked
       }
+      expect(linked).toBeGreaterThan(2)
       expect(grown.flow?.active).toBe(false)
       expect(grown.partner).toBeNull()
+      expect(grown.volume.link).toBeNull()
       expect(grown.volume.fusion).toBe(grown.options.fusion)
 
       delete panel.dataset.liquidGlass
       await flush()
+      sync()
       expect(layer.ghosts).toHaveLength(1)
       expect(layer.ghosts[0]!.target).toBe(source)
-      sync()
+      expect(layer.ghosts[0]!.partner).toBeNull()
       const ghost = layer.ghosts[0]!.volume
       expect(ghost.left).toBeGreaterThan(150)
+      expect(ghost.link).toBe(source.volume)
       for (let frame = 0; frame < 240 && layer.ghosts.length > 0; frame++) {
         advance(1 / 60)
         sync()
       }
       expect(layer.ghosts).toHaveLength(0)
+    }
+    finally { layer.dispose() }
+  })
+
+  it('首次显现期间与图片、字体加载引起的布局变化直接到位，应用自己的改动仍然流动', async () => {
+    const { layer, element, sync } = setup()
+    const frame = (layer as unknown as { frame: { advanceMotion: (s: number, p: null, r: boolean) => boolean } }).frame
+    const settle = () => {
+      for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++)
+        sync()
+    }
+    const place = (top: number) => {
+      Object.defineProperty(element, 'offsetTop', { value: top, configurable: true })
+      element.getClientRects = () => [
+        new DOMRect(100, 100 + top, 160, 60),
+      ] as unknown as DOMRectList
+    }
+    try {
+      element.dataset.glassMorph = ''
+      await flush()
+      sync()
+      const surface = layer.surfaces[0]!
+      frame.advanceMotion(1 / 60, null, false)
+      sync()
+      expect(surface.reveal).toBeLessThan(1)
+      place(40)
+      sync()
+      expect(surface.flow?.active).toBe(false)
+      expect(surface.volume.top).toBe(140)
+      settle()
+      expect(surface.reveal).toBe(1)
+
+      const image = document.createElement('img')
+      element.parentElement!.append(image)
+      await flush()
+      image.dispatchEvent(new Event('load'))
+      place(90)
+      sync()
+      expect(surface.flow?.active).toBe(false)
+      expect(surface.volume.top).toBe(190)
+
+      element.parentElement!.dataset.state = 'moved'
+      await flush()
+      place(10)
+      sync()
+      expect(surface.flow?.active).toBe(true)
+    }
+    finally { layer.dispose() }
+  })
+
+  it('同名玻璃仍在页面上时不交接：新玻璃按普通玻璃出现', async () => {
+    const { layer, element, anchor, sync } = setup()
+    try {
+      const button = nestedButton(element, anchor, 6)
+      const other = nestedButton(element, anchor, 90)
+      button.dataset.liquidGlass = ''
+      button.dataset.glassMorph = 'pop'
+      await flush()
+      sync()
+      other.dataset.liquidGlass = ''
+      other.dataset.glassMorph = 'pop'
+      await flush()
+      sync()
+      const appeared = layer.surfaces.find(surface => surface.element === other)!
+      expect(appeared.partner).toBeNull()
+      expect(appeared.flow?.active).toBe(false)
+      expect(appeared.volume.left).toBe(190)
+    }
+    finally { layer.dispose() }
+  })
+
+  it('来源按列表顺序取第一块在场的，名字先在最近的作用域里查找', async () => {
+    const { layer, element, anchor, sync } = setup()
+    try {
+      const scope = document.createElement('div')
+      scope.dataset.glassScope = ''
+      element.append(scope)
+      const outer = nestedButton(element, anchor, 6)
+      const inner = nestedButton(scope, anchor, 70)
+      const target = nestedButton(scope, anchor, 140)
+      outer.dataset.liquidGlass = ''
+      outer.dataset.glassMorph = 'row'
+      inner.dataset.liquidGlass = ''
+      inner.dataset.glassMorph = 'row'
+      await flush()
+      sync()
+      const near = layer.surfaces.find(surface => surface.element === inner)!
+
+      target.dataset.liquidGlass = ''
+      target.dataset.glassMorphFrom = 'missing row'
+      await flush()
+      sync()
+      const grown = layer.surfaces.find(surface => surface.element === target)!
+      expect(grown.options.morph).toBe('')
+      expect(grown.partner).toBe(near)
+    }
+    finally { layer.dispose() }
+  })
+
+  it('移除时按 data-glass-morph-to 并入在场的玻璃；没有在场的目标时在原处退去', async () => {
+    const { layer, element, anchor, sync } = setup()
+    try {
+      const keep = nestedButton(element, anchor, 6)
+      const leave = nestedButton(element, anchor, 90)
+      keep.dataset.liquidGlass = ''
+      keep.dataset.glassMorph = 'clear'
+      leave.dataset.liquidGlass = ''
+      leave.dataset.glassMorph = 'submit'
+      leave.dataset.glassMorphTo = 'missing clear'
+      await flush()
+      sync()
+      sync()
+      const target = layer.surfaces.find(surface => surface.element === keep)!
+      leave.remove()
+      await flush()
+      sync()
+      expect(layer.ghosts).toHaveLength(1)
+      expect(layer.ghosts[0]!.target).toBe(target)
+
+      layer.ghosts.length = 0
+      keep.dataset.glassMorphTo = 'submit'
+      await flush()
+      sync()
+      sync()
+      keep.remove()
+      await flush()
+      sync()
+      expect(layer.ghosts).toHaveLength(0)
+    }
+    finally { layer.dispose() }
+  })
+
+  it('跨层分出时在新玻璃所在的层留一段连接，连接流回来源', async () => {
+    const { layer, element, anchor, sync } = setup()
+    try {
+      const button = nestedButton(element, anchor, 6)
+      button.dataset.liquidGlass = ''
+      button.dataset.glassMorph = 'trigger'
+      await flush()
+      sync()
+      sync()
+      const source = layer.surfaces.find(surface => surface.element === button)!
+      const card = document.createElement('div')
+      card.dataset.liquidGlass = ''
+      card.dataset.glassLayer = '2'
+      card.dataset.glassMorphFrom = 'trigger'
+      Object.defineProperties(card, {
+        offsetParent: {
+          get: () => anchor,
+        },
+        offsetLeft: { value: 0 },
+        offsetTop: { value: 30 },
+        offsetWidth: { value: 160 },
+        offsetHeight: { value: 30 },
+      })
+      card.getClientRects = () => [
+        new DOMRect(100, 130, 160, 30),
+      ] as unknown as DOMRectList
+      anchor.append(card)
+      await flush()
+      sync()
+      const grown = layer.surfaces.find(surface => surface.element === card)!
+      expect(grown.partner).toBe(source)
+      expect(layer.ghosts).toHaveLength(1)
+      const bridge = layer.ghosts[0]!
+      expect(bridge.target).toBe(source)
+      expect(bridge.partner).toBe(grown)
+      expect(bridge.volume.layer).toBe(2)
+      expect(bridge.volume.link).toBe(grown.volume)
+      expect(bridge.volume.options).toBe(source.options)
+    }
+    finally { layer.dispose() }
+  })
+
+  it('启动时已经在页面上的玻璃直接到位，不从来源分出', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false }))
+    const { layer, sync, element } = setup()
+    try {
+      sync()
+      expect(layer.surfaces[0]!.element).toBe(element)
+      expect(layer.surfaces[0]!.pending).toBe(false)
     }
     finally { layer.dispose() }
   })

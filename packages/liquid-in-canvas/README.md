@@ -140,10 +140,12 @@ Add `data-liquid-glass` to the element you want to render as glass. Give the ele
 | `data-glass-fusion` | Fusion distance. Set to 0 to disable fusion. | 32 |
 | `data-glass-elevation` | Distance from the bottom of the glass to the backdrop | 16 |
 | `data-glass-anchor` | Selector for the ancestor used to position the glass | `offsetParent` |
-| `data-glass-morph` | An empty value or `true` animates changes to the element's own position or size. Any other value also names the morph so elements can share it. `false` turns it off. The `true` / `false` switch requires 0.3.0+. | Off |
+| `data-glass-morph` | An empty value or `true` animates changes to the element's own position or size. Any other value also names the glass, so another element with the same name takes over its volume. `false` turns it off. The `true` / `false` switch requires 0.3.0+. | Off |
+| `data-glass-morph-from` (0.5.0+) | Which glass this one splits from when it appears: space-separated morph names, the first present one wins. Falls back to `data-glass-morph-to`. | Same as `-to` |
+| `data-glass-morph-to` (0.5.0+) | Which glass this one merges into when it disappears, written the same way. Falls back to `data-glass-morph-from`. | Same as `-from` |
 | `data-glass-morph-stretch` | Stretch during a morph, 0–2. At 0 the glass moves as a single piece. Higher values pull the front and rear farther apart and lengthen the trail. | 1 |
-| `data-glass-morph-bounce` | Bounce during a morph, 0–1. At 0 the front edge stops at the destination. | 0.33 |
-| `data-glass-morph-wobble` | Wobble during a morph, 0–1. The glass compresses on arrival, then alternates between compressing and stretching. At 0 it settles without wobbling. | 0.35 |
+| `data-glass-morph-bounce` | Bounce during a morph, 0–1. At 0 the front edge stops at the destination. | 0.1 (0.33 before 0.5.0) |
+| `data-glass-morph-wobble` | Wobble during a morph, 0–1. The glass compresses on arrival, then alternates between compressing and stretching. At 0 it settles without wobbling. | 0.1 (0.35 before 0.5.0) |
 | `data-glass-morph-content` (0.3.0+) | How the glass content behaves during a morph. `static` keeps it at the element's position and reveals it as the glass expands during a size change. `clip` keeps it in place and clips it to the volume, like `overflow: hidden`. `follow` stretches, bounces, and wobbles it with the volume. | `static` |
 | `data-glass-materialize` | Appearance and removal transition. When the glass first appears or becomes visible, it starts by bending light, then becomes frosted and briefly overshoots. When hidden or removed, it fades in place. Set to `none` or `false` (0.3.0+) to disable it. | On |
 
@@ -160,7 +162,7 @@ Add `data-glass-scope` to an ancestor to make its `data-glass-*` options the def
 </section>
 ```
 
-`data-glass-morph` isn't inherited, because its name identifies a single piece of glass and passing it down would put every glass in the scope into the same morph. Glass updates as soon as an option on its scope changes.
+`data-glass-morph`, `-from` and `-to` aren't inherited, because a morph name identifies a single piece of glass and passing it down would put every glass in the scope into the same morph. Glass updates as soon as an option on its scope changes.
 
 Canvas mode also supports these attributes.
 
@@ -214,9 +216,25 @@ Nest one piece of glass inside another to mark the active item in a group of tab
 
 - Nested glass shares its parent's glass layer and is drawn above the parent's glass volume. The parent captures the HTML for both, so text appears clearly above the inner surface. Nested glass fuses only with sibling glass inside the same parent. Nesting supports one level.
 - Nested glass refracts the page backdrop directly, which gives it the appearance of a clear piece inset into the frosted outer glass.
-- To switch the active item, move `data-liquid-glass` and the matching `data-glass-morph` value to the new button. In a framework, bind both attributes to the active state. In canvas mode, the leading edge reaches the destination first and overshoots slightly. The rear edge trails behind, then the stretched glass contracts into place.
-- Use an empty `data-glass-morph` to animate an element's own layout position or size. When dragging, the glass follows the element and pulls a fused droplet behind it, including along diagonals. On release, the glass overshoots and bounces back as the droplet swings past it, contracts, and settles. Set a nonzero fusion distance to show the trail. Position is measured using `offsetLeft` and `offsetTop`, so update the glass element's own `left`, `top`, or layout position. This transition responds to layout changes of the glass element itself, independent of scrolling, viewport resizing, ancestor movement, and CSS transforms.
-- If another piece of glass with the same morph name is present, the new piece flows out of it. For example, place a panel at its final position in one step and give it the same name as the button that opens it. The glass grows from the button's size and position and reveals the panel content as it expands. On removal, the panel flows back into the button.
+- To switch the active item, move `data-liquid-glass` and the matching `data-glass-morph` value to the new button. In a framework, bind both attributes to the active state. A shared name means the same piece of glass: when the old element leaves and the new one appears (within 400 ms), the volume flows from the old position to the new one. The body keeps its shape and pulls a liquid trail behind it on a thin neck, which merges back on arrival; moving along an axis also stretches the body. Two elements with the same name present at once don't hand over, and the new one appears as ordinary glass (0.5.0+; earlier versions made the new one flow out of the other, which is now declared with `data-glass-morph-from`).
+- Use an empty `data-glass-morph` to animate an element's own layout position or size. When dragging, the glass follows the element and pulls a fused droplet behind it, including along diagonals. On release, the glass contracts into place as the droplet merges back. Position is measured using `offsetLeft` and `offsetTop`, so update the glass element's own `left`, `top`, or layout position. This transition responds to layout changes of the glass element itself, independent of scrolling, viewport resizing, ancestor movement, and CSS transforms.
+- Splits and merges (0.5.0+) are declared with `data-glass-morph-from` / `-to`, whose values are other glasses' morph names:
+  - On appearing, the glass splits from the first present glass in `-from`. A stream of liquid is pulled out of the source's edge facing the new glass, reaches the destination, and its neck thins and breaks; the source stays where it is. It reads as a merge played backwards. Place a panel at its final position in one step, and its content is revealed as the glass expands.
+  - On disappearing, the glass merges into the first present glass in `-to`, flowing in on a neck and being absorbed. Without a present target it fades in place.
+  - When only one side is declared, the other uses the same list, so `-from` alone is usually enough. Declaring `-from` or `-to` without `data-glass-morph` also enables the morph.
+  - Names are looked up in the nearest `data-glass-scope` first, then outward, so list items can reuse the same names. With several matches in the same scope, the first in document order wins.
+  - The connection during a morph ignores both glasses' `data-glass-fusion` and layers; each returns to its own settings once at rest. When the source is on another layer, the connection is drawn on the new glass's layer and then retracts into the source.
+  - Only mounting and removal (including adding or removing `data-liquid-glass`) trigger splits and merges. Glass already present when the page mounts appears in place, and hiding or showing with CSS doesn't split or merge.
+
+```html
+<button data-liquid-glass data-glass-morph="login-trigger">Sign in</button>
+<form data-liquid-glass data-glass-morph="login-card" data-glass-morph-from="login-trigger">…</form>
+<button data-liquid-glass data-glass-morph="login-submit" data-glass-morph-from="login-clear login-card">Sign in</button>
+<button data-liquid-glass data-glass-morph="login-clear" data-glass-morph-from="login-submit login-card">Clear</button>
+```
+
+  The card flows down from the trigger and back on close. Of the two action buttons, the first to appear splits from the card's bottom edge and the second from the button already there; when one disappears it merges into the other.
+- When the page opens (0.5.0+), glass appears in place: layout changes during its appearance take effect immediately. Layout shifts caused by images or fonts loading (with no DOM change from the page in the meantime) also take effect immediately instead of morphing.
 - Set the element's final size in one step and let the glass animate between sizes. Changing the element's size every frame rebuilds its content snapshot on every frame and can make text and controls flicker.
 - By default, the bounce and wobble as the glass settles don't move the content. Use `data-glass-morph-content="clip"` to keep the content inside the wobbling glass, or `follow` to make it deform with the glass as if printed on it.
 - Adjust the motion with `data-glass-morph-stretch`, `data-glass-morph-bounce`, and `data-glass-morph-wobble`. Their global defaults are `morphStretch`, `morphBounce`, and `morphWobble`.
@@ -269,7 +287,7 @@ tuner.destroy()
 - `renderer`: a custom source for the renderer section (`GlassTunerRenderer`). Switching renderers means `dispose()` and mounting again, so you implement `setMode`; `rendererFromMount(() => currentMount, { setMode })` follows the new mount after a remount. Call `tuner.update()` when the renderer changes outside the panel.
 - `locale` (`'zh' | 'en'`, defaults to `<html lang>`), `theme` (follows the page theme like the stage by default; the panel edits the current theme's materials), `layer` (glass layer while open, default 1), `zIndex`, `position`, `hidden`, `open`.
 - The panel injects its own stylesheet into `<head>` and does not rely on a CSS reset. Colors come from custom properties such as `--lg-tuner-text`, `--lg-tuner-line` and `--lg-tuner-accent`; override them on `.lg-tuner` to match your page.
-- The button and the panel share a `data-glass-morph` name: in canvas mode the panel's glass flows out of the button; the fallbacks use a scale transition.
+- The panel's `data-glass-morph-from` points at the button: in canvas mode the panel's glass splits from the button and flows back on close; the fallbacks use a scale transition.
 
 ## Resolution and performance
 
