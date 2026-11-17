@@ -2,6 +2,7 @@
 
 import { BUFFER_USAGE } from './frame'
 import { FrameEncoder } from './frame.hot'
+import { GpuSpan } from './gpu-span.hot'
 
 export const TEXTURE_USAGE = {
   COPY_SRC: 0x01,
@@ -91,6 +92,10 @@ export class PassTimer {
     this.readback = supported
       ? device.createBuffer({ size: TIMING_PASSES * 16, usage: BUFFER_USAGE.MAP_READ | BUFFER_USAGE.COPY_DST })
       : null
+  }
+
+  get active(): boolean {
+    return this.recording
   }
 
   begin(): void {
@@ -234,6 +239,7 @@ export class StageGpu {
   readonly device: GPUDevice
   readonly canvasFormat: GPUTextureFormat
   readonly timing: PassTimer
+  readonly span: GpuSpan
   readonly frame: FrameEncoder
   readonly blitOpaque: PipelineTable
   readonly blitLayer: PipelineTable
@@ -270,7 +276,8 @@ export class StageGpu {
       ],
     })
     this.timing = new PassTimer(device)
-    this.frame = new FrameEncoder(device, this.uniformLayout, this.sampler, this.timing)
+    this.span = new GpuSpan(device)
+    this.frame = new FrameEncoder(device, this.uniformLayout, this.sampler, this.timing, this.span)
     const blit = (kind: 'opaque' | 'layer' | 'screen' | 'screenOpaque', blend: GPUBlendState | undefined) => new PipelineTable(this, `blit:${kind}`, slot => ({
       code: BLIT_SHADER,
       entry: kind,
@@ -320,6 +327,7 @@ export class StageGpu {
     this.disposed = true
     this.frame.dispose()
     this.timing.dispose()
+    this.span.dispose()
     this.modules.clear()
   }
 

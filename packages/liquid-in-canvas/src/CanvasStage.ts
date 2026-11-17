@@ -274,6 +274,12 @@ export class CanvasStage {
       return
 
     const now = performance.now()
+    const gpu = this.gpu
+    if (gpu) {
+      gpu.span.enabled = this.resolution.adaptive
+      if (gpu.span.take())
+        this.adaptive.gpuSpan(gpu.span.ms)
+    }
     if (this.root && this.resolution.adaptive) {
       const continuous = this.frameProbe.mark()
       if (now >= this.adaptiveAfter && this.adaptive.sample(now, continuous)) {

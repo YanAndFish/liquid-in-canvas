@@ -1,5 +1,6 @@
 import type { DrawItem, UniformBinding } from './frame'
 import type { PassTimer } from './gpu'
+import type { GpuSpan } from './gpu-span.hot'
 import { CLEAR_BLACK, createDrawItem, createFieldAttachments, createUniformBinding, growFloat32, UNIFORM_ALIGN_FLOATS, UNIFORM_WINDOW } from './frame'
 
 export class DrawList {
@@ -47,6 +48,7 @@ export class FrameEncoder {
   private readonly layout: GPUBindGroupLayout
   private readonly sampler: GPUSampler
   private readonly timing: PassTimer
+  private readonly span: GpuSpan
   private readonly offsets = new Uint32Array(1)
   private readonly attachment: GPURenderPassColorAttachment
   private readonly pass: GPURenderPassDescriptor
@@ -57,11 +59,12 @@ export class FrameEncoder {
   private readonly uploadSource: GPUElementImageSource
   private readonly uploadTarget: GPUElementImageDestination
 
-  constructor(device: GPUDevice, layout: GPUBindGroupLayout, sampler: GPUSampler, timing: PassTimer) {
+  constructor(device: GPUDevice, layout: GPUBindGroupLayout, sampler: GPUSampler, timing: PassTimer, span: GpuSpan) {
     this.device = device
     this.layout = layout
     this.sampler = sampler
     this.timing = timing
+    this.span = span
     this.attachment = {
       view: null as unknown as GPUTextureView,
       loadOp: 'clear',
@@ -86,6 +89,7 @@ export class FrameEncoder {
   begin(): void {
     this.used = 0
     this.timing.begin()
+    this.span.begin(this.timing.active)
   }
 
   alloc(floats: number): number {
@@ -155,7 +159,7 @@ export class FrameEncoder {
       : 'load'
     if (clear)
       attachment.clearValue = clear
-    this.pass.timestampWrites = this.timing.writes(label, width, height)
+    this.pass.timestampWrites = this.timing.writes(label, width, height) ?? this.span.writes()
     this.drawList(encoder.beginRenderPass(this.pass), uniforms, list)
   }
 
@@ -166,7 +170,7 @@ export class FrameEncoder {
     const attachments = this.fieldAttachments
     for (let i = 0; i < attachments.length; i++)
       attachments[i]!.view = views[i]!
-    this.fieldPass.timestampWrites = this.timing.writes('field', width, height)
+    this.fieldPass.timestampWrites = this.timing.writes('field', width, height) ?? this.span.writes()
     this.drawList(encoder.beginRenderPass(this.fieldPass), uniforms, list)
   }
 
@@ -191,9 +195,11 @@ export class FrameEncoder {
 
   submit(encoder: GPUCommandEncoder): void {
     this.timing.finish(encoder)
+    this.span.finish(encoder)
     this.commands[0] = encoder.finish()
     this.device.queue.submit(this.commands)
     this.timing.collect()
+    this.span.collect()
   }
 
   upload(element: Element, texture: GPUTexture): void {
