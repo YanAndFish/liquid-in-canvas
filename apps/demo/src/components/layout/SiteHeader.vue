@@ -33,7 +33,7 @@ const themeLabel = computed(() => theme.value === 'dark'
 
 <template>
   <header class="site-header">
-    <div class="header-layout" data-liquid-glass data-glass-layer="1" data-glass-radius="28">
+    <div class="header-layout" data-liquid-glass data-glass-layer="0" data-glass-radius="28">
       <RouterLink to="/" class="flex items-baseline gap-2.5">
         <span class="text-xl tracking-[0.14em] font-display">STILL</span>
         <span class="hidden text-[9px] text-mist tracking-[0.26em] font-mono uppercase sm:inline">{{ t('brand.tagline') }}</span>
