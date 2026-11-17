@@ -53,7 +53,6 @@
   const canvas = document.querySelector('#stage')
   const root = document.querySelector('#app')
   const surfaces = [...document.querySelectorAll('[data-liquid-glass]')]
-  /** 将可见滑块值应用到三块玻璃，便于固定背景对照。 */
   function update() {
     for (const surface of surfaces) {
       surface.dataset.glassVariant = 'clear'

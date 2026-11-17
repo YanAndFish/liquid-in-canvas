@@ -9,7 +9,6 @@ from PIL import Image
 
 a_dir, b_dir = Path(sys.argv[1]), Path(sys.argv[2])
 limit = int(sys.argv[3]) if len(sys.argv) > 3 else 2
-# 设备像素（@2）：左、上、右、下。
 REGIONS = {'gap': (0, 1300, 2200, 2300), 'clip': (0, 800, 2200, 1400)}
 print(f"{'画面':<14}{'最大差值':>8}{'有差异':>10}{'超过阈值':>10}  超过阈值的范围")
 for a_path in sorted(a_dir.glob('*.png')):

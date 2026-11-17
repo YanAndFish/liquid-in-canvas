@@ -17,6 +17,11 @@ export interface GlassProfileOptions {
   bevelCurve: number
   /** 底面倒角相对顶面倒角的比例，0 表示底面是带直角边的平面。 */
   bottomBevel: number
+  /**
+   * 折射率，缺省 1.45。
+   * @since 0.4.0
+   */
+  ior?: number
 }
 
 /** 一块玻璃实际使用的截面，长度单位为 CSS 像素。 */
@@ -33,20 +38,18 @@ export interface GlassProfile {
   bottomBevel: number
 }
 
-/** 倒角的最小尺寸。底面倒角为 0 时也保留这个尺寸，距离场不会除以零。 */
 export const MIN_BEVEL = 0.5
 
-/** 半厚度：`refraction` 受控件短边限制。 */
+export const BASE_IOR = 1.45
+
 export function profileHalfDepth(refraction: number, width: number, height: number): number {
   return Math.max(2, Math.min(refraction, width * 0.3, height * 0.3))
 }
 
-/** 顶面倒角的水平宽度，尚未按控件尺寸限制。 */
 export function profileBevelWidth(halfDepth: number, ratio: number): number {
   return Math.max(MIN_BEVEL, halfDepth * ratio)
 }
 
-/** 顶面倒角的垂直高度，不超过半厚度。 */
 export function profileBevelHeight(halfDepth: number, ratio: number): number {
   return Math.min(halfDepth, Math.max(MIN_BEVEL, halfDepth * ratio))
 }

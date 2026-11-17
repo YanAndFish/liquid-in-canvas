@@ -67,7 +67,6 @@ export interface GlassTuner {
   destroy: () => void
 }
 
-/** 一个滑块：从哪里读值、写到哪里，以及上次写入输入框的值。 */
 interface Slider {
   input: HTMLInputElement
   output: HTMLOutputElement
@@ -168,7 +167,6 @@ function setChecked(element: HTMLInputElement, checked: boolean): void {
     element.checked = checked
 }
 
-/** 小数步长保留两位，整数步长不带小数。 */
 function formatField(value: number, field: Field<string>): string {
   return `${field.step < 1
     ? value.toFixed(2)
@@ -183,12 +181,10 @@ class GlassTunerView implements GlassTuner {
   private readonly theme: GlassThemeSource
   private readonly releaseStyle: () => void
   private readonly unsubscribe: () => void
-  /** 需要随语言切换的文案：写入文字，或写入第三项指定的属性。 */
   private labels: [Element, Text, string?][] = []
   private renderer: GlassTunerRenderer | null
   private locale: GlassTunerLocale
   private panel: Panel | null = null
-  /** 回退实现下正在播放收起动画、尚未移除的面板。 */
   private leaving: HTMLElement | null = null
   private variant: GlassVariant = 'regular'
   private hidden: boolean
@@ -260,8 +256,6 @@ class GlassTunerView implements GlassTuner {
     this.panel = panel
     this.element.insertBefore(panel.anchor, this.launcher)
     this.update()
-    // 画布渲染下，面板的玻璃从同名 `data-glass-morph` 的入口里流出来、长成面板；
-    // 回退实现没有液体流动，用缩放过渡，从按钮所在的方向展开。
     if (this.animated()) {
       panel.anchor.animate([
         { opacity: 0 },
@@ -273,7 +267,6 @@ class GlassTunerView implements GlassTuner {
       ], { duration: 320, easing: 'cubic-bezier(.3, 1.3, .5, 1)' })
     }
     clearInterval(this.pollTimer)
-    // 面板打开期间定时读取实际倍率与光路，自适应降级后能及时显示。
     this.pollTimer = setInterval(() => this.update(), 500)
   }
 
@@ -356,7 +349,6 @@ class GlassTunerView implements GlassTuner {
     this.releaseStyle()
   }
 
-  /** 把当前状态写入 DOM。只写入有变化的属性和文字：画布模式下每次改动都会让舞台重建内容快照。 */
   update(): void {
     if (this.destroyed)
       return
@@ -430,7 +422,6 @@ class GlassTunerView implements GlassTuner {
       : text[1]
   }
 
-  /** 画布模式下面板在画布里，玻璃自己有液体流动，不用 CSS 动画。 */
   private animated(): boolean {
     return !this.element.closest('canvas') && typeof this.element.animate === 'function' && !prefersReducedMotion()
   }
@@ -445,9 +436,6 @@ class GlassTunerView implements GlassTuner {
     return defaults.materials[this.variant][theme]
   }
 
-  /**
-   * 面板一步出现在最终位置与尺寸。逐帧改变面板的位置和尺寸会让画布每帧重建内容快照，文字与控件随之闪烁。
-   */
   private layoutPanel(panel: Panel, buttonSize: number): void {
     const size = {
       x: Math.min(360, this.viewport.x - 24),
@@ -517,7 +505,6 @@ class GlassTunerView implements GlassTuner {
     setText(refs.ratios, text)
   }
 
-  /** 创建一段随语言切换的文字。 */
   private label<K extends keyof HTMLElementTagNameMap>(tag: K, text: Text, props: Props = {}): HTMLElementTagNameMap[K] {
     const element = h(tag, props)
     this.labels.push([element, text])
@@ -569,7 +556,6 @@ class GlassTunerView implements GlassTuner {
   }
 
   private buildPanel(): Panel {
-    // 文案随面板重建，上一次的不再需要。
     this.labels = []
     const sliders: Slider[] = []
     const readMaterial = (key: MaterialNumber) => () => this.material(getGlassDefaults(), this.theme.value)[key]
@@ -769,14 +755,12 @@ class GlassTunerView implements GlassTuner {
     void Promise.resolve(result).finally(() => this.update())
   }
 
-  /** 恢复库内置的玻璃参数与分辨率限制。 */
   private reset(): void {
     resetGlassDefaults()
     this.renderer?.setResolution({ ...DEFAULT_STAGE_RESOLUTION })
     this.update()
   }
 
-  /** 把当前参数复制为可以直接传给 `setGlassDefaults()` 的 JSON。 */
   private async copy(): Promise<void> {
     try {
       await navigator.clipboard.writeText(JSON.stringify(getGlassDefaults(), null, 2))
@@ -801,7 +785,6 @@ class GlassTunerView implements GlassTuner {
     this.close()
   }
 
-  /** 在点击时切换面板；拖动产生的 click 不触发展开。 */
   private readonly onLauncherClick = (event: MouseEvent): void => {
     if (this.suppressClick && event.detail !== 0) {
       this.suppressClick = false
@@ -811,7 +794,6 @@ class GlassTunerView implements GlassTuner {
     this.toggle()
   }
 
-  /** 记录拖动起点，指针移出按钮后也能完成拖动。 */
   private readonly startDrag = (event: PointerEvent): void => {
     if (event.button !== 0 || this.gesture)
       return
@@ -826,7 +808,6 @@ class GlassTunerView implements GlassTuner {
     this.launcher.setPointerCapture?.(event.pointerId)
   }
 
-  /** 超过六像素后按拖动处理，并把按钮限制在可见范围。 */
   private readonly moveDrag = (event: PointerEvent): void => {
     const gesture = this.gesture
     if (!gesture || gesture.pointerId !== event.pointerId)
@@ -841,7 +822,6 @@ class GlassTunerView implements GlassTuner {
     this.update()
   }
 
-  /** 结束拖动；指针取消时也清理按下状态。 */
   private readonly endDrag = (event: PointerEvent): void => {
     if (this.gesture?.pointerId !== event.pointerId)
       return
@@ -852,7 +832,6 @@ class GlassTunerView implements GlassTuner {
     this.update()
   }
 
-  /** 使用方向键移动入口，按住 Shift 时增加移动距离。 */
   private readonly moveWithKeyboard = (event: KeyboardEvent): void => {
     const offsets: Record<string, [number, number]> = {
       ArrowLeft: [-1, 0],
@@ -869,7 +848,6 @@ class GlassTunerView implements GlassTuner {
     this.update()
   }
 
-  /** 调整窗口后将入口移回可见区域。 */
   private readonly onResize = (): void => {
     this.viewport = { x: window.innerWidth, y: window.innerHeight }
     this.position = clampLauncherPosition(this.position, this.viewport, this.buttonSize())

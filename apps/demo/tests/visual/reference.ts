@@ -3,21 +3,6 @@ import { getGlassDefaults } from 'liquid-in-canvas'
 import { CanvasStage } from 'liquid-in-canvas/canvas'
 import { applyGlassQuery } from '../query'
 
-/**
- * 与 Apple 官方画面对照的几何条件。背景全部用 CSS 画或使用演示已有的图片。
- *
- * 查询参数：
- * - `scene`：capsule / toolbar / disc / buttons。
- * - `variant`：clear / regular，缺省取场景自己的材质。
- * - `blur`、`refraction`、`bevelWidth`、`bevelHeight`、`bevelCurve`、`lens`、`dispersion`、`specular`、`tintAlpha`、`elevation`、`fusion`：
- *   覆盖全局默认参数，未给出时使用场景的设定或库的默认值。三颗按钮的场景默认关闭融合，与参考画面一致。
- * - `split`：分界线相对玻璃中心的偏移，以玻璃短边为单位（胶囊向下为正，圆形向右下为正）。
- * - `panel=0`：隐藏参数面板，截图时使用。
- * - `adaptive`、`maxPixelRatio`、`maxGlassPixelRatio`：与测量页相同，固定渲染倍率。
- *
- * 当前场景的玻璃轮廓与分界线写在 `window.reference`，截图脚本据此调用 `profile_fit.py`。
- */
-
 type SceneName = 'capsule' | 'toolbar' | 'disc' | 'buttons'
 
 interface Outline {
@@ -30,11 +15,8 @@ interface Outline {
 
 interface ReferenceState {
   scene: SceneName
-  /** 当前场景所有玻璃的轮廓，CSS 像素。 */
   outlines: Outline[]
-  /** 两色分界线经过的一点与方向角（度，0 为水平向右，顺时针为正），没有分界线的场景为 null。 */
   boundary: { x: number, y: number, angle: number } | null
-  /** 画布已经启动并绘制过。 */
   ready: boolean
 }
 
@@ -49,7 +31,6 @@ type ParamKey = 'blur' | 'refraction' | 'bevelWidth' | 'bevelHeight' | 'bevelCur
 interface SceneSetup {
   variant: GlassVariant
   split: number
-  /** 场景自己的参数，优先于库的默认值、低于查询参数。 */
   params?: Partial<Record<ParamKey, number>>
 }
 
@@ -299,7 +280,6 @@ function centered(cx: number, cy: number, width: number, height: number, radius:
   }
 }
 
-/** 按视口计算当前场景的几何；截图在固定视口下进行，因此结果可复现。 */
 function layout(root: HTMLElement): void {
   const vw = window.innerWidth
   const vh = window.innerHeight
@@ -353,7 +333,6 @@ function layout(root: HTMLElement): void {
   })
 }
 
-/** 把查询参数应用到页面：场景可见性、玻璃属性、面板状态与地址栏。 */
 function update(): void {
   const root = element<HTMLElement>(`#${scene}`)
   for (const name of Object.keys(SCENES))

@@ -7,7 +7,6 @@ for e in ev:
         names[(e['pid'], e['tid'])] = e['args']['name']
 key = next(k for k, v in names.items() if v == 'CrGpuMain')
 es = sorted([e for e in ev if (e.get('pid'), e.get('tid')) == key and e.get('ph') == 'X' and 'dur' in e], key=lambda e: (e['ts'], -e['dur']))
-# 建树求自身时间
 stack = []; self_t = collections.Counter(); incl = collections.Counter(); cnt = collections.Counter()
 for e in es:
     while stack and stack[-1]['ts'] + stack[-1]['dur'] <= e['ts']:

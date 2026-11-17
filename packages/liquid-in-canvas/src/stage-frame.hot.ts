@@ -6,15 +6,8 @@ import { DrawList } from './frame.hot'
 import { SLOT_CANVAS } from './gpu'
 import { PAGE_RENDER_ORDER } from './render-order'
 
-/**
- * 舞台的一帧：页面快照 → 前景 → 玻璃（内容遮挡、模糊、体积）→ 画布遍。
- *
- * 所有绘制项的 uniform 写完后一次上传，离屏的几遍与画布遍编码进同一个命令缓冲。
- */
 export class StageFrame {
-  /** 前景层，舞台开始绘制后设置。 */
   overlay: CanvasOverlay | null = null
-  /** 玻璃图层，舞台开始绘制后设置。 */
   glass: LiquidGlassLayer | null = null
   private readonly gpu: StageGpu
   private readonly context: GPUCanvasContext
@@ -29,7 +22,6 @@ export class StageFrame {
     this.view = { format: gpu.canvasFormat }
   }
 
-  /** 画一帧。`shadingScale` 是玻璃体积着色相对画布的比例。 */
   draw(root: HTMLElement, page: ElementTexture, shadingScale: number, event: Event | undefined): void {
     const gpu = this.gpu
     const frame = gpu.frame

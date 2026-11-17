@@ -1,5 +1,3 @@
-// 停在一个滚动位置，按间隔点击让几何反复变化又停下，统计写入折射场缓存（`field` 遍）的帧的 GPU 时间。
-// 用法: [CDP_PORT=9333] [CLICK='.lg-tuner-launcher'] [CLICK_MS=900] [VIDEO=1] node bake.mjs <url 带 ?gpu&hold=…>
 const [url] = process.argv.slice(2)
 const port = process.env.CDP_PORT ?? '9333'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -40,7 +38,6 @@ const frames = json.gpuPassInfo.map((passes, f) => ({
   baked: passes.some(pass => pass.scene === 'field'),
   target: passes.find(pass => pass.scene === 'field')?.target ?? null,
 }))
-// 整帧时间：scroll.ts 只保存了各遍时长与整帧时间的分布，这里按帧序号对齐整帧时间不可得，改用各遍之和近似。
 const sums = json.gpuPassTimes.map(times => times.reduce((a, b) => a + b, 0))
 const baked = frames.map((frame, f) => ({ ...frame, sum: sums[f] })).filter(frame => frame.baked)
 const others = sums.filter((_, f) => !frames[f].baked)

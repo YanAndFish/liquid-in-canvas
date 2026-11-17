@@ -3,6 +3,7 @@ import { parseOverlayLayer } from '../../src/CanvasOverlay.hot'
 import {
   glassContentRenderOrder,
   glassRenderOrder,
+  glassUnderRenderOrder,
   glassVolumeRenderOrder,
   OVERLAY_TOP_LAYER,
   overlayRenderOrder,
@@ -25,6 +26,14 @@ describe('舞台绘制顺序', () => {
     for (const layer of [-3, 0, 5]) {
       expect(overlayRenderOrder(layer)).toBeGreaterThan(glassContentRenderOrder(layer - 1, 0.999))
       expect(overlayRenderOrder(layer)).toBeLessThan(glassVolumeRenderOrder(layer, 0))
+    }
+  })
+
+  it('放到玻璃之下的元素在同层所有体积之下、更低各层的内容与同层前景层之上', () => {
+    for (const layer of [-3, 0, 5]) {
+      expect(glassUnderRenderOrder(layer)).toBeLessThan(glassVolumeRenderOrder(layer, 0))
+      expect(glassUnderRenderOrder(layer)).toBeGreaterThan(overlayRenderOrder(layer))
+      expect(glassUnderRenderOrder(layer)).toBeGreaterThan(glassContentRenderOrder(layer - 1, 0.999))
     }
   })
 

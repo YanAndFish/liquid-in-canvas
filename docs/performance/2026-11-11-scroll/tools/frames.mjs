@@ -1,4 +1,3 @@
-// 在固定视频帧和滚动位置截图，用于画面对比。用法: node frames.mjs <url> <outPrefix>
 const [url, prefix] = process.argv.slice(2)
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const list = await (await fetch('http://127.0.0.1:9333/json/list')).json()

@@ -92,7 +92,6 @@ export const TUNER_CSS = `
 
 let users = 0
 
-/** 第一个面板创建时插入样式表，最后一个面板销毁时移除。 */
 export function retainTunerStyle(): () => void {
   users++
   if (users === 1 && !document.getElementById(TUNER_STYLE_ID)) {

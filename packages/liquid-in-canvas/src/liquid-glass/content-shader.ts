@@ -1,17 +1,12 @@
 import type { StageGpu } from '../gpu'
 import { BLEND_NORMAL, PipelineTable, shaderPrelude, SLOT_CANVAS, SLOT_TARGET, wgslFloat } from '../gpu'
 
-/** 每块上层玻璃的轮廓占用的浮点数个数，对应着色器里的 `Mask`。 */
 export const MASK_FLOATS = 12
 
-/** 上层玻璃轮廓的结构体，以及屏幕坐标处的覆盖比例；边缘使用亚像素过渡。 */
 export const MASK_SHADER = /* wgsl */`
 struct Mask {
-  // 中心坐标与半宽高。
   box: vec4f,
-  // 左上、右上、右下、左下的圆角半径。
   radius: vec4f,
-  // 裁剪范围：左、上、右、下。
   clip: vec4f,
 }
 
@@ -25,10 +20,6 @@ fn mask_coverage(position: vec2f, mask: Mask) -> f32 {
 }
 `
 
-/**
- * 内容模糊的取样点与权重：5 × 5 网格，间距为模糊半径的一半，按标准差为半径一半的高斯分布加权。
- * 稀疏的圆盘取样在文字上会留下几道清晰的重影，网格加权平均是连续的柔化。
- */
 const CONTENT_BLUR_TAPS: readonly (readonly [number, number, number])[] = (() => {
   const taps: [number, number, number][] = []
   let total = 0
@@ -42,24 +33,13 @@ const CONTENT_BLUR_TAPS: readonly (readonly [number, number, number])[] = (() =>
   return taps.map(([x, y, weight]) => [x, y, Math.round(weight / total * 1e5) / 1e5] as const)
 })()
 
-/** 内容 uniform 中矩形与目标尺寸之后、遮挡轮廓之前的浮点数个数。 */
 export const CONTENT_FLOATS = 16
 
-/**
- * 生成指定遮挡数量的内容着色器。
- *
- * HTML 快照被分成两部分：没有被上层玻璃覆盖的清晰内容直接画到画布上；
- * 被覆盖的部分写进背景，参与上层玻璃的折射与模糊。
- */
 export function createContentShader(occluders: number): string {
   const fields = `
-  // 可绘制范围：左、上、右、下。
   clip: vec4f,
-  // 内容的宽高，以及含四周余量的绘制矩形宽高。
   sizes: vec4f,
-  // 不透明度、缩放、模糊半径（CSS 像素）。
   params: vec4f,
-  // 缩放中心相对内容中心的偏移（CSS 像素）。
   origin: vec4f,${occluders > 0
     ? `
   masks: array<Mask, ${occluders}>,`
@@ -67,7 +47,6 @@ export function createContentShader(occluders: number): string {
   return /* wgsl */`${shaderPrelude(fields, MASK_SHADER)}
 @group(1) @binding(0) var content: texture_2d<f32>;
 
-// x 是没有被上层玻璃覆盖的比例乘以不透明度，y 是被覆盖的比例乘以不透明度。
 fn portions(in: VertexOutput, content_uv: vec2f) -> vec2f {
   let position = in.position.xy / u.screen.xy * u.screen.zw;
   let valid = content_uv.x >= 0.0 && content_uv.x <= 1.0 && content_uv.y >= 0.0 && content_uv.y <= 1.0
@@ -82,8 +61,6 @@ fn content_uv(in: VertexOutput) -> vec2f {
   return (local + u.sizes.xy * 0.5) / u.sizes.xy;
 }
 
-// 取样内容。显现与退去期间按模糊半径做 ${CONTENT_BLUR_TAPS.length} 点高斯加权，按不透明度加权平均，
-// 透明边缘不会把文字压暗；平时只取一次。
 fn content_sample(at: vec2f) -> vec4f {
   if (u.params.z < 0.05) {
     return textureSample(content, samp, at);
@@ -113,10 +90,6 @@ fn occluded(in: VertexOutput) -> @location(0) vec4f {
 `
 }
 
-/**
- * 内容的管线表，按遮挡数量取用：清晰内容画进画布，被覆盖的内容画进背景的离屏副本，
- * 下层玻璃的完整内容画进上层玻璃那一级的背景。
- */
 export interface ContentPipelines {
   clear: PipelineTable
   occluded: PipelineTable

@@ -1,9 +1,7 @@
 import { CanvasStage } from 'liquid-in-canvas/canvas'
 import { PaintOrder } from '../../../../packages/liquid-in-canvas/src/liquid-glass/content-order.hot'
 
-/** 生产构建测量入口，只在这个独立测试页面中记录每次绘制的 CPU 耗时。 */
 interface MeasuredStage {
-  /** 上传 HTML、同步玻璃并提交 GPU 绘制命令。 */
   draw: (event?: Event) => void
 }
 
@@ -28,7 +26,6 @@ prototype.draw = function (event) {
 window.addEventListener('error', event => errors.push(event.message))
 window.addEventListener('unhandledrejection', event => errors.push(String(event.reason)))
 
-/** 返回持续时间的分布，单位为毫秒。 */
 function distribution(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b)
   return {
@@ -40,7 +37,6 @@ function distribution(values: number[]) {
   }
 }
 
-/** 把相邻时间点转换为间隔。 */
 function intervals(values: number[]) {
   return values.slice(1).map((value, index) => value - values[index]!)
 }
@@ -57,7 +53,6 @@ sortButton.style.marginLeft = '16px'
 panel.append(startButton, sortButton, output)
 document.body.append(panel)
 
-/** 记录真实页面绘制和浏览器动画帧。此结果不包含 GPU 执行完成时间。 */
 startButton.onclick = () => {
   if (active)
     return
@@ -113,7 +108,6 @@ startButton.onclick = () => {
   }, 8000)
 }
 
-/** 使用页面当前可见的玻璃测量排序，同时输出顺序和样式读取次数。 */
 sortButton.onclick = () => {
   if (active)
     return
@@ -125,7 +119,6 @@ sortButton.onclick = () => {
       && rect.top < innerHeight && rect.bottom > 0 && !element.parentElement?.closest('[data-liquid-glass]')
   })
   const paintOrder = new PaintOrder()
-  // 每次排序视为新的一帧，与舞台每帧重新读取样式一致。
   const sort = () => {
     paintOrder.begin()
     return [...elements].sort((a, b) => paintOrder.compare(a, b))

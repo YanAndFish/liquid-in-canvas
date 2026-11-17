@@ -1,10 +1,6 @@
 import { vi } from 'vitest'
 import { StageGpu } from '../../src/gpu'
 
-/**
- * 记录调用的假 WebGPU 设备。只实现舞台用到的方法，返回的对象都是普通对象，
- * 用来检查管线、纹理与 uniform 的分配，而不需要真正的 GPU。
- */
 export function createFakeDevice() {
   const pipelines: GPURenderPipelineDescriptor[] = []
   const shaders: string[] = []
@@ -51,7 +47,6 @@ export function createFakeDevice() {
   }
 }
 
-/** 用假设备创建真实的 `StageGpu`。 */
 export function createFakeGpu() {
   const fake = createFakeDevice()
   const gpu = new StageGpu(fake.device, 'bgra8unorm-srgb')

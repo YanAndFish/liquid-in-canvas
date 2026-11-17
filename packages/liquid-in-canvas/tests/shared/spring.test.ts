@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { advanceSpring } from '../../src/shared/spring.hot'
 
-/** 推进一秒，模拟不同屏幕刷新率下的按压响应。 */
 function simulate(rate: number) {
   const state = { value: 0, velocity: 0 }
   for (let i = 0; i < rate; i++)

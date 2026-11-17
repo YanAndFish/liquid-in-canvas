@@ -1,7 +1,3 @@
-// 停在一个滚动位置，在八秒里保持重绘并读取每帧 GPU 时间。
-// 用法: DPR=2 [W=.. H=..] [CLICK='选择器'] [CLICK_MS=700] [VIDEO=1] node hold.mjs <url 带 ?gpu&hold=…> <轮数>
-// CLICK 给出一组元素，测量期间每隔 CLICK_MS 依次点击一个（循环），用来让液体迁移持续发生；
-// VIDEO=1 播放页面上的视频，让画面在没有动画时也逐帧重绘。
 const [url, runsArg = '1'] = process.argv.slice(2)
 const port = process.env.CDP_PORT ?? '9333'
 const sleep = ms => new Promise(r => setTimeout(r, ms))

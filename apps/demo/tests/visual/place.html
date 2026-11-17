@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>玻璃上下与 API 检查</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; font-family: system-ui, sans-serif; background: #19191d; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #app { position: relative; width: 100vw; height: 100vh; overflow: clip; background: repeating-linear-gradient(-45deg, #2b2b33 0 24px, #3a3a44 24px 48px); color: white; }
+    .card { position: absolute; top: 60px; width: 300px; height: 220px; padding: 24px; font-size: 22px; font-weight: 600; }
+    .card .art { position: absolute; left: 40px; top: 70px; width: 220px; height: 110px; border-radius: 16px; background: linear-gradient(135deg, #ff5f6d, #ffc36a 45%, #4ecdc4 75%, #7c5cff); }
+    .card .label { position: relative; }
+    #a { left: 60px; }
+    #b { left: 420px; }
+    #api { position: absolute; left: 60px; top: 340px; width: 300px; height: 80px; display: grid; place-items: center; background: transparent; border: 0; color: white; font-size: 20px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="card" id="a" data-liquid-glass data-glass-variant="clear"><div class="art"></div><span class="label">在玻璃之上</span></div>
+  <div class="card" id="b" data-liquid-glass data-glass-variant="clear"><div class="art" data-glass-place="below"></div><span class="label">在玻璃之下</span></div>
+  <button id="api">addGlass</button>
+</div>
+<script type="module">
+  import { mountLiquidGlass } from 'liquid-in-canvas'
+
+  const query = new URLSearchParams(location.search)
+  const mount = await mountLiquidGlass({
+    root: document.getElementById('app'),
+    mode: 'canvas',
+    optics: query.get('optics') ?? 'hybrid',
+    onFault: console.error,
+  })
+  if (query.has('ior')) {
+    for (const card of document.querySelectorAll('.card'))
+      card.setAttribute('data-glass-ior', query.get('ior'))
+  }
+  window.mount = mount
+  window.apiGlass = mount.addGlass(document.getElementById('api'), { radius: 40, variant: 'clear' })
+</script>
+</body>
+</html>

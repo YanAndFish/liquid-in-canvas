@@ -3,7 +3,6 @@ import type { GlassTunerLocale } from './messages'
 import { glassProfile, glassProfileOutline } from '../liquid-glass/profile'
 import { traceProfileRays } from './profile-rays'
 
-/** 画布尺寸与留白，单位是 SVG 用户坐标。 */
 const WIDTH = 320
 const HEIGHT = 210
 const PAD = {
@@ -12,7 +11,6 @@ const PAD = {
   top: 8,
   bottom: 16,
 }
-/** 轮廓外侧留出的空气宽度，单位是 SVG 用户坐标。 */
 const OUTSIDE = 26
 const RAY_COUNT = 11
 
@@ -24,17 +22,11 @@ function pathOf(points: readonly (readonly [number, number])[], sx: (x: number) 
   return points.map(([x, z], i) => `${i ? 'L' : 'M'}${n(sx(x))} ${n(sz(z))}`).join(' ')
 }
 
-/**
- * 生成玻璃边缘截面图：轮廓、倒角参考框、竖直入射的折射光路与它们在背景平面上的落点。
- *
- * 返回 `<svg>` 与说明文字的 HTML。`id` 用来区分同一页面上的多张图里的渐变与遮罩。
- */
 export function renderProfileDiagram(material: GlassProfileOptions, elevation: number, locale: GlassTunerLocale, id: string): string {
   const zh = locale === 'zh'
   const p = glassProfile(material)
   const bottomWidth = p.bevelWidth * p.bottomBevel
   const top = elevation + p.halfDepth * 2
-  // 平面部分至少露出一段，光线偏折后的落点也在画面之内；比例尺由高度决定时，平面一直延伸到右侧。
   const inner = WIDTH - PAD.left - PAD.right - OUTSIDE
   const sky = Math.max(8, p.halfDepth * 0.35)
   const scale = Math.min(
@@ -45,10 +37,9 @@ export function renderProfileDiagram(material: GlassProfileOptions, elevation: n
   const sx = (x: number): number => PAD.left + OUTSIDE + x * scale
   const sz = (z: number): number => HEIGHT - PAD.bottom - z * scale
   const outline = glassProfileOutline(p, elevation, reach)
-  // 光线只铺在倒角和紧邻的一段平面上，平面部分的光线笔直穿过，画几条就够。
   const span = Math.max(p.bevelWidth, bottomWidth) * 1.3
   const starts = Array.from({ length: RAY_COUNT }, (_, i) => (i + 0.5) / RAY_COUNT * span)
-  const rays = traceProfileRays(outline, starts, top + sky)
+  const rays = traceProfileRays(outline, starts, top + sky, material.ior)
   const ground = sz(0)
   const outlineX = sx(0)
   const fadeStart = sx(reach * 0.72)

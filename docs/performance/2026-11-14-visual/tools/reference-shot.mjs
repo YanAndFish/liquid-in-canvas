@@ -1,7 +1,3 @@
-// 截取 tests/visual/reference.html 的场景，同时记下玻璃轮廓与分界线，供 profile_fit.py 使用。
-// 用法: node reference-shot.mjs <站点根地址> <输出目录> [场景…]
-// 场景缺省为 capsule；可写成 `capsule:split=-0.3&refraction=30`，冒号后的参数追加到页面地址。
-// 环境变量 CDP_PORT 指定隔离 Chrome 的调试端口（缺省 9333），QUERY 追加到每个页面的查询参数。
 import { mkdir, writeFile } from 'node:fs/promises'
 
 const [base, outDir, ...scenes] = process.argv.slice(2)

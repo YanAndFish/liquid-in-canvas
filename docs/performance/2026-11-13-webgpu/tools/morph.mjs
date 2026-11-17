@@ -1,5 +1,3 @@
-// 点击标签组中的一项，连续截取激活玻璃流向新位置的过程。
-// 用法: node morph.mjs <页面地址> <按钮选择器> <输出目录>
 import { mkdir, writeFile } from 'node:fs/promises'
 
 const [url, selector, outDir] = process.argv.slice(2)

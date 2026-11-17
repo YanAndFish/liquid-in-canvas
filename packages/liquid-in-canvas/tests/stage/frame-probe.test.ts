@@ -5,7 +5,6 @@ import { FrameProbe } from '../../src/frame-probe.hot'
 let frames: Map<number, FrameRequestCallback>
 let nextFrame: number
 
-/** 一个显示帧里先触发 `requestAnimationFrame` 回调，这与 Chrome 里 `paint` 事件之前的顺序一致。 */
 function displayFrame(): void {
   const due = Array.from(frames.values())
   frames.clear()
@@ -42,13 +41,11 @@ describe('显示帧探针', () => {
   it('中间空过显示帧的绘制不是连续的', () => {
     const probe = new FrameProbe()
     probe.mark()
-    // 每两个显示帧绘制一次：30 帧的视频在 60 Hz 的屏幕上。
     for (let i = 0; i < 10; i++) {
       displayFrame()
       displayFrame()
       expect(probe.mark()).toBe(false)
     }
-    // 之后恢复逐帧绘制，从第二次开始算连续。
     displayFrame()
     expect(probe.mark()).toBe(true)
   })
@@ -63,12 +60,10 @@ describe('显示帧探针', () => {
 
   it('同一帧里绘制先于回调时结果相同', () => {
     const probe = new FrameProbe()
-    // 每一帧先绘制、后触发回调。
     probe.mark()
     displayFrame()
     expect(probe.mark()).toBe(true)
     displayFrame()
-    // 空一帧。
     displayFrame()
     expect(probe.mark()).toBe(false)
     displayFrame()
@@ -83,7 +78,6 @@ describe('显示帧探针', () => {
     expect(frames.size).toBe(1)
     displayFrame()
     expect(frames.size).toBe(0)
-    // 下一次绘制重新开始计数。
     expect(probe.mark()).toBe(false)
     expect(frames.size).toBe(1)
   })
@@ -107,7 +101,6 @@ describe('显示帧探针', () => {
 })
 
 describe('显示帧探针与自适应降级', () => {
-  /** 按给定的显示帧间隔推进；`paints(frame)` 决定这一帧是否绘制。返回质量变化的次数。 */
   function simulate(
     adaptive: AdaptiveScale,
     probe: FrameProbe,
@@ -126,10 +119,6 @@ describe('显示帧探针与自适应降级', () => {
     return changes
   }
 
-  /**
-   * 逐显示帧绘制，每一帧的长度由负载决定：跟得上时 16.7 ms，跟不上时等于这一帧的开销。
-   * 开销是 `fixed` 加上与玻璃着色像素数成正比的 `glass`（光路没有降为查表时再乘 `optics`）。
-   */
   function loaded(
     adaptive: AdaptiveScale,
     probe: FrameProbe,
@@ -151,14 +140,12 @@ describe('显示帧探针与自适应降级', () => {
   }
 
   it('同样是 33 ms 的绘制间隔：按视频帧绘制不降级，跟不上显示器才降级', () => {
-    // 60 Hz 的屏幕、30 帧的视频：每隔一个显示帧绘制一次。
     const paced = new AdaptiveScale()
     paced.setRelaxable(true)
     expect(simulate(paced, new FrameProbe(), { now: 0 }, 16.7, 2400, frame => frame % 2 === 0)).toBe(0)
     expect(paced.scale).toBe(1)
     expect(paced.relaxed).toBe(false)
 
-    // 每一帧都在绘制、浏览器跟不上：逐步求交 44 ms，查表 26 ms，查表且着色倍率 0.75 时 18.1 ms。
     const slow = new AdaptiveScale()
     slow.setRelaxable(true)
     expect(loaded(slow, new FrameProbe(), { now: 0 }, { fixed: 8, glass: 18, optics: 2 }, 800)).toBe(2)
@@ -171,9 +158,7 @@ describe('显示帧探针与自适应降级', () => {
     adaptive.setRelaxable(true)
     const probe = new FrameProbe()
     const clock = { now: 0 }
-    // 24 帧：间隔在两个与三个显示帧之间交替。
     expect(simulate(adaptive, probe, clock, 16.7, 2000, frame => frame % 5 === 0 || frame % 5 === 2)).toBe(0)
-    // 回调抖动：偶尔连着两个显示帧都有新的视频帧，随后空两帧。
     expect(simulate(adaptive, probe, clock, 16.7, 2000, frame => frame % 6 === 0 || frame % 6 === 1 || frame % 6 === 4)).toBe(0)
     expect(adaptive.scale).toBe(1)
     expect(adaptive.relaxed).toBe(false)
@@ -184,13 +169,10 @@ describe('显示帧探针与自适应降级', () => {
     const probe = new FrameProbe()
     const clock = { now: 0 }
     simulate(adaptive, probe, clock, 16.7, 600, frame => frame % 2 === 0)
-    // 开始滚动，每一帧都绘制，浏览器 22 ms 才出一帧；着色倍率降一级后跟得上，这一级通过检验后保留。
     expect(loaded(adaptive, probe, clock, { fixed: 8, glass: 14 }, 400)).toBe(1)
     expect(adaptive.scale).toBeCloseTo(0.75)
-    // 停止滚动、只剩视频：不再降，也不凭视频节拍升回。
     expect(simulate(adaptive, probe, clock, 16.7, 2400, frame => frame % 2 === 0)).toBe(0)
     expect(adaptive.scale).toBeCloseTo(0.75)
-    // 再次滚动且流畅，四秒后升回。
     simulate(adaptive, probe, clock, 16.7, 400, () => true)
     expect(adaptive.scale).toBe(1)
   })

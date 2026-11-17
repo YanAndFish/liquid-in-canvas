@@ -16,7 +16,7 @@
 用法：
   python3 -I profile_fit.py measure 截图.png --rect x,y,宽,高 [--radius r] [--scale 2]
          [--boundary auto | y | x,y,角度] [--out samples.csv] [--curve curve.csv]
-  python3 -I profile_fit.py measure 截图.png --page 截图.json   # reference-shot.mjs 记下的轮廓与分界线
+  python3 -I profile_fit.py measure 截图.png --page 截图.json
   python3 -I profile_fit.py synth 输出.png [--truth truth.csv] [--amp 14 --width 40 --power 2.5]
   python3 -I profile_fit.py selftest
 
@@ -35,12 +35,10 @@ import tempfile
 
 try:
     from PIL import Image
-except ImportError:  # pragma: no cover - 环境提示
+except ImportError:
     sys.exit('需要 Pillow：python3 -m pip install --user Pillow（或 brew install pillow）')
 
 
-# ---------------------------------------------------------------------------
-# 几何
 
 class RoundRect:
     """圆角矩形轮廓，四角同一半径。"""
@@ -105,8 +103,6 @@ class Line:
         return math.degrees(math.atan(self.slope))
 
 
-# ---------------------------------------------------------------------------
-# 图像
 
 def _linear(c: int) -> float:
     v = c / 255.0
@@ -163,8 +159,6 @@ def levels(values: list[float]) -> tuple[float, float]:
     return lo, hi
 
 
-# ---------------------------------------------------------------------------
-# 测量
 
 def detect_boundary(luma: Luma, rect: RoundRect, gap: float, band: float) -> tuple[Line, int]:
     """在玻璃左右两侧的背景列里找分界线，拟合成直线。返回直线与亮度变化方向。"""
@@ -192,7 +186,6 @@ def detect_boundary(luma: Luma, rect: RoundRect, gap: float, band: float) -> tup
     if len(points) < 4:
         raise SystemExit('背景列里找不到分界线，请用 --boundary 指定')
     line = fit_line(points)
-    # 去掉偏离超过 2 像素的列（玻璃阴影、其他图形），重新拟合。
     kept = [p for p in points if abs(p[1] - line.y(p[0])) < 2.0]
     if len(kept) >= 4:
         line = fit_line(kept)
@@ -273,7 +266,6 @@ def measure(luma: Luma, rect: RoundRect, line: Line, direction: int, *, inset: f
             'crossings': len(found),
         })
         x += step
-    # 端部的短列只包含过渡的一部分，两侧亮度没到位，阈值会偏。按对比度剔除。
     if samples:
         typical = statistics.median(float(s['contrast']) for s in samples)
         samples = [s for s in samples if float(s['contrast']) >= contrast_ratio * typical]
@@ -429,8 +421,6 @@ def run_measure(args: argparse.Namespace) -> dict:
     return report
 
 
-# ---------------------------------------------------------------------------
-# 合成测试图
 
 def profile(d: float, amp: float, width: float, power: float) -> float:
     return amp * max(0.0, 1 - d / width) ** power if d >= 0 else amp

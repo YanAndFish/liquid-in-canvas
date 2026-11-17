@@ -86,7 +86,6 @@ describe('多层玻璃的背景分级', () => {
     expect(bottom.viewerOrders[2]).toBe(top.order)
     expect(middle.viewerOrders[2]).toBe(top.order)
     expect(top.viewerOrders.every(order => order === Infinity)).toBe(true)
-    // 取样范围是上层本体向外扩展余量，并裁剪到视口。
     const region = planner.levels[1]!.region
     expect(region.left).toBe(Math.max(0, 150 - middle.margin))
     expect(region.right).toBe(Math.min(1000, 250 + middle.margin))
@@ -102,7 +101,6 @@ describe('多层玻璃的背景分级', () => {
     planner.build(surfaces, surfaces.length, 1000, 600)
     const levels = Object.values(levelsOf(planner))
     expect(Math.max(...levels)).toBe(MAX_STACK_LEVELS - 1)
-    // 截断到同一级的组之间不算被看到。
     const capped = planner.plans.slice(0, planner.count).filter(plan => plan.level === MAX_STACK_LEVELS - 1)
     expect(capped.length).toBeGreaterThan(1)
     for (const plan of capped)
@@ -130,7 +128,6 @@ describe('多层玻璃的背景分级', () => {
     ]
     planner.build(overlapping, overlapping.length, 1000, 600)
     expect(levelsOf(planner)).toEqual({ 1: 0, 2: 1 })
-    // 同层重叠时下层的文字也进入上层的背景。
     expect(planner.plans.slice(0, planner.count).find(plan => plan.level === 0)!.contentSeen[1]).toBe(true)
 
     const bar = {
@@ -147,14 +144,12 @@ describe('多层玻璃的背景分级', () => {
     }
     planner.build([bar, tab], 2, 1000, 600)
     expect(levelsOf(planner)).toEqual({ 1: 0, 2: 1 })
-    // 外层的文字画在嵌套玻璃之上，嵌套玻璃的背景里只有外层的体积。
     const host = planner.plans.slice(0, planner.count).find(plan => plan.level === 0)!
     expect(host.viewerOrders[1]).toBeLessThan(Infinity)
     expect(host.contentSeen[1]).toBe(false)
   })
 
   it('同级共用的背景里，下层玻璃只画进看到它的组的取样范围', () => {
-    // 标签栏的激活项嵌套在标签栏里（只看到体积）；远处第 1 层的面板看到标签栏的文字。两者都在第 1 级。
     const planner = new VolumePlanner()
     const bar = {
       ...surface(1, 0, 300),
@@ -180,9 +175,7 @@ describe('多层玻璃的背景分级', () => {
     const host = plans.find(plan => plan.members[0]!.id === 1)!
     const tabPlan = plans.find(plan => plan.members[0]!.id === 2)!
     expect(host.contentSeen[1]).toBe(true)
-    // 文字只画在面板的取样范围里，碰不到激活项。
     expect(host.contentRegions[1]!.left).toBeGreaterThan(tabPlan.body.right)
-    // 体积两者都看到。
     expect(host.seenRegions[1]!.left).toBeLessThanOrEqual(tabPlan.body.left)
   })
 
@@ -246,7 +239,6 @@ describe('上层背景的绘制', () => {
     const labels = fake.pipelines.map(pipeline => String(pipeline.label))
     expect(labels).toContain('blit:screenOpaque:1')
     expect(labels).toContain('volume:1:1')
-    // 背景纹理按 CSS 分辨率创建。
     const textures = (fake.device.createTexture as unknown as { mock: { calls: [{ size: { width: number, height: number } }][] } }).mock.calls
     expect(textures.some(([descriptor]) => descriptor.size.width === 1000 && descriptor.size.height === 600)).toBe(true)
     const list = new DrawList()
@@ -265,7 +257,6 @@ describe('上层背景的绘制', () => {
 describe('局部模糊的余量', () => {
   it('按实际生成的各级累加核半径', () => {
     expect(blurReach(0)).toBe(0)
-    // 只需要第一级（σ = 2）时，余量是三倍标准差。
     expect(blurReach(4)).toBeCloseTo(6)
     expect(blurReach(80 * 80)).toBeGreaterThan(blurReach(16 * 16))
   })

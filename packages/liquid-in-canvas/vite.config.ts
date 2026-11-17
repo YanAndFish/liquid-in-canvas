@@ -5,7 +5,6 @@ export default defineConfig({
   build: {
     target: 'es2023',
     sourcemap: true,
-    // 保留可读的输出，压缩交给使用方的构建工具。
     minify: false,
     lib: {
       entry: {

@@ -1,5 +1,3 @@
-// 这个入口不静态引入画布渲染器：它在 `mountLiquidGlass()` 确认浏览器支持后才动态加载，
-// 只能使用回退实现的浏览器不会下载它。需要直接使用 `CanvasStage` 时从 `liquid-in-canvas/canvas` 引入。
 export type {
   GlassNumberAttribute,
   GlassPresenceAttribute,
@@ -13,6 +11,7 @@ export {
   GLASS_CLIP_ATTR,
   GLASS_FADE_ATTR,
   GLASS_MODAL_ATTR,
+  GLASS_PLACE_ATTR,
   GLASS_SCOPE_ATTR,
   GLASS_SCRIM_ATTR,
   hasAttr,
@@ -21,6 +20,7 @@ export {
 export { CssGlassStage } from './css/CssGlassStage'
 export type { CssGlassStageOptions } from './css/CssGlassStage'
 export { supportsSvgBackdropFilter } from './css/refraction'
+export type { GlassAttributeOptions, GlassHandle } from './glass-api'
 export {
   BUILTIN_GLASS_DEFAULTS,
   getGlassDefaults,

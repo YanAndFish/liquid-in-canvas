@@ -6,7 +6,6 @@ export interface TunerPoint {
   y: number
 }
 
-/** 把入口按钮限制在可见范围内，四周保留 12 像素。 */
 export function clampLauncherPosition(position: TunerPoint, viewport: TunerPoint, buttonSize: number): TunerPoint {
   return {
     x: Math.max(12, Math.min(position.x, viewport.x - buttonSize - 12)),
@@ -14,7 +13,6 @@ export function clampLauncherPosition(position: TunerPoint, viewport: TunerPoint
   }
 }
 
-/** 将面板放在按钮上方或下方，并限制在视口内。 */
 export function tunerPanelPosition(button: TunerPoint, viewport: TunerPoint, panel: TunerPoint, buttonSize: number): TunerPoint {
   const above = button.y - panel.y - 12
   const below = button.y + buttonSize + 12

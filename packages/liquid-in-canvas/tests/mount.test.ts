@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GLASS_CSS_ATTR } from '../src/css/CssGlassStage'
 import { mountLiquidGlass, StageUnsupportedError } from '../src/mount'
 
-// jsdom 没有 HTML-in-Canvas 与 WebGPU，这里覆盖的是不支持时的行为。
 let root: HTMLElement
 let element: HTMLElement
 
@@ -36,7 +35,6 @@ describe('mountLiquidGlass', () => {
     expect(faults).toHaveLength(1)
     expect(faults[0]!.kind).toBe('unsupported')
     expect(element.hasAttribute(GLASS_CSS_ATTR)).toBe(true)
-    // 回退不改变页面结构。
     expect(root.parentElement).toBe(document.body)
     expect(document.querySelector('canvas')).toBeNull()
     mount.dispose()
@@ -69,5 +67,58 @@ describe('mountLiquidGlass', () => {
     expect(element.style.getPropertyValue('--lg-tint')).toBe('rgba(246, 246, 248, 0.32)')
     mount.dispose()
     delete document.documentElement.dataset.theme
+  })
+})
+
+describe('通过 API 开关玻璃', () => {
+  it('addGlass 写上玻璃与参数属性，回退实现在下一次变更回调里接手；removeGlass 只去掉自己写的属性', async () => {
+    const root = document.createElement('div')
+    const button = document.createElement('button')
+    button.setAttribute('data-glass-layer', '2')
+    root.append(button)
+    document.body.append(root)
+    const mount = await mountLiquidGlass({ root, mode: 'css' })
+    const handle = mount.addGlass(button, {
+      variant: 'clear',
+      bevelWidth: 1.2,
+      radius: '12 12 0 0',
+      materialize: false,
+    })
+    expect(button.getAttribute('data-liquid-glass')).toBe('')
+    expect(button.getAttribute('data-glass-variant')).toBe('clear')
+    expect(button.getAttribute('data-glass-bevel-width')).toBe('1.2')
+    expect(button.getAttribute('data-glass-radius')).toBe('12 12 0 0')
+    expect(button.getAttribute('data-glass-materialize')).toBe('false')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(button.hasAttribute('data-liquid-glass-css')).toBe(true)
+
+    handle.update({ bevelWidth: null, blur: 4 })
+    expect(button.hasAttribute('data-glass-bevel-width')).toBe(false)
+    expect(button.getAttribute('data-glass-blur')).toBe('4')
+
+    handle.remove()
+    expect(button.hasAttribute('data-liquid-glass')).toBe(false)
+    expect(button.hasAttribute('data-glass-variant')).toBe(false)
+    expect(button.hasAttribute('data-glass-blur')).toBe(false)
+    expect(button.getAttribute('data-glass-layer')).toBe('2')
+    handle.update({ blur: 8 })
+    expect(button.hasAttribute('data-glass-blur')).toBe(false)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(button.hasAttribute('data-liquid-glass-css')).toBe(false)
+
+    mount.dispose()
+    root.remove()
+  })
+
+  it('元素不在根元素里、或参数名未知时抛出错误', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const mount = await mountLiquidGlass({ root, mode: 'css' })
+    expect(() => mount.addGlass(document.createElement('div'))).toThrow(/inside the mounted root/)
+    const inside = document.createElement('div')
+    root.append(inside)
+    expect(() => mount.addGlass(inside, { blurry: 1 } as never)).toThrow(/Unknown glass option/)
+    mount.dispose()
+    root.remove()
   })
 })

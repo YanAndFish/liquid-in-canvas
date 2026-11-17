@@ -1,20 +1,5 @@
 import { HEADER_FLOATS } from '../../../../packages/liquid-in-canvas/src/frame'
 import { DrawList } from '../../../../packages/liquid-in-canvas/src/frame.hot'
-/**
- * 光路对照：不经过 HTML-in-Canvas，直接用库里的体积着色器在一张静态背景上画同一组玻璃，
- * 比较三维求交、混合光路（逐帧求交 / 读折射场缓存）与剖面查表的画面，并给出逐像素差异。
- *
- * 只需要 WebGPU，不需要 `drawElementImageToTexture()`，可以在不支持 HTML-in-Canvas 的浏览器里检查光路。
- *
- * 查询参数：
- * - `scene`：`capsule`（缺省）是演示里调参按钮贴着「浏览系列」；`square` 是 200 × 200 的柔和方块与 64 像素的调参按钮。
- * - `dx`、`dy`：圆形中心的偏移（CSS 像素）。胶囊场景相对胶囊右端圆心，方块场景相对方块中心。
- * - `alone`：只画胶囊或方块，不画圆形。
- * - `ratio`：设备像素比，缺省 1。
- * - `scale`：显示倍数。
- * - `clip`：胶囊的裁剪框右边相对胶囊右端的位置，缺省不裁剪。
- * - `width`、`height`、`radius`、`refraction`：覆盖胶囊或方块的尺寸、圆角与厚度参考值。
- */
 import { SLOT_CANVAS, StageGpu, TEXTURE_USAGE } from '../../../../packages/liquid-in-canvas/src/gpu'
 import { linearTint, srgbToLinear } from '../../../../packages/liquid-in-canvas/src/liquid-glass/color'
 import { createFieldTextures } from '../../../../packages/liquid-in-canvas/src/liquid-glass/field-cache'
@@ -83,7 +68,6 @@ const capsule: Glass = square
       dispersion: 0.05,
       lens: 0,
     }
-// 主体玻璃的尺寸、圆角与厚度可以覆盖，用来检查不同的圆角与倒角组合。
 for (const key of [
   'width',
   'height',
@@ -160,7 +144,6 @@ async function main(): Promise<void> {
   const context = backdrop.getContext('2d')!
   context.scale(ratio, ratio)
   if (square) {
-    // 背景：斜条纹，折射的偏移一眼可见。
     const colors = [
       '#ff5f6d',
       '#ffc36a',
@@ -177,20 +160,17 @@ async function main(): Promise<void> {
     context.restore()
   }
   else {
-    // 背景：海报按高度铺满，取中间一段。
     const poster = await loadImage('/media/liquid-glass-flower-poster.jpg')
     const fit = Math.max(W / poster.width, H / poster.height) * 1.6
     context.drawImage(poster, (W - poster.width * fit) / 2 - 80, (H - poster.height * fit) / 2, poster.width * fit, poster.height * fit)
   }
   device.queue.copyExternalImageToTexture({ source: backdrop }, { texture: source }, { width: PW, height: PH })
   const sourceView = source.createView()
-  // 各级模糊都绑定原图：对照只关心光路，不关心模糊。
   const blurs = BLUR_SIGMAS.map(() => sourceView)
 
   const profiles = new ProfileTable(gpu)
   const floats = HEADER_FLOATS + VOLUME_GROUP_FLOATS + glasses.length * VOLUME_MEMBER_FLOATS
 
-  /** 按 `writeVolumeGroup()` 的布局写一组玻璃的 uniform。 */
   function writeGroup(data: Float32Array, group: number): void {
     let fusion = 0
     let highest = 0
@@ -303,7 +283,7 @@ async function main(): Promise<void> {
         : plain
     list.push(1, tables[kind]!.get(glasses.length), starts[kind]! * 4, textures)
     frame.encodePass(encoder, kind, target.createView(), PW, PH, { r: 0, g: 0, b: 0, a: 1 }, list)
-    const buffer = device.createBuffer({ size: rowBytes * PH, usage: 0x08 /* COPY_DST */ | 0x01 /* MAP_READ */ })
+    const buffer = device.createBuffer({ size: rowBytes * PH, usage: 0x08 | 0x01 })
     encoder.copyTextureToBuffer({ texture: target }, { buffer, bytesPerRow: rowBytes }, { width: PW, height: PH })
     buffers[kind] = buffer
   }
@@ -313,7 +293,7 @@ async function main(): Promise<void> {
 
   const pixels: Record<string, Uint8ClampedArray> = {}
   for (const kind of kinds) {
-    await buffers[kind]!.mapAsync(1 /* GPUMapMode.READ */)
+    await buffers[kind]!.mapAsync(1)
     const mapped = new Uint8Array(buffers[kind]!.getMappedRange())
     const out = new Uint8ClampedArray(PW * PH * 4)
     for (let y = 0; y < PH; y++)

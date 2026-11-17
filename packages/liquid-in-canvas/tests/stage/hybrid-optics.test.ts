@@ -10,10 +10,8 @@ import { VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS, VOLUME_TEXTURES } from '../.
 import { VolumeGroups, VolumePlanner, writeVolumeGroup } from '../../src/liquid-glass/VolumeGroups.hot'
 import { createFakeGpu } from '../helpers/fake-gpu'
 
-/** 没有裁剪祖先时的裁剪范围。 */
 const UNCLIPPED = [-1e5, -1e5, 1e5, 1e5]
 
-/** 创建一块 200 × 100 的玻璃，水平位置决定是否与其他玻璃相连。 */
 function surface(id: number, left: number, clip: number[] = UNCLIPPED): VolumeSurface {
   const options = parseGlassOptions(document.createElement('div'), 'light')
   return {
@@ -51,10 +49,8 @@ function setup() {
     generation: 0,
   } as unknown as BackdropBlur
   const groups = new VolumeGroups(fake.gpu, [blur])
-  // 这里检查逐帧求交的混合光路；折射场缓存见 field-cache.test.ts。
   groups.setFieldCache(false)
   const list = new DrawList()
-  /** 画一帧，返回每个绘制项的管线标签与 uniform 起始下标（浮点数）。 */
   const frame = (surfaces: VolumeSurface[], shading = SHADING) => {
     fake.gpu.frame.begin()
     list.reset()
@@ -84,7 +80,6 @@ describe('混合光路', () => {
     expect(code).toContain('members: array<Member, 3>')
     expect(code).toContain('u.members[2]')
     expect(code).not.toContain('u.members[3]')
-    // 归属成员按下标取用，每名成员在归属判断里各出现一次。
     expect(code).toContain('u.members[owner]')
     expect(code.match(/owner = \d+;/g)).toEqual(['owner = 0;', 'owner = 1;', 'owner = 2;'])
     const member = /struct Member \{([^}]*)\}/.exec(code)?.[1] ?? ''
@@ -105,15 +100,12 @@ describe('混合光路', () => {
   it('裁剪切进玻璃时，只有一名成员的组也用混合管线', () => {
     const { groups, frame } = setup()
     groups.setOptics('hybrid')
-    // 裁剪范围远在玻璃之外：不影响光路。
     expect(frame([
       surface(1, 300, [0, 0, 1000, 600]),
     ]).map(item => item.label)).toEqual(['volume-profile:0:1'])
-    // 裁剪边穿过玻璃。
     expect(frame([
       surface(1, 300, [350, 0, 1000, 600]),
     ]).map(item => item.label)).toEqual(['volume-hybrid:0:1'])
-    // 裁剪边在玻璃之外，但比光线的横向位移加半厚度更近。
     expect(frame([
       surface(1, 300, [280, 0, 1000, 600]),
     ]).map(item => item.label)).toEqual(['volume-hybrid:0:1'])
@@ -122,18 +114,15 @@ describe('混合光路', () => {
   it('圆角比倒角窄时，只有一名成员的组也用混合管线', () => {
     const { groups, frame } = setup()
     groups.setOptics('hybrid')
-    // 半厚度 30、倒角 24：圆角 28 不比倒角窄，查表准确。
     expect(frame([
       surface(1, 300),
     ]).map(item => item.label)).toEqual(['volume-profile:0:1'])
-    // 圆角 8 比倒角窄：拐角里有一带要逐步求交。
     const narrow = surface(1, 300)
     narrow.options = {
       ...narrow.options,
       radius: [8, 8, 8, 8],
     }
     expect(frame([narrow]).map(item => item.label)).toEqual(['volume-hybrid:0:1'])
-    // 剖面光学与三维求交不受影响。
     groups.setOptics('profile')
     expect(frame([narrow]).map(item => item.label)).toEqual(['volume-profile:0:1'])
     groups.setOptics('raymarch')
@@ -155,7 +144,6 @@ describe('混合光路', () => {
     thin.options = { ...thin.options, refraction: 12 }
     const [item] = frame([thin, thick])
     const members = item!.start + HEADER_FLOATS + VOLUME_GROUP_FLOATS
-    // 矩形间距 5，融合距离 32：接近程度 1 − smoothstep(5 / 32)。
     const t = 5 / thick.fusion
     expect(data()[members + VOLUME_MEMBER_FLOATS + 31]).toBeCloseTo(1 - t * t * (3 - 2 * t), 5)
     expect(data()[members + 31]).toBe(0)
@@ -187,13 +175,10 @@ describe('混合光路', () => {
     const single = items.find(item => item.label === 'volume-profile:0:1')!
     const group = fused.start + HEADER_FLOATS
     const fusion = surface(1, 0).options.fusion
-    // 两名成员：其余成员不参与合并的最小距离是 2 × 融合距离 + 1，小于平顶捷径在三维求交里用的范围。
     expect(data()[group + 3]).toBe(fusion * 2 + 1)
     expect(data()[group + 1]).toBe(fusion * 2 * 1.5 + 1)
-    // 三块玻璃的截面相同，共用查找表的第 0 行。
     for (const member of [group + VOLUME_GROUP_FLOATS, group + VOLUME_GROUP_FLOATS + VOLUME_MEMBER_FLOATS, single.start + HEADER_FLOATS + VOLUME_GROUP_FLOATS])
       expect(data()[member + 28]).toBe(0)
-    // 两种管线共用同一份纹理绑定：背景、各级模糊与查找表。
     expect(fused.textures).toBe(single.textures)
     expect(bindGroups.mock.calls.at(-1)![0].entries).toHaveLength(VOLUME_TEXTURES + 1)
   })
@@ -246,7 +231,6 @@ describe('混合光路', () => {
     expect(cutBy(UNCLIPPED)).toBe(false)
     expect(cutBy([350, 0, 1000, 600])).toBe(true)
     expect(cutBy([350, 0, 1000, 600], null)).toBe(false)
-    // 玻璃 200 × 100，半厚度 30：裁剪边要比“这一行的最大横向位移 + 半厚度”再远几个像素才不算切进。
     const pad = table.reachOf(0) * 30 * HYBRID_REACH_SCALE + HYBRID_REACH_PAD + 30
     expect(cutBy([300 - pad, 0, 1000, 600])).toBe(true)
     expect(cutBy([300 - pad - 10, 0, 1000, 600])).toBe(false)
@@ -276,6 +260,7 @@ describe('查找表里的横向范围', () => {
     curve: 2.75,
     bottomBevel: 1,
     dispersion: 0.05,
+    ior: 1.45,
   }
 
   it('平顶上光线不离开入射位置，倒角上有横向位移', () => {
@@ -283,7 +268,6 @@ describe('查找表里的横向范围', () => {
     expect(samples.at(-1)!.reach).toBeLessThan(1e-3)
     const middle = samples[Math.round(LUT_SAMPLES * 0.5)]!
     expect(middle.reach).toBeGreaterThan(0.1)
-    // 底面倒角与顶面相同、底面贴着背景平面时，有效光路的 shift 就是玻璃内的横向位移，不会超过途中的最大值。
     for (const sample of samples.filter(sample => sample.hit && Math.min(...sample.valid) > 0.99))
       expect(sample.reach + 0.05).toBeGreaterThan(Math.abs(sample.shift[1]))
   })

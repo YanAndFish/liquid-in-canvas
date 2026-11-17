@@ -1,7 +1,9 @@
 import type { CanvasStage, CanvasStageOptions } from './CanvasStage'
+import type { GlassAttributeOptions, GlassHandle } from './glass-api'
 import type { GlassTheme } from './liquid-glass/defaults'
 import type { StageFault, StageSupport } from './types'
 import { CssGlassStage } from './css/CssGlassStage'
+import { addGlass, removeGlass } from './glass-api'
 import { detectStageSupport } from './support'
 
 /**
@@ -48,6 +50,17 @@ export interface LiquidGlassMount {
   readonly support: StageSupport
   /** 固定玻璃主题，传入 null 恢复跟随页面。 */
   setTheme: (theme: GlassTheme | null) => void
+  /**
+   * 把根元素里已有的元素声明为玻璃：写上 `data-liquid-glass` 与 `options` 对应的 `data-glass-*` 属性，
+   * 三种渲染方式都会在下一帧接手。元素已经是玻璃时只合并参数。元素不在根元素里时抛出错误。
+   * @since 0.4.0
+   */
+  addGlass: (element: HTMLElement, options?: GlassAttributeOptions) => GlassHandle
+  /**
+   * 移除元素上的玻璃：去掉 `data-liquid-glass`，以及通过 `addGlass()` 写上的参数属性。
+   * @since 0.4.0
+   */
+  removeGlass: (element: HTMLElement) => void
   /** 停止渲染并把页面恢复到挂载前的状态。 */
   dispose: () => void
 }
@@ -95,7 +108,6 @@ export async function mountLiquidGlass(options: MountLiquidGlassOptions): Promis
     backend.canvas.remove()
   }
 
-  /** 启动回退实现并返回它实际的方式。指定 `css` 时不使用折射滤镜。 */
   function createFallback(): CssGlassStage {
     cssBackend = new CssGlassStage({
       root,
@@ -123,19 +135,16 @@ export async function mountLiquidGlass(options: MountLiquidGlassOptions): Promis
       onFault?.(fault)
       return
     }
-    // 错误在绘制回调中抛出，等当前帧结束后再拆除画布。
     queueMicrotask(() => {
       if (disposed || !canvasBackend)
         return
       releaseCanvas()
-      // 页面已经挂载过，这里不再调用 beforeStart。
       createFallback().start()
       onFault?.(fault)
     })
   }
 
   async function startCanvas(): Promise<void> {
-    // 画布渲染器在这里才加载，用不到画布的浏览器不会下载它。
     const { CanvasStage } = await import('./CanvasStage')
     const canvas = document.createElement('canvas')
     if (canvasId)
@@ -206,6 +215,10 @@ export async function mountLiquidGlass(options: MountLiquidGlassOptions): Promis
       canvasBackend?.stage.setTheme(next)
       cssBackend?.setTheme(next)
     },
+    addGlass(element, glassOptions) {
+      return addGlass(root, element, glassOptions)
+    },
+    removeGlass,
     dispose() {
       if (disposed)
         return

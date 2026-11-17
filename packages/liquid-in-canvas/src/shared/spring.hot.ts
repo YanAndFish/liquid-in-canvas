@@ -12,7 +12,6 @@ export interface SpringState {
  */
 export function advanceSpring(state: SpringState, target: number, seconds: number, stiffness = 320, damping = 28): boolean {
   const dt = Math.min(Math.max(seconds, 0), 1 / 30)
-  // 拆成小步，使 30 Hz 与 120 Hz 下的响应接近。
   const steps = Math.max(1, Math.ceil(dt / (1 / 120)))
   const step = dt / steps
   for (let i = 0; i < steps; i++) {

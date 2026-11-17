@@ -111,7 +111,6 @@ body {
   height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
-  /* Reserve the scrollbar so the cart lock does not shift the page. */
   scrollbar-gutter: stable;
   scroll-behavior: smooth;
   overscroll-behavior: contain;
@@ -246,7 +245,6 @@ svg {
   }
 }
 
-/* 触屏控件留出足够的点击区域；可绘制元素由材质处理按压形变。 */
 [data-liquid-glass] { background: transparent; }
 [data-liquid-glass] :focus-visible { outline-offset: -4px; }
 button, a { -webkit-tap-highlight-color: transparent; }
@@ -258,7 +256,6 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .showcase-frame [data-liquid-glass] { background: #22292b; }
 }
 
-/* 调参面板（liquid-in-canvas/tuner）使用商店自己的配色。 */
 .lg-tuner {
   --lg-tuner-text: var(--text);
   --lg-tuner-text-soft: var(--text-soft);

@@ -5,21 +5,17 @@ import type { GlassOptics } from '../types'
 /** 面板文案的语言。 */
 export type GlassTunerLocale = 'zh' | 'en'
 
-/** 一段中英文对照的文案。 */
 export type Text = readonly [zh: string, en: string]
 
 export type MaterialNumber = Exclude<keyof GlassMaterial, 'tint'>
 export type ShapeNumber = 'fusion' | 'elevation' | 'radius'
 export type MorphNumber = 'morphStretch' | 'morphBounce' | 'morphWobble'
 
-/** 一个滑块的说明。 */
 export interface Field<Key extends string> {
   key: Key
   label: Text
   step: number
-  /** 滑块上限；缺省使用库允许的最大值。 */
   max?: number
-  /** 数值后的单位。 */
   unit?: string
 }
 
@@ -33,6 +29,11 @@ export const MATERIAL_FIELDS: readonly Field<MaterialNumber>[] = [
   {
     key: 'dispersion',
     label: ['色散', 'Dispersion'],
+    step: 0.01,
+  },
+  {
+    key: 'ior',
+    label: ['折射率', 'Refractive index'],
     step: 0.01,
   },
   {
@@ -75,7 +76,6 @@ export const MATERIAL_FIELDS: readonly Field<MaterialNumber>[] = [
   },
 ]
 
-/** 截面：厚度与边缘倒角的形状，倒角宽高是相对半厚度的比例。 */
 export const PROFILE_FIELDS: readonly Field<MaterialNumber>[] = [
   {
     key: 'refraction',
@@ -191,7 +191,6 @@ export const OPTICS: readonly { id: GlassOptics, label: Text, hint: Text }[] = [
   },
 ]
 
-/** 面板上的其余文案。 */
 export const TEXT = {
   title: ['玻璃调参', 'Glass tuning'],
   subtitle: ['全局默认参数 · 实时生效', 'Global defaults · applied live'],
@@ -227,7 +226,6 @@ export const TEXT = {
   note: ['只影响没有用 data-glass-* 单独声明的属性。拖动圆形按钮可以移动面板。', 'Only affects properties without their own data-glass-* attribute. Drag the round button to move the panel.'],
 } satisfies Record<string, Text>
 
-/** 未指定语言时按页面语言选择，再看浏览器语言。 */
 export function detectLocale(): GlassTunerLocale {
   const lang = (typeof document !== 'undefined' && document.documentElement.lang)
     || (typeof navigator !== 'undefined' && navigator.language)

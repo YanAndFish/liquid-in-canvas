@@ -6,7 +6,6 @@ import { useLocale } from '@/composables/useLocale'
 import { useRenderer } from '@/composables/useRenderer'
 
 const props = defineProps<{
-  /** 购物袋等模态界面打开时隐藏调参入口。 */
   disabled?: boolean
 }>()
 
@@ -15,7 +14,6 @@ const { locale } = useLocale()
 const controller = useRenderer()
 let tuner: GlassTuner | null = null
 
-/** 把启动代码提供的响应式控制器转成面板读取的接口；面板按需读取 getter。 */
 const renderer: GlassTunerRenderer | null = controller && {
   get mode() {
     return controller.mode.value
@@ -41,8 +39,6 @@ const renderer: GlassTunerRenderer | null = controller && {
 }
 
 onMounted(() => {
-  // 面板插入应用的 DOM 之内，画布模式下随根元素一起进入画布。主题跟随 <html data-theme>。
-  // 第 1 层是顶栏，面板展开时放在第 2 层，拖到顶栏附近也不会与它融合。
   tuner = createGlassTuner({
     container: host.value,
     renderer,

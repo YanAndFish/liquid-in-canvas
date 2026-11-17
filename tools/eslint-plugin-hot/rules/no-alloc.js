@@ -1,11 +1,6 @@
 import { DOCS_URL, onceContext } from './context.js'
 
-/**
- * 返回新对象、新数组、新字符串、迭代器或 Promise 的方法。按名称匹配，不区分接收者的类型，
- * 因此热路径代码里的自定义方法不要使用这些名字。
- */
 const ALLOCATING_METHODS = new Set([
-  // 数组与迭代器
   'concat',
   'entries',
   'filter',
@@ -23,7 +18,6 @@ const ALLOCATING_METHODS = new Set([
   'toSpliced',
   'values',
   'with',
-  // 字符串
   'join',
   'match',
   'matchAll',
@@ -44,7 +38,6 @@ const ALLOCATING_METHODS = new Set([
   'trim',
   'trimEnd',
   'trimStart',
-  // 函数、Promise 与序列化
   'bind',
   'catch',
   'finally',
@@ -54,7 +47,6 @@ const ALLOCATING_METHODS = new Set([
   'then',
 ])
 
-/** 直接调用就会分配的全局函数。 */
 const ALLOCATING_GLOBALS = new Set([
   'Array',
   'Object',
@@ -75,17 +67,6 @@ function isString(node) {
   return (node.type === 'Literal' && typeof node.value === 'string') || node.type === 'TemplateLiteral'
 }
 
-/**
- * 禁止在热路径函数里分配堆内存。
- *
- * 检查 `new`、对象与数组字面量、展开、数组解构与剩余参数、带插值的模板字符串、
- * 正则字面量、字符串拼接、`async` 函数，以及按名称识别的分配方法（见 `ALLOCATING_METHODS`）。
- * 构造函数、类字段初始值、模块顶层与 `throw` 语句不检查，见 `onceContext()`。
- *
- * DOM 接口（`getBoundingClientRect()`、`getComputedStyle()` 等）返回的新对象无法静态识别，不在检查范围内。
- *
- * @type {import('eslint').Rule.RuleModule}
- */
 export default {
   meta: {
     type: 'problem',
@@ -116,7 +97,6 @@ export default {
         context.report({ node, messageId, data })
     }
     function checkFunction(node) {
-      // 函数本身每次调用都会返回 Promise；参数与函数体的位置以这个函数为准。
       if (node.async && !(node.parent?.type === 'MethodDefinition' && node.parent.kind === 'constructor'))
         context.report({ node, messageId: 'async' })
     }
@@ -131,7 +111,6 @@ export default {
         report(node, 'array')
       },
       SpreadElement(node) {
-        // 字面量里的展开已经随字面量报告。
         if (node.parent.type === 'CallExpression' || node.parent.type === 'NewExpression')
           report(node, 'spread')
       },

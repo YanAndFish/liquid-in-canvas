@@ -1,14 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PaintOrder } from '../../src/liquid-glass/content-order.hot'
 
-/** 新的一帧里的比较函数：每次调用都读取页面当前的样式。 */
 function comparator(): (a: HTMLElement, b: HTMLElement) => number {
   const order = new PaintOrder()
   order.begin()
   return (a, b) => order.compare(a, b)
 }
 
-/** 建立指定 CSS 层级的容器及玻璃内容。 */
 function container(z?: number, parent = document.body): HTMLElement {
   const wrapper = document.createElement('div')
   if (z !== undefined) {

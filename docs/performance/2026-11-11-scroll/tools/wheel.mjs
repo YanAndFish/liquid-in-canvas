@@ -1,5 +1,3 @@
-// 真实滚轮测量：视频保持播放，CDP 发送滚轮事件，统计画布 paint 间隔与绘制同步耗时。
-// 用法: node wheel.mjs <url> <runs> [--pause-video] [--trace out.json]
 const [url, runsArg = '3', ...flags] = process.argv.slice(2)
 const pauseVideo = flags.includes('--pause-video')
 const port = process.env.CDP_PORT ?? '9333'
@@ -27,7 +25,6 @@ await send('Page.navigate', { url })
 await sleep(6000)
 const ok = await evaluate(`!!document.querySelector('#stage')`)
 if (!ok) { console.error('no stage'); process.exit(2) }
-// 隐藏测量面板，避免遮挡。
 await evaluate(`document.querySelector('aside')?.remove(); true`)
 await evaluate(`(() => {
   const canvas = document.querySelector('#stage')
@@ -48,7 +45,6 @@ async function wheelRun() {
   await sleep(800)
   await evaluate(`Object.assign(__m, { on: true, starts: [], ends: [], frames: [] }); true`)
   const t0 = Date.now()
-  // 3 秒向下、3 秒向上，每 16ms 一次 40px，近似触控板连续滚动。
   for (const dir of [1, -1]) {
     const end = Date.now() + 3000
     while (Date.now() < end) {
@@ -81,7 +77,7 @@ const out = []
 const profile = flags.includes('--profile')
 if (profile) { await send('Profiler.enable'); await send('Profiler.setSamplingInterval', { interval: 200 }) }
 if (!flags.includes('--cold'))
-  await wheelRun() // 预热
+  await wheelRun()
 if (profile)
   await send('Profiler.start')
 for (let i = 0; i < runs; i++) out.push(await wheelRun())

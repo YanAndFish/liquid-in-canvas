@@ -20,12 +20,6 @@ interface PixelRatioInput {
   resolution: Pick<StageResolution, 'maxPixelRatio' | 'maxPixels'>
 }
 
-/**
- * 计算画布的渲染倍率。
- *
- * 依次应用倍率上限和像素预算。结果不低于 1 与设备倍率中的较小值，
- * 避免文字比普通显示器上的页面更模糊。
- */
 export function resolvePixelRatio(input: PixelRatioInput): number {
   const device = input.devicePixelRatio > 0
     ? input.devicePixelRatio
@@ -39,17 +33,10 @@ export function resolvePixelRatio(input: PixelRatioInput): number {
   return Math.max(floor, ratio)
 }
 
-/**
- * 自适应降级可以把画布倍率乘到多小：`pixelRatio` 是 `resolvePixelRatio()` 的结果，返回 0 到 1 的系数下限。
- *
- * 降级后的倍率不低于 `minPixelRatio`，也不低于 1 与设备倍率中的较小值；
- * 画布倍率本来就不高于这个下限时返回 1，表示不能再降。
- */
 export function resolveCanvasScaleFloor(devicePixelRatio: number, pixelRatio: number, minPixelRatio: number): number {
   const device = devicePixelRatio > 0
     ? devicePixelRatio
     : 1
-  // 无效的下限（NaN）按不允许降低处理。
   const floor = minPixelRatio >= 0
     ? Math.max(Math.min(1, device), minPixelRatio)
     : Infinity
@@ -58,11 +45,6 @@ export function resolveCanvasScaleFloor(devicePixelRatio: number, pixelRatio: nu
     : 1
 }
 
-/**
- * 计算玻璃体积的着色倍率：不超过画布倍率和配置的上限，再乘以自适应缩放。
- *
- * 结果除以画布倍率就是体积着色相对画布的缩放比例。
- */
 export function resolveGlassPixelRatio(pixelRatio: number, maxGlassPixelRatio: number, adaptive: number): number {
   const cap = Number.isFinite(maxGlassPixelRatio) && maxGlassPixelRatio > 0
     ? maxGlassPixelRatio

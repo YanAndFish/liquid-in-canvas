@@ -19,25 +19,16 @@ export interface CssGlassStageOptions {
   refraction?: boolean
 }
 
-/**
- * 标记已应用回退样式的元素，样式表只对带有它的玻璃生效。
- * 值为 `svg` 时这块玻璃另外带有折射滤镜。
- */
 export const GLASS_CSS_ATTR = 'data-liquid-glass-css'
 
 const FILTER_PROPERTY = '--lg-filter'
 
-/** 尺寸停止变化这么久之后才重新生成折射滤镜，单位毫秒。 */
 const RESIZE_SETTLE = 140
 
-/** 一块已处理的玻璃。 */
 interface CssSurface {
-  /** 当前折射滤镜的签名，没有滤镜时为 null。 */
   signature: string | null
-  /** 上一次处理时的布局尺寸，取整到 CSS 像素。 */
   width: number
   height: number
-  /** 尺寸正在变化时，等待重新生成滤镜的计时器。 */
   settle: ReturnType<typeof setTimeout> | undefined
 }
 
@@ -51,10 +42,6 @@ const PROPERTIES = [
   '--lg-shadow',
 ] as const
 
-/**
- * 选择器带两个属性，优先级高于单个 class，玻璃元素自身的背景与阴影不会盖过回退样式。
- * 具体数值通过自定义属性逐个元素写入，样式表本身不随参数变化。
- */
 const STYLE = `[${GLASS_ATTR}][${GLASS_CSS_ATTR}] {
   -webkit-backdrop-filter: blur(var(--lg-blur, 0px)) saturate(var(--lg-saturation, 1)) brightness(var(--lg-brightness, 1));
   backdrop-filter: blur(var(--lg-blur, 0px)) saturate(var(--lg-saturation, 1)) brightness(var(--lg-brightness, 1));
@@ -78,22 +65,13 @@ function rgba(hex: string, alpha: number): string {
   return `rgba(${value >> 16 & 255}, ${value >> 8 & 255}, ${value & 255}, ${Math.round(alpha * 1000) / 1000})`
 }
 
-/**
- * 回退实现里背景模糊的下限，单位 CSS 像素。
- *
- * 画布里的倒角把边缘一圈背景压缩、折开，中间也随厚度轻微放大，玻璃上的文字下面不会是原样的背景细节；
- * 回退实现没有这些，通透材质直接把视频、照片的细节压在文字下面。
- */
 export const FALLBACK_MIN_BLUR = 10
 
-/** 回退实现里衬底不透明度的下限：染色不足时补到这么多。 */
 export const FALLBACK_MIN_VEIL = 0.24
 
-/** 承托深色文字的浅色衬底与承托浅色文字的深色衬底。 */
 const LIGHT_VEIL = '#f6f6f8'
 const DARK_VEIL = '#14181c'
 
-/** 解析 `rgb()` / `rgba()` 形式的计算颜色，返回相对亮度（0–1）；无法解析时返回 null。 */
 export function colorLuminance(color: string): number | null {
   const match = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(color)
   if (!match)
@@ -116,13 +94,6 @@ function mixHex(a: string, b: string, t: number): string {
   return `#${out.toString(16).padStart(6, '0')}`
 }
 
-/**
- * 回退实现的可读性底线：模糊不低于 `FALLBACK_MIN_BLUR`，染色不足 `FALLBACK_MIN_VEIL` 时补一层衬底。
- *
- * 衬底颜色按玻璃上文字的明暗选择：浅色文字配深色衬底，深色文字配浅色衬底。
- * 视频上用白字的控件因此不会被浅色主题的白雾冲淡。原有染色按比例保留在衬底里。
- * `textColor` 无法解析时按主题选择：深色主题配深色衬底。
- */
 export function legibleOptions(options: GlassOptions, textColor: string | null, theme: GlassTheme): GlassOptions {
   const blur = Math.max(options.blur, FALLBACK_MIN_BLUR)
   if (options.tintAlpha >= FALLBACK_MIN_VEIL) {
@@ -145,11 +116,6 @@ export function legibleOptions(options: GlassOptions, textColor: string | null, 
   }
 }
 
-/**
- * 把玻璃参数换算成 CSS 能表达的部分：模糊、染色、圆角、阴影和一圈高光。
- *
- * `highlight` 为 false 时不输出内阴影高光，用于已经由折射滤镜绘制高光的玻璃。
- */
 export function cssGlassProperties(options: GlassOptions, highlight = true): Record<typeof PROPERTIES[number], string> {
   const strength = Math.min(1, options.specular * 0.2)
   const shadows = highlight
@@ -208,7 +174,6 @@ export class CssGlassStage {
     this.installStyle()
     this.themeSource.start()
     this.stopDefaults = onGlassDefaultsChange(() => this.refreshAll())
-    // 滤镜的位移贴图按元素尺寸生成，尺寸变化后需要换一张。
     if (this.filters && typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
@@ -263,7 +228,6 @@ export class CssGlassStage {
   }
 
   private register(element: HTMLElement): void {
-    // 嵌套玻璃（例如激活的标签项）在回退实现里是外层之上的一层染色与模糊。
     if (this.surfaces.has(element) || !element.isConnected)
       return
     this.surfaces.set(element, {
@@ -294,12 +258,10 @@ export class CssGlassStage {
     const theme = this.themeSource.value
     const options = parseGlassOptions(element, theme)
     this.applyRefraction(element, options, settled)
-    // 嵌套玻璃（激活项）下面已经有外层的衬底，不再补。
     const nested = !!element.parentElement?.closest(attr(GLASS_ATTR))
     const legible = nested
       ? options
       : legibleOptions(options, getComputedStyle(element).color, theme)
-    // 带滤镜的玻璃由滤镜绘制轮廓高光，不再叠加内阴影。
     const properties = cssGlassProperties(legible, !this.surfaces.get(element)?.signature)
     for (const name of PROPERTIES) {
       if (element.style.getPropertyValue(name) !== properties[name])
@@ -307,13 +269,6 @@ export class CssGlassStage {
     }
   }
 
-  /**
-   * 按当前参数与尺寸更换折射滤镜。
-   *
-   * 尺寸变化时先撤下滤镜、只留模糊，停止变化后再按新尺寸生成（`settled` 为 true 的那次调用）。
-   * 位移贴图是一张按元素尺寸生成的图片，带尺寸动画的面板如果每帧换一张，
-   * 解码与滤镜重建会把动画拖到三十帧以下。参数变化不改变尺寸，立即生效。
-   */
   private applyRefraction(element: HTMLElement, options: GlassOptions, settled: boolean): void {
     const surface = this.surfaces.get(element)
     if (!this.filters || !surface)
@@ -336,12 +291,10 @@ export class CssGlassStage {
     this.setFilter(element, surface, refractionShape(options, width, height))
   }
 
-  /** 换上形状对应的滤镜，null 表示只保留模糊；形状没有变化时不动。 */
   private setFilter(element: HTMLElement, surface: CssSurface, shape: RefractionShape | null): void {
     const filters = this.filters
     if (!filters || (shape && refractionSignature(shape)) === surface.signature)
       return
-    // 先取得新滤镜再释放旧的，共用同一个滤镜的玻璃不会让它被回收后重建。
     const acquired = shape && filters.acquire(shape)
     if (acquired) {
       element.style.setProperty(FILTER_PROPERTY, `url(#${acquired.id})`)
@@ -366,7 +319,6 @@ export class CssGlassStage {
       if (record.type === 'attributes') {
         const target = record.target as HTMLElement
         if (record.attributeName !== GLASS_ATTR) {
-          // 参数可能写在作用域上，作用域内的玻璃都要重新读取。
           for (const element of this.surfaces.keys()) {
             if (target.contains(element))
               this.apply(element)

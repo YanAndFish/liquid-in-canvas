@@ -1,36 +1,21 @@
 import type { GlassOptions, GlassRadius } from '../liquid-glass/options'
-import { glassEdgeTilt, glassProfile } from '../liquid-glass/profile'
+import { BASE_IOR, glassEdgeTilt, glassProfile } from '../liquid-glass/profile'
 
-/** 一块玻璃的边缘折射滤镜参数，长度使用 CSS 像素。 */
 export interface RefractionShape {
   width: number
   height: number
   radius: GlassRadius
-  /** 发生偏折的边缘宽度，即顶面倒角的宽度。 */
   band: number
-  /** 顶面倒角的高度。 */
   rise: number
-  /** 倒角曲线的超椭圆指数。 */
   curve: number
-  /** 轮廓处的最大取样偏移。 */
   offset: number
-  /** 红、蓝通道偏移相对绿通道的增减比例，0 表示没有色散。 */
   spread: number
-  /** 轮廓高光强度，0 表示没有高光。 */
   specular: number
 }
 
-/**
- * 面积（CSS 像素）超过它的玻璃不使用滤镜，只保留模糊。
- *
- * 滤镜的开销与面积成正比，而且背景每变化一帧就要重算一次。实测 DPR 2 下一块 360×620 的面板
- * 会把滚动拖到三十帧以下，导航条和按钮这样的尺寸（十万像素以内）则没有可见的影响。
- */
 const MAX_AREA = 120_000
-/** 轮廓处的最大偏移由实体半厚度和抬升高度两部分组成：光线在实体内偏折，离开后还要走过抬升的距离。 */
 const OFFSET_PER_DEPTH = 1.25
 const OFFSET_PER_ELEVATION = 0.5
-/** 轮廓高光线的宽度。 */
 const RIM_WIDTH = 1.1
 
 /**
@@ -50,12 +35,6 @@ export function supportsSvgBackdropFilter(): boolean {
     : /Chrome\/\d+/.test(navigator.userAgent)
 }
 
-/**
- * 由玻璃参数和元素尺寸得到折射滤镜的形状；不需要滤镜时返回 null。
- *
- * 截面的取法与三维实体一致：厚度受控件短边限制，偏折集中在倒角宽度内。
- * 尺寸取整，使滚动或动画中的小数像素不会不断生成新的滤镜。
- */
 export function refractionShape(options: GlassOptions, width: number, height: number): RefractionShape | null {
   const w = Math.round(width)
   const h = Math.round(height)
@@ -72,7 +51,7 @@ export function refractionShape(options: GlassOptions, width: number, height: nu
     band: Math.max(1, Math.round(profile.bevelWidth)),
     rise: Math.round(profile.bevelHeight * 10) / 10,
     curve: Math.round(profile.curve * 100) / 100,
-    offset: Math.round(Math.min(depth * OFFSET_PER_DEPTH + options.elevation * OFFSET_PER_ELEVATION, short * 0.45) * 10) / 10,
+    offset: Math.round(Math.min((depth * OFFSET_PER_DEPTH + options.elevation * OFFSET_PER_ELEVATION) * (options.ior - 1) / (BASE_IOR - 1), short * 0.45) * 10) / 10,
     spread: Math.round(options.dispersion * 0.25 * 1000) / 1000,
     specular: Math.round(options.specular * 100) / 100,
   }
@@ -82,25 +61,14 @@ export function refractionSignature(shape: RefractionShape): string {
   return `${shape.width}x${shape.height}r${shape.radius.join(',')}b${shape.band},${shape.rise},${shape.curve}o${shape.offset}s${shape.spread}h${shape.specular}`
 }
 
-/** 位移贴图上一个点的取值。 */
 export interface RefractionSample {
-  /** 取样偏移方向与比例：长度 0–1，指向玻璃内部。 */
   x: number
   y: number
-  /** 高光的不透明度，0–1。 */
   highlight: number
 }
 
-/** 指向光源的平面方向（左上），与体积着色器的光照方向一致。 */
 const LIGHT = [-0.6, -0.8] as const
 
-/**
- * 计算玻璃上一点的偏移与高光。坐标以元素左上角为原点。
- *
- * 用圆角矩形的有向距离得到到轮廓的深度和法线：偏移沿法线指向内部，大小取倒角表面的倾斜程度，
- * 在轮廓处最大，到倒角内侧衰减为零，模拟凸起的倒角把光线折向内部。高光是贴着轮廓的一圈细线，
- * 朝向光源的一侧最亮，背光一侧次之，再加一层很淡的内侧辉光。
- */
 export function refractionSample(shape: RefractionShape, px: number, py: number): RefractionSample {
   const halfWidth = shape.width / 2
   const halfHeight = shape.height / 2
@@ -122,8 +90,6 @@ export function refractionSample(shape: RefractionShape, px: number, py: number)
   const signY = y < 0
     ? -1
     : 1
-  // 轮廓外侧为正的有向距离，以及朝外的单位法线。与体积着色器的 glass_contour 相同：
-  // 倒角宽于圆角时，更深处的等距线保持半径为 rounding 的圆角，法线不在对角线上突变。
   const narrow = Math.min(halfWidth, halfHeight)
   const bevel = Math.min(shape.band, narrow)
   const rounding = Math.max(Math.min(radius, bevel - radius, narrow - bevel), 0)
@@ -167,7 +133,6 @@ export function refractionSample(shape: RefractionShape, px: number, py: number)
   const facing = normalX * LIGHT[0] + normalY * LIGHT[1]
   const lit = Math.max(0, facing)
   const back = Math.max(0, -facing)
-  // 轮廓外侧留半个像素的过渡，圆角处不出现锯齿。
   const inside = Math.min(1, Math.max(0, 0.5 - distance))
   const line = Math.exp(-depth / RIM_WIDTH)
   const highlight = shape.specular * inside * (line * (0.2 + 0.62 * lit * lit + 0.3 * back * back * back) + 0.09 * (1 - t) ** 3 * (0.35 + 0.65 * lit))
@@ -178,30 +143,18 @@ export function refractionSample(shape: RefractionShape, px: number, py: number)
   }
 }
 
-/** 贴图边长相对元素的倍率：小控件用两倍，细高光线在高倍率屏幕上才清晰；大面板用一倍控制体积。 */
 function mapScale(shape: RefractionShape): number {
   return shape.width * shape.height * 4 <= 400_000
     ? 2
     : 1
 }
 
-/** 一个滤镜用到的三张灰度贴图。 */
 export interface RefractionMaps {
-  /** 水平偏移，0.5 表示不偏移。 */
   x: string
-  /** 垂直偏移，0.5 表示不偏移。 */
   y: string
-  /** 高光强度；没有高光时为 null。 */
   shine: string | null
 }
 
-/**
- * 逐像素生成贴图并导出为图片。没有二维画布的环境返回 null。
- *
- * 三个量各用一张灰度图，而不是放进同一张图的三个通道：浏览器会把图片从 sRGB 转换到显示器的色彩空间
- * （例如 Display P3）之后再交给滤镜，彩色像素的各通道在转换中相互串扰，红通道的 0.5 不再是 0.5，
- * 整块背景会偏移几个像素，绿通道也会凭空多出一层高光。灰度像素在转换前后保持不变。
- */
 export function refractionMaps(shape: RefractionShape): RefractionMaps | null {
   if (typeof document === 'undefined')
     return null
@@ -263,18 +216,11 @@ function svgElement(name: string, attributes: Record<string, string | number>): 
   return element
 }
 
-/** 只保留红通道、只保留蓝通道、把灰度变成白色层的不透明度。 */
 const KEEP_RED = '1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0'
 const KEEP_GREEN = '0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0'
 const KEEP_BLUE = '0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0'
 const GRAY_TO_WHITE_ALPHA = '0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1 0 0 0 0'
 
-/**
- * 创建折射滤镜：按位移贴图偏移背景，有色散时红、绿、蓝三个通道使用不同的偏移量，最后叠上轮廓高光。
- *
- * 滤镜接在 `blur()` 之后，偏移的是已经模糊的背景，与体积着色器在折射后的位置取样模糊纹理一致。
- * 无法生成贴图时返回 null。
- */
 export function createRefractionFilter(id: string, shape: RefractionShape): SVGElement | null {
   const maps = refractionMaps(shape)
   if (!maps)
@@ -314,7 +260,6 @@ export function createRefractionFilter(id: string, shape: RefractionShape): SVGE
     mode: 'screen',
     result,
   })
-  // 两张灰度图分别放进红、蓝通道，合成位移滤镜需要的一张图。通道互不重叠，滤色混合等于相加。
   filter.append(
     image(maps.x, 'mx'),
     image(maps.y, 'my'),
@@ -330,7 +275,6 @@ export function createRefractionFilter(id: string, shape: RefractionShape): SVGE
     yChannelSelector: 'B',
     result,
   })
-  // 贴图取值 0–1 对应 ±scale/2 的偏移。
   const scale = shape.offset * 2
   if (shape.spread <= 0) {
     filter.append(displace(scale, 'displaced'))
@@ -347,7 +291,6 @@ export function createRefractionFilter(id: string, shape: RefractionShape): SVGE
       blend('rg', 'b', 'displaced'),
     )
   }
-  // 位移按整像素取样，背景清晰时会出现台阶，用很小的模糊抹平。
   filter.append(svgElement('feGaussianBlur', {
     in: 'displaced',
     stdDeviation: 0.6,
@@ -364,19 +307,12 @@ export function createRefractionFilter(id: string, shape: RefractionShape): SVGE
   return filter
 }
 
-/**
- * 页面里的滤镜定义。相同形状的玻璃共用一个滤镜，按引用计数回收。
- */
 export class RefractionFilters {
   private host: SVGElement | null = null
   private defs: SVGElement | null = null
   private readonly entries = new Map<string, { id: string, element: SVGElement, users: number }>()
   private serial = 0
 
-  /**
-   * 取得形状对应的滤镜并增加一次引用，返回可用于 `url(#…)` 的 id。
-   * 无法生成滤镜时返回 null，这块玻璃只使用模糊。
-   */
   acquire(shape: RefractionShape): { id: string, signature: string } | null {
     const signature = refractionSignature(shape)
     let entry = this.entries.get(signature)
@@ -393,7 +329,6 @@ export class RefractionFilters {
     return { id: entry.id, signature }
   }
 
-  /** 释放一次引用，没有玻璃使用后移除滤镜。 */
   release(signature: string): void {
     const entry = this.entries.get(signature)
     if (!entry || --entry.users > 0)

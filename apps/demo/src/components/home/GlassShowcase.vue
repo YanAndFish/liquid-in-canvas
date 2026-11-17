@@ -17,17 +17,11 @@ const variant = ref<'clear' | 'regular'>('clear')
 const playing = ref(false)
 const requestedPlayback = ref(true)
 const renderer = useRenderer()
-/**
- * 面板一步切换到展开或收起的尺寸，玻璃的过渡交给 `data-glass-morph`：画布渲染下体积以液体流动、
- * 回弹到新形状，内容随玻璃展开显露。逐帧改变元素尺寸会让画布每帧重建内容快照，按钮与文字随之闪烁。
- * 回退实现没有液体流动，用 CSS 过渡尺寸。
- */
 const panelStyle = computed(() => settings.value
   ? { width: 'min(292px, calc(100vw - 56px))', height: '244px' }
   : { width: '52px', height: '52px' })
 const eased = computed(() => renderer?.mode.value !== 'canvas')
 const optionsVisible = settings
-/** 展示区的玻璃只指定材质和压在影像上的深色染色，其余光学参数取全局默认值，可在调参面板中调整。 */
 const surface = computed((): LiquidGlassAttributes => ({
   'data-glass-variant': variant.value,
   'data-glass-tint': '#131b20',
@@ -39,7 +33,6 @@ let observer: IntersectionObserver | undefined
 let motion: MediaQueryList | undefined
 let inView = true
 
-/** 按用户选择和可见性播放视频，离屏时停止上传视频帧。 */
 function syncPlayback(): void {
   const media = video.value
   if (!media)
@@ -59,19 +52,16 @@ function syncPlayback(): void {
   }
 }
 
-/** 切换背景，保留用户的播放偏好。 */
 function selectScene(index: number): void {
   scene.value = index
   syncPlayback()
 }
 
-/** 显式播放操作允许用户在减少动态效果模式下观看视频。 */
 function togglePlayback(): void {
   requestedPlayback.value = !playing.value
   syncPlayback()
 }
 
-/** 关闭设置并把键盘焦点还给触发按钮。 */
 function closeSettings(): void {
   settings.value = false
   settingsButton.value?.focus()

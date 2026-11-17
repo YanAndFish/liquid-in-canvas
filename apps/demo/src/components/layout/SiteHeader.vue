@@ -33,7 +33,6 @@ const themeLabel = computed(() => theme.value === 'dark'
 
 <template>
   <header class="site-header">
-    <!-- 顶栏固定在页面之上，放在第 1 层：滚到它下面的页面玻璃被它折射，不与它融合成一块。 -->
     <div class="header-layout" data-liquid-glass data-glass-layer="1" data-glass-radius="28">
       <RouterLink to="/" class="flex items-baseline gap-2.5">
         <span class="text-xl tracking-[0.14em] font-display">STILL</span>

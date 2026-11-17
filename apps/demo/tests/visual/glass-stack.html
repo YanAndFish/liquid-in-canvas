@@ -72,7 +72,6 @@
     bar.dataset.glassLayer = flat ? '0' : '1'
     event.target.textContent = flat ? '工具条改到第 1 层' : '工具条改到第 0 层'
   }
-  // 生效与移除：新玻璃材质化出现，移除或隐藏的玻璃在原处退去。
   let added = null
   document.querySelector('#add').onclick = () => {
     if (added)

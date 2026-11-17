@@ -12,7 +12,6 @@ export type GlassRadius = readonly [number, number, number, number]
  */
 export type GlassMorphContent = 'static' | 'clip' | 'follow'
 
-/** 所有会影响玻璃参数的属性名，供属性监听使用。 */
 export const GLASS_OPTION_ATTRS = [
   'data-glass-layer',
   'data-glass-fusion',
@@ -26,6 +25,7 @@ export const GLASS_OPTION_ATTRS = [
   'data-glass-bevel-curve',
   'data-glass-bottom-bevel',
   'data-glass-dispersion',
+  'data-glass-ior',
   'data-glass-lens',
   'data-glass-saturation',
   'data-glass-brightness',
@@ -67,6 +67,8 @@ export interface GlassOptions {
   bottomBevel: number
   /** RGB 采样位置的分离强度。 */
   dispersion: number
+  /** 折射率。 */
+  ior: number
   /** 凸透镜强度，0 表示平板。玻璃中间的背景被放大约 1 / (1 − lens) 倍。 */
   lens: number
   /** 透射背景的饱和度倍数，1 表示不变。 */
@@ -106,13 +108,8 @@ export interface GlassOptions {
 
 const SCOPE_SELECTOR = attr(GLASS_SCOPE_ATTR)
 
-/** 作用域不向下传递的参数：迁移名字标识单块玻璃，传下去会让作用域里的玻璃全都同名。 */
 const UNSCOPED = new Set<string>(['data-glass-morph'])
 
-/**
- * 玻璃参数的来源：先看元素自身，再由近及远看外围的 `[data-glass-scope]`。
- * 元素自身也带 `data-glass-scope` 时，它的属性已经在第一步读到。
- */
 export class GlassAttributeSource {
   private readonly element: HTMLElement
   private readonly scopes: HTMLElement[] = []
@@ -206,10 +203,6 @@ function parseAnchor(raw: string | null): string | null {
   return raw?.trim() || null
 }
 
-/**
- * 液体迁移：不写或 `"false"` 关闭；空值或 `"true"`（JSX 里不写值时得到的字符串）只对自身生效；
- * 其他值是迁移的名字。
- */
 export function parseMorph(raw: string | null): string | null {
   const value = raw?.trim()
   if (value === undefined || value.toLowerCase() === ATTR_OFF)
@@ -231,10 +224,6 @@ function parseMaterialize(raw: string | null): boolean {
   return value !== 'none' && value !== ATTR_OFF
 }
 
-/**
- * 读取元素的玻璃参数。元素自身未声明的属性取外围作用域（`data-glass-scope`）的值，
- * 仍未声明时取 `defaults`，缺省为当前的全局默认值，见 `setGlassDefaults()`。
- */
 export function parseGlassOptions(
   element: HTMLElement,
   theme: GlassTheme,
@@ -256,6 +245,7 @@ export function parseGlassOptions(
     bevelCurve: numberAttribute(source, 'data-glass-bevel-curve', material.bevelCurve, GLASS_LIMITS.bevelCurve),
     bottomBevel: numberAttribute(source, 'data-glass-bottom-bevel', material.bottomBevel, GLASS_LIMITS.bottomBevel),
     dispersion: numberAttribute(source, 'data-glass-dispersion', material.dispersion, GLASS_LIMITS.dispersion),
+    ior: numberAttribute(source, 'data-glass-ior', material.ior, GLASS_LIMITS.ior),
     lens: numberAttribute(source, 'data-glass-lens', material.lens, GLASS_LIMITS.lens),
     saturation: numberAttribute(source, 'data-glass-saturation', material.saturation, GLASS_LIMITS.saturation),
     brightness: numberAttribute(source, 'data-glass-brightness', material.brightness, GLASS_LIMITS.brightness),
@@ -288,6 +278,7 @@ export function glassOptionsSignature(options: GlassOptions): string {
     bevelCurve: options.bevelCurve,
     bottomBevel: options.bottomBevel,
     dispersion: options.dispersion,
+    ior: options.ior,
     lens: options.lens,
     saturation: options.saturation,
     brightness: options.brightness,

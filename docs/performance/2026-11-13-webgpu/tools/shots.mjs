@@ -1,7 +1,3 @@
-// 固定条件下截取一组画面，用于渲染器改动前后的逐像素比较。
-// 用法: node shots.mjs <站点根地址> <输出目录> [场景名前缀…]
-// 站点是 `apps/demo/tests/perf/vite.config.ts` 的构建结果，scroll.html 复制为 index.html。
-// 环境变量 QUERY 追加到每个页面的查询参数，例如 `lens=0&backdrop=copy`。
 import { mkdir, writeFile } from 'node:fs/promises'
 
 const [base, outDir, ...only] = process.argv.slice(2)
@@ -39,14 +35,12 @@ async function open(path, { width = 1563, height = 1013, dpr = 2 } = {}) {
   await sleep(4500)
 }
 async function shot(name) {
-  // 等两帧，让最后一次状态变化完成绘制。
   await evaluate(`new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(1))))`)
   await sleep(900)
   const r = await send('Page.captureScreenshot', { format: 'png' })
   await writeFile(`${outDir}/${name}.png`, Buffer.from(r.result.data, 'base64'))
   console.error('saved', name)
 }
-/** 商店页：暂停视频并定位到第 1 秒，隐藏测量面板，关闭平滑滚动。 */
 const prepareStore = `(async () => {
   document.querySelector('aside')?.style.setProperty('display', 'none')
   for (const video of document.querySelectorAll('video')) {
@@ -85,7 +79,6 @@ const scenarios = {
     }
   },
   async reduced() {
-    // 玻璃以 2 倍着色、画布 3 倍：经过低分辨率离屏目标与分块合成。
     await open('/?adaptive=0&maxPixelRatio=3&maxGlassPixelRatio=2', { width: 412, height: 915, dpr: 3 })
     await evaluate(prepareStore)
     for (const top of [0, 700]) {

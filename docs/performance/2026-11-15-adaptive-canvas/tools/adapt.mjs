@@ -1,8 +1,3 @@
-// 连续跑几轮八秒滚动，不重新加载页面，观察自适应降级怎样收敛。
-// 用法: CDP_PORT=9333 DPR=3 [W=.. H=..] node adapt.mjs <url> <runs>
-// 每轮输出一行：绘制间隔、GPU 时间、结束时的实际倍率与光路，以及这一轮里每次变化的
-// [距本轮开始的毫秒数, 画布倍率, 玻璃着色倍率, 光路]（第一项是本轮开始时的状态）；
-// 最后一轮另带 adaptationLog：自页面加载起的全部变化（时间是距页面加载的毫秒数）。
 const [url, runsArg = '4'] = process.argv.slice(2)
 const port = process.env.CDP_PORT ?? '9333'
 const sleep = ms => new Promise(r => setTimeout(r, ms))

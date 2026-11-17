@@ -1,14 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VideoClock } from '../../src/video-clock'
 
-// jsdom 不播放媒体，也没有 `requestVideoFrameCallback`：播放状态与帧回调都在这里模拟。
-
-/** 一个模拟的视频：可以切换播放状态，并手动“呈现”一个视频帧。 */
 interface FakeVideo {
   element: HTMLVideoElement
-  /** 已登记、尚未触发的帧回调数量。 */
   pending: () => number
-  /** 呈现一个新的视频帧：触发并清空已登记的回调。 */
   present: () => void
   request: ReturnType<typeof vi.fn>
   cancel: ReturnType<typeof vi.fn>
@@ -63,7 +58,6 @@ function pause(video: FakeVideo): void {
   video.element.dispatchEvent(new Event('pause'))
 }
 
-/** 推进一个显示帧：触发这之前登记的 `requestAnimationFrame` 回调。 */
 function displayFrame(): void {
   const due = Array.from(frames.values())
   frames.clear()
@@ -101,7 +95,6 @@ describe('视频时钟：视频帧回调', () => {
     expect(playing.pending()).toBe(1)
     expect(paused.pending()).toBe(0)
     expect(onFrame).not.toHaveBeenCalled()
-    // 不靠显示帧轮询。
     expect(frames.size).toBe(0)
   })
 
@@ -116,7 +109,6 @@ describe('视频时钟：视频帧回调', () => {
       expect(onFrame).toHaveBeenCalledTimes(i)
       expect(video.pending()).toBe(1)
     }
-    // 没有新的视频帧时，显示帧不会带来重绘。
     displayFrame()
     displayFrame()
     expect(onFrame).toHaveBeenCalledTimes(5)
@@ -126,7 +118,6 @@ describe('视频时钟：视频帧回调', () => {
     const onFrame = vi.fn()
     new VideoClock(onFrame).attach(root)
     const video = createVideo()
-    // 之后才加入的视频，放在更深的后代里。
     const wrapper = document.createElement('section')
     wrapper.append(video.element)
     root.append(wrapper)
@@ -150,7 +141,6 @@ describe('视频时钟：视频帧回调', () => {
     a.present()
     b.present()
     expect(onFrame).toHaveBeenCalledTimes(3)
-    // 其中一个暂停不影响另一个。
     pause(a)
     onFrame.mockClear()
     expect(a.pending()).toBe(0)
@@ -169,7 +159,6 @@ describe('视频时钟：视频帧回调', () => {
     expect(video.cancel).toHaveBeenCalledTimes(1)
     expect(video.pending()).toBe(0)
     expect(onFrame).toHaveBeenCalledTimes(1)
-    // 再次播放后重新登记。
     play(video)
     expect(video.pending()).toBe(1)
   })
@@ -180,7 +169,6 @@ describe('视频时钟：视频帧回调', () => {
     const onFrame = vi.fn()
     new VideoClock(onFrame).attach(root)
 
-    // 播放到结尾时 `paused` 仍是 false。
     setState(video, { ended: true })
     video.element.dispatchEvent(new Event('ended'))
     expect(video.pending()).toBe(0)
@@ -194,7 +182,6 @@ describe('视频时钟：视频帧回调', () => {
     new VideoClock(onFrame).attach(root)
 
     video.present()
-    // 回绕时浏览器触发 seeked，没有 pause 或 ended。
     video.element.dispatchEvent(new Event('seeked'))
     video.present()
     expect(onFrame).toHaveBeenCalledTimes(3)
@@ -218,7 +205,6 @@ describe('视频时钟：视频帧回调', () => {
     const onFrame = vi.fn()
     new VideoClock(onFrame).attach(root)
 
-    // 浏览器在视频离开文档后暂停它，事件在元素上触发，不经过根元素。
     video.element.remove()
     pause(video)
     expect(video.cancel).toHaveBeenCalledTimes(1)
@@ -231,7 +217,6 @@ describe('视频时钟：视频帧回调', () => {
     const onFrame = vi.fn()
     new VideoClock(onFrame).attach(root)
 
-    // 仍在文档里播放，但已不属于舞台。
     document.body.append(video.element)
     video.present()
     expect(onFrame).not.toHaveBeenCalled()
@@ -245,7 +230,6 @@ describe('视频时钟：视频帧回调', () => {
     const onFrame = vi.fn()
     new VideoClock(onFrame).attach(root)
 
-    // 移出文档但没有触发 pause，回调也不会再来。
     gone.element.remove()
     expect(gone.pending()).toBe(1)
     const other = createVideo()
@@ -271,7 +255,6 @@ describe('视频时钟：视频帧回调', () => {
     a.element.dispatchEvent(new Event('seeked'))
     expect(onFrame).not.toHaveBeenCalled()
     expect(a.pending()).toBe(0)
-    // 重复调用没有副作用。
     clock.detach()
   })
 })
@@ -304,7 +287,6 @@ describe('视频时钟：没有视频帧回调时的回退', () => {
     expect(frames.size).toBe(1)
     pause(b)
     expect(frames.size).toBe(0)
-    // 两次暂停各补一次重绘，之后没有逐帧的重绘。
     expect(onFrame).toHaveBeenCalledTimes(2)
     displayFrame()
     expect(onFrame).toHaveBeenCalledTimes(2)

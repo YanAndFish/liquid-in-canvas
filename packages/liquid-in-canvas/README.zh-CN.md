@@ -77,6 +77,18 @@ const glass = await mountLiquidGlass({
 glass.dispose() // 停止渲染，页面恢复到挂载前的状态
 ```
 
+### 用代码添加和移除玻璃（0.4.0+）
+
+`addGlass(element, options)` 把根元素里的元素变成玻璃，`removeGlass(element)` 还原。参数名是 `data-glass-*` 属性去掉前缀后的驼峰写法，取值相同。三种渲染方式都在下一帧生效。
+
+```ts
+const handle = glass.addGlass(button, { variant: 'clear', radius: 20, ior: 1.5 })
+handle.update({ blur: 4, radius: null }) // null 移除这个参数，回到作用域或全局默认值
+handle.remove() // 等同于 glass.removeGlass(button)
+```
+
+`removeGlass()` 去掉 `data-liquid-glass`，以及 `addGlass()` 写上的参数属性，别的属性不动。元素已经是玻璃时 `addGlass()` 只合并参数；元素不在根元素里时抛出错误。
+
 要在运行中切换方式，先 `dispose()` 再用另一个 `mode` 重新挂载。根元素在文档中移动时，内部的滚动位置会归零，正在播放的视频会被暂停，需要自行恢复。
 
 使用框架时，在 `beforeStart` 里挂载应用。此时根元素已经在最终位置，舞台还没有开始绘制：
@@ -105,6 +117,7 @@ await mountLiquidGlass({
 | `data-glass-bevel-curve` | 倒角曲线的超椭圆指数，1–8：1 是直线斜面，2 是椭圆弧，越大越接近直角 | 2.75 |
 | `data-glass-bottom-bevel` | 底面倒角相对顶面倒角的比例，0–1；0 表示底面是带直角边的平面 | 1 |
 | `data-glass-dispersion` | RGB 采样分离强度，0–1 | 0.05 |
+| `data-glass-ior`（0.4.0+） | 折射率，1–2.5：1 表示不偏折，水约 1.33，玻璃约 1.5。越大倒角处偏折越强，全反射形成的暗边也越宽 | 1.45 |
 | `data-glass-lens` | 凸透镜强度，0–0.6。玻璃中间的背景放大约 1 / (1 − lens) 倍，长条形只沿短边放大 | 0 |
 | `data-glass-saturation` | 透射背景的饱和度倍数，0–3 | 1.3 / 1.15 |
 | `data-glass-brightness` | 透射背景的亮度倍数，0.5–1.5 | 浅色 1.06、深色 1 / 1 |
@@ -144,6 +157,7 @@ await mountLiquidGlass({
 - `data-glass-clip`：加在普通祖先上，后代玻璃和阴影限制在它的矩形内。
 - `data-glass-modal` 与 `data-glass-scrim`：模态层根节点和其中的遮罩。打开时模态层外的玻璃按遮罩透明度压暗。
 - `data-glass-fade`：页面切换容器，其 `opacity` 作用到内部玻璃。
+- `data-glass-place="below"`（0.4.0+）：写在玻璃里的元素上，让它画在玻璃之下，和背景一起被这块玻璃折射与模糊；`above` 或不写时照常画在玻璃之上。玻璃叠在其他玻璃上时，重叠处这个元素会被下层玻璃盖住。
 - `data-stage-overlay`：单独上传的透明前景层，用于需要插在玻璃之间的内容（例如跨越多块玻璃的过渡动画）。属性值是一个玻璃层级：`data-stage-overlay="5"` 盖住低于第 5 层的玻璃，被第 5 层及更高层的玻璃盖住；不写值时位于所有玻璃之上。需要在开始绘制前存在，一个页面一个。
 
 ### TypeScript 类型

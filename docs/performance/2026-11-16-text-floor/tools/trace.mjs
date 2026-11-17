@@ -1,5 +1,3 @@
-// 用法: CDP_PORT=9377 W=2560 H=1440 DPR=3 node trace.mjs "<scroll.html?gpu&adaptive=0&glass=0>" out.json
-// 在测量页开始往返滚动 1.5 秒后录 3 秒追踪
 import { writeFile } from 'node:fs/promises'
 const [url, out] = process.argv.slice(2)
 const port = process.env.CDP_PORT ?? '9377'

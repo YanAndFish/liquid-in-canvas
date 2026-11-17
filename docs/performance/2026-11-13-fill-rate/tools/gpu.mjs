@@ -1,4 +1,3 @@
-// 用法: DPR=3 [W=.. H=..] node gpu.mjs <url> <runs> [video]
 const [url, runsArg = '1', mode = 'scroll'] = process.argv.slice(2)
 const port = process.env.CDP_PORT ?? '9333'
 const sleep = ms => new Promise(r => setTimeout(r, ms))

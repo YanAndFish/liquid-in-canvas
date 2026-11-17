@@ -4,34 +4,29 @@ import type { GlassOptics } from '../types'
 import type { GlassTheme } from './defaults'
 import type { GlassFrameHost } from './glass-frame.hot'
 import type { GlassOptions } from './options'
-import type { GlassGhost, GlassSurface, Rect } from './surface'
-import { attr, GLASS_ATTR, hasAttr } from '../contract'
+import type { GlassGhost, GlassSurface, Rect, UnderContent } from './surface'
+import { attr, GLASS_ATTR, GLASS_PLACE_ATTR, hasAttr } from '../contract'
 import { createElementTexture, disposeElementTexture } from '../gpu'
 import { reducedMotionQuery } from '../shared/motion'
 import { onGlassDefaultsChange } from './defaults'
 import { LiquidFlow } from './flow.hot'
 import { GlassFrame } from './glass-frame.hot'
 import { glassOptionsSignature, parseGlassOptions } from './options'
-import { createSurface } from './surface'
+import { createSurface, createUnderContent } from './surface'
 import { GlassThemeSource } from './theme'
 
 export interface LiquidGlassLayerOptions {
   canvas: HTMLCanvasElement
   root: HTMLElement
   gpu: StageGpu
-  /** 本帧的页面快照，同时是玻璃折射与模糊的背景。 */
   getBackdrop: () => SampledTexture | null
-  /** 固定主题；缺省时读取 `<html data-theme>`，再退回系统配色。 */
   theme?: GlassTheme | null
-  /** 光路计算方式，缺省为 `hybrid`。 */
   optics?: GlassOptics
-  /** 混合光路是否使用折射场缓存，缺省为 true。 */
   fieldCache?: boolean
   onInvalidate: () => void
   onFault: (cause: unknown) => void
 }
 
-/** 元素相对定位基准的测量结果。 */
 interface Placement {
   originX: number
   originY: number
@@ -43,15 +38,14 @@ interface PaintEventLike extends Event {
   changedElements?: readonly Element[]
 }
 
-/** 同名玻璃消失后，新玻璃在这段时间内出现才算接手，单位毫秒。 */
 const HANDOVER_WINDOW = 400
-/** 开始绘制时在后台编译的管线：成员数量与遮挡数量。更大的数量在第一次出现时同步编译。 */
 const WARM_VOLUME_COUNTS = [1, 2, 3, 4]
 const WARM_OCCLUDER_COUNTS = [0, 1, 2]
 const GLASS_SELECTOR = attr(GLASS_ATTR)
+const UNDER_SELECTOR = `[${GLASS_PLACE_ATTR}="below"]`
 const NO_ELEMENTS: readonly Element[] = []
+const UNDER_RETRY_MS = 180
 
-/** 用 offset 系列属性相对定位基准测量元素，不受元素自身 transform 影响。 */
 function offsetPlacement(element: HTMLElement, base: { left: number, top: number }, scrollLeft: number, scrollTop: number): Placement {
   const originX = base.left - scrollLeft
   const originY = base.top - scrollTop
@@ -73,20 +67,10 @@ function offsetPlacement(element: HTMLElement, base: { left: number, top: number
   }
 }
 
-/**
- * 页面上全部 `[data-liquid-glass]` 的生命周期：注册与注销、DOM 变化、交互事件、内容纹理与液体迁移的交接。
- *
- * 每帧的测量与绘制在 `GlassFrame`（`glass-frame.hot.ts`）。这里实现它需要的冷路径操作，
- * 例如纹理尺寸变化时重新创建纹理、请求浏览器生成新的绘制记录。
- */
 export class LiquidGlassLayer implements GlassFrameHost {
-  /** 当前登记的全部玻璃，外层玻璃排在它的嵌套玻璃之前。 */
   readonly surfaces: GlassSurface[] = []
-  /** 正在流回同名玻璃的残影。 */
   readonly ghosts: GlassGhost[] = []
-  /** 已经离开文档、正在退去的玻璃。保留内容纹理，退去后由 `release()` 释放。 */
   readonly fading: GlassSurface[] = []
-  /** 下一个残影的编号，取负数以免与玻璃和拖尾的编号相同。 */
   private nextGhostId = -1_000_000
   private readonly canvas: HTMLCanvasElement
   private readonly root: HTMLElement
@@ -96,7 +80,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
   private readonly onFault: (cause: unknown) => void
   private readonly byElement = new Map<HTMLElement, GlassSurface>()
   private readonly paintToggle = new WeakSet<HTMLElement>()
-  /** 最近消失的具名玻璃留下的体积位置，供同名玻璃接手。 */
   private readonly departed = new Map<string, { rect: Rect, time: number }>()
   private pressed: HTMLElement | null = null
   private animation = 0
@@ -157,17 +140,12 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.scan()
   }
 
-  /**
-   * 测量所有玻璃、上传变化的内容，把本帧的绘制加入 `list`。
-   * 离屏的几遍由 `encode()` 编码。尚未启动或页面快照不存在时返回 false。
-   */
   sync(event: Event | undefined, list: DrawList): boolean {
     if (!this.started || this.disposed || !this.frame)
       return false
     return this.frame.sync((event as PaintEventLike | undefined)?.changedElements ?? NO_ELEMENTS, list)
   }
 
-  /** 编码 `sync()` 安排的离屏绘制。 */
   encode(encoder: GPUCommandEncoder): void {
     this.frame?.encode(encoder)
   }
@@ -198,35 +176,26 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.frame = null
   }
 
-  /** 固定主题，传入 null 恢复跟随页面。 */
   setTheme(theme: GlassTheme | null): void {
     this.themeSource.set(theme)
   }
 
-  /** 切换光路计算方式，下一帧生效。 */
   setOptics(optics: GlassOptics): void {
     this.optics = optics
     this.frame?.setOptics(optics)
   }
 
-  /** 打开或关闭混合光路的折射场缓存，下一帧生效。 */
   setFieldCache(enabled: boolean): void {
     this.fieldCache = enabled
     this.frame?.setFieldCache(enabled)
   }
 
-  /**
-   * 设置玻璃体积的着色比例，下一次 `sync()` 生效。
-   *
-   * `split` 是画布遍中插在玻璃之间的其他内容的绘制顺序，降低分辨率时体积组在这里分成两段分别合成。
-   */
   setShading(scale: number, split: number): void {
     this.shadingScale = scale
     this.shadingSplit = split
     this.frame?.setShading(scale, split)
   }
 
-  /** 画布的像素尺寸变化后，所有快照尺寸都要重新确认。 */
   invalidateSizes(): void {
     for (const surface of this.surfaces)
       surface.sizeDirty = true
@@ -240,7 +209,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.onInvalidate()
   }
 
-  /** 退去结束的玻璃：移出列表并释放内容纹理。 */
   release(surface: GlassSurface): void {
     const index = this.fading.indexOf(surface)
     if (index >= 0)
@@ -267,7 +235,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
       this.resizeSurface(surface, size.width, size.height)
   }
 
-  /** 强制浏览器更新嵌套 drawable 快照，供首次可见和尺寸变化后使用。 */
   kickPaint(surface: GlassSurface): void {
     const element = surface.element
     surface.paintPending = true
@@ -276,7 +243,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
       this.paintToggle.add(element)
     else
       this.paintToggle.delete(element)
-    // 两个完全透明的阴影交替，重复进入视口也会触发新的绘制记录。
     element.style.boxShadow = `${alternate ? 0.001 : 0}px 0 0 1px rgba(0, 0, 0, 0)`
     this.scheduleRetry(surface)
     this.onInvalidate()
@@ -297,7 +263,73 @@ export class LiquidGlassLayer implements GlassFrameHost {
     }
   }
 
-  /** 交互结束、弹簧与液体迁移都静止后停止请求帧，静态页面无需持续重绘。 */
+  syncUnder(surface: GlassSurface): void {
+    surface.underDirty = false
+    const under = surface.under
+    for (let i = under.length - 1; i >= 0; i--) {
+      const item = under[i]!
+      if (surface.host || !surface.element.contains(item.element) || !item.element.matches(UNDER_SELECTOR)) {
+        this.releaseUnder(item)
+        under.splice(i, 1)
+      }
+    }
+    if (surface.host)
+      return
+    for (const element of surface.element.querySelectorAll<HTMLElement>(UNDER_SELECTOR)) {
+      if (under.some(item => item.element === element))
+        continue
+      const size = this.textureSize(element)
+      const content = this.createContentTexture(size.width, size.height)
+      if (!content)
+        continue
+      const addedDrawable = !element.hasAttribute('drawable')
+      if (addedDrawable)
+        element.setAttribute('drawable', '')
+      under.push(createUnderContent(element, content, size.width, size.height, addedDrawable))
+    }
+    surface.dirty = true
+    this.onInvalidate()
+  }
+
+  refreshUnderSize(item: UnderContent): void {
+    const size = this.textureSize(item.element)
+    if (size.width === item.textureWidth && size.height === item.textureHeight)
+      return
+    const content = this.createContentTexture(size.width, size.height)
+    if (!content)
+      return
+    disposeElementTexture(item.content)
+    item.content = content
+    item.textureWidth = size.width
+    item.textureHeight = size.height
+    item.dirty = true
+    item.uploaded = false
+  }
+
+  uploadUnder(item: UnderContent): boolean {
+    if (!item.content)
+      return false
+    try {
+      this.gpu.frame.upload(item.element, item.content.texture)
+      item.dirty = false
+      item.uploaded = true
+      return true
+    }
+    catch {
+      window.setTimeout(this.onInvalidate, UNDER_RETRY_MS)
+      return false
+    }
+  }
+
+  private releaseUnder(item: UnderContent): void {
+    if (typeof this.canvas.clearElementGeometry === 'function' && item.placed)
+      this.canvas.clearElementGeometry(item.element)
+    if (item.addedDrawable)
+      item.element.removeAttribute('drawable')
+    disposeElementTexture(item.content)
+    item.content = null
+  }
+
   startAnimation(): void {
     if (this.animation || this.disposed)
       return
@@ -315,7 +347,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
       : 0
   }
 
-  /** 从实际命中的 HTML 控件取得交互目标，键盘焦点由浏览器绘制。 */
   private readonly handlePointer = (event: PointerEvent): void => {
     this.pressed = event.target instanceof Element
       ? event.target.closest<HTMLElement>(GLASS_SELECTOR)
@@ -348,7 +379,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
     const host = outer
       ? this.byElement.get(outer) ?? null
       : null
-    // 只支持一层嵌套；外层还没能注册（例如尺寸为零）时稍后由变更记录再注册。
     if (outer && (!host || host.host))
       return
 
@@ -418,7 +448,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
       element.addEventListener('transitionend', surface.onTransitionEnd)
     }
 
-    // 外层玻璃排在它的嵌套玻璃之前，外层注销时连同嵌套玻璃一起移除。
     this.surfaces.push(surface)
     this.byElement.set(element, surface)
     this.onInvalidate()
@@ -444,7 +473,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
     const remaining = surface.options.morph && surface.hasVolume && !surface.handedOver && !this.reducedMotion()
       ? this.sameName(surface.options.morph)
       : null
-    // 没有迁移去处的顶层玻璃在原处退去：保留内容纹理，材质化回到 0 后释放。
     const fade = !remaining
       && !surface.options.morph
       && surface.host === null
@@ -454,7 +482,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
       && !this.disposed
       && !this.reducedMotion()
     if (remaining) {
-      // 同名玻璃还在页面上：体积流回它并被吸收，例如收起的面板并回按钮。
       this.ghosts.push(this.createGhost(surface, remaining))
       this.startAnimation()
     }
@@ -477,11 +504,13 @@ export class LiquidGlassLayer implements GlassFrameHost {
     }
     surface.element.removeEventListener('scroll', surface.onScroll, { capture: true })
     surface.element.removeEventListener('transitionend', surface.onTransitionEnd)
+    for (const item of surface.under)
+      this.releaseUnder(item)
+    surface.under.length = 0
     if (!surface.host && typeof this.canvas.clearElementGeometry === 'function')
       this.canvas.clearElementGeometry(surface.element)
     if (surface.addedDrawable)
       surface.element.removeAttribute('drawable')
-    // kickPaint 写入的透明阴影只用于触发重绘，退出时还原，避免遮住样式表中的阴影。
     if (this.paintToggle.delete(surface.element) || surface.element.style.boxShadow.includes('rgba(0, 0, 0, 0)'))
       surface.element.style.boxShadow = ''
     if (fade) {
@@ -498,13 +527,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.onInvalidate()
   }
 
-  /**
-   * 声明了迁移的玻璃创建弹簧。
-   *
-   * 具名玻璃出现时，从同名玻璃的体积位置出发。页面在同一批 DOM 变更里把玻璃属性从一个元素移到
-   * 另一个元素，两条变更记录的先后不固定：旧元素先注销时起点来自 `departed`，
-   * 新元素先注册时直接取仍在登记中的同名表面。没有起点时弹簧停在元素当前的位置。
-   */
   private attachFlow(surface: GlassSurface): void {
     const name = surface.options.morph
     surface.inherited = false
@@ -533,7 +555,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.startAnimation()
   }
 
-  /** 页面上另一块可见的同名玻璃。 */
   private sameName(name: string, except: GlassSurface | null = null): GlassSurface | null {
     for (const other of this.surfaces) {
       if (other !== except && other.options.morph === name && other.hasVolume)
@@ -542,7 +563,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
     return null
   }
 
-  /** 创建流回 `target` 的残影，从 `from` 当前的体积出发。 */
   private createGhost(from: GlassSurface, target: GlassSurface): GlassGhost {
     const source = from.volume
     const rect = {
@@ -572,13 +592,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
     }
   }
 
-  /** 取得同名玻璃最近的体积位置并标记为已交接。 */
-  /**
-   * 新出现的具名玻璃从哪里流出来，依次检查：
-   * 同名的残影（收起后又马上展开，从残影当前的位置接手）、
-   * 刚消失的同名玻璃（属性从一个元素移到另一个元素）、
-   * 仍在页面上的同名玻璃（例如面板从按钮里长出来，按钮留在原处，记为 `partner`）。
-   */
   private handover(name: string, surface: GlassSurface): { rect: Rect, partner: GlassSurface | null } | null {
     for (let i = 0; i < this.ghosts.length; i++) {
       const ghost = this.ghosts[i]!
@@ -617,7 +630,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
       surface.dirty = true
       surface.settleFrames = 4
       surface.sizeDirty = true
-      // 窗口尺寸变化引起的重新排版不是迁移，体积直接到位。
       surface.snapFlow = true
     }
     this.onInvalidate()
@@ -641,11 +653,17 @@ export class LiquidGlassLayer implements GlassFrameHost {
           invalidated = true
           continue
         }
+        if (name === GLASS_PLACE_ATTR) {
+          const owner = this.surfaceOwner(target)
+          if (owner)
+            owner.underDirty = true
+          invalidated = true
+          continue
+        }
         if (name.startsWith('data-glass-')) {
           const surface = this.byElement.get(target) ?? this.surfaceOwner(target)
           if (surface)
             this.refresh(surface)
-          // 作用域上的参数是其中玻璃的缺省值；签名不变的玻璃在 refresh 里直接跳过。
           this.refreshWithin(target)
           invalidated = true
           continue
@@ -675,6 +693,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
         const surface = this.surfaceOwner(record.target as HTMLElement)
         if (surface) {
           surface.dirty = true
+          surface.underDirty = true
           invalidated = true
         }
         else if (record.addedNodes.length || record.removedNodes.length) {
@@ -702,7 +721,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
       this.register(element)
   }
 
-  /** 节点被移出页面时立即注销其中的玻璃，同名玻璃在同一批变更里出现时才能接手它的体积。 */
   private unregisterWithin(node: HTMLElement): void {
     if (node.isConnected)
       return
@@ -712,7 +730,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
     }
   }
 
-  /** 内容变化归属的玻璃。嵌套玻璃的 HTML 属于外层的内容快照。 */
   private surfaceOwner(element: HTMLElement | null): GlassSurface | null {
     let current = element
     while (current) {
@@ -771,7 +788,6 @@ export class LiquidGlassLayer implements GlassFrameHost {
       : null
   }
 
-  /** 注册时的测量。没有定位基准时退回元素自己的包围矩形。 */
   private place(element: HTMLElement, base: HTMLElement | null): Placement {
     if (!base) {
       const rect = element.getBoundingClientRect()

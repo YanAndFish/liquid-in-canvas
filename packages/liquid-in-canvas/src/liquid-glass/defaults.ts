@@ -17,6 +17,8 @@ export interface GlassMaterial {
   bottomBevel: number
   /** RGB 采样位置的分离强度。 */
   dispersion: number
+  /** 折射率：越大，光线在倒角处偏折越强，全反射也越早出现。 */
+  ior: number
   /** 凸透镜强度，0 表示平板。玻璃中间的背景被放大约 1 / (1 − lens) 倍，只对画布渲染有效。 */
   lens: number
   /** 透射背景的饱和度倍数，1 表示不变。磨砂材质略微提高，让背景颜色更鲜明。 */
@@ -85,6 +87,7 @@ export const GLASS_LIMITS: Readonly<Record<NumericKey, readonly [min: number, ma
   bevelCurve: [1, 8],
   bottomBevel: [0, 1],
   dispersion: [0, 1],
+  ior: [1, 2.5],
   lens: [0, 0.6],
   saturation: [0, 3],
   brightness: [0.5, 1.5],
@@ -104,6 +107,7 @@ const MATERIAL_NUMBERS = [
   'bevelCurve',
   'bottomBevel',
   'dispersion',
+  'ior',
   'lens',
   'saturation',
   'brightness',
@@ -139,6 +143,7 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
         bevelCurve: 2.75,
         bottomBevel: 1,
         dispersion: 0.05,
+        ior: 1.45,
         lens: 0,
         saturation: 1.3,
         brightness: 1,
@@ -156,6 +161,7 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
         bevelCurve: 2.75,
         bottomBevel: 1,
         dispersion: 0.05,
+        ior: 1.45,
         lens: 0,
         saturation: 1.3,
         brightness: 1.06,
@@ -175,6 +181,7 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
         bevelCurve: 2.75,
         bottomBevel: 1,
         dispersion: 0.05,
+        ior: 1.45,
         lens: 0,
         saturation: 1.15,
         brightness: 1,
@@ -192,6 +199,7 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
         bevelCurve: 2.75,
         bottomBevel: 1,
         dispersion: 0.05,
+        ior: 1.45,
         lens: 0,
         saturation: 1.15,
         brightness: 1,
@@ -220,7 +228,6 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-/** 把三位或六位十六进制颜色规范为小写六位；格式不符时返回 null。 */
 export function normalizeHex(raw: string): string | null {
   const hex = raw.trim().toLowerCase()
   if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/.test(hex))

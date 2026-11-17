@@ -64,13 +64,11 @@ function boot(): void {
     host.replaceChildren()
   }
 
-  /** 画布不可用或出错时显示说明页。是否改用回退实现由用户在页面上决定。 */
   function showNotice(fault: StageFault): void {
     teardown()
     notice = createApp(UnsupportedView, {
       fault,
       onContinue: () => {
-        // 请求 SVG 滤镜回退；浏览器不支持时库会自动使用纯 CSS。
         void startStore('svg')
       },
     })
@@ -97,7 +95,6 @@ function boot(): void {
     app.provide(CART_KEY, createCartStore())
     app.provide(RENDERER_KEY, controller)
     try {
-      // 画布模式下应用要在根元素移入画布之后、开始绘制之前挂载，前景层才能被舞台找到。
       mount = await attach(next, () => {
         app.mount(host)
         storefront = app
@@ -109,7 +106,6 @@ function boot(): void {
     }
   }
 
-  /** 在应用保持挂载的情况下更换渲染方式，保留滚动位置和视频播放状态。 */
   async function setMode(next: GlassRenderMode): Promise<void> {
     if (switching.value || !mount || next === mode.value)
       return
@@ -133,7 +129,6 @@ function boot(): void {
       mount = await attach('svg')
     }
     mode.value = mount.mode
-    // 根元素在文档中移动后，滚动位置归零，视频也会被暂停。
     getStageScroller()?.scrollTo({ top, behavior: 'instant' })
     for (const video of playing)
       void video.play().catch(() => {})

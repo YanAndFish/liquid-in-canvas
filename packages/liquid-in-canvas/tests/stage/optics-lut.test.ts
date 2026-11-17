@@ -14,6 +14,7 @@ const DEFAULT_KEY = {
   curve: 3,
   bottomBevel: 1,
   dispersion: 0,
+  ior: 1.45,
 }
 
 describe('截面光路查找表', () => {
@@ -25,7 +26,6 @@ describe('截面光路查找表', () => {
     expect(Math.abs(flat.shift[1])).toBeLessThan(1e-3)
     expect(Math.abs(flat.slope[1])).toBeLessThan(1e-3)
     expect(flat.normal[1]).toBeCloseTo(1, 3)
-    // 倒角中段：法线朝外倾斜，取样位置向内（外法向的负方向）。
     const middle = samples[Math.round(LUT_SAMPLES * 0.6)]!
     expect(middle.hit).toBe(1)
     expect(middle.normal[0]).toBeGreaterThan(0.05)
@@ -125,7 +125,6 @@ describe('剖面光学', () => {
   })
 
   it('一帧中途扩容时，本帧已绑定的旧纹理在下一帧开始前不释放', () => {
-    // 17 块互不融合的玻璃各用不同的倒角曲线：第 17 行超出初始容量 16，在本帧中途扩容。
     const count = 17
     const surfaces = Array.from({ length: count }, (_, i) => {
       const element = document.createElement('div')
@@ -171,12 +170,26 @@ describe('剖面光学', () => {
     groups.plan(surfaces, count, {} as GPUTextureView, shading, new DrawList())
     const textures = lutTextures()
     expect(textures.map(texture => texture.height)).toEqual([16 * LUT_ROWS_PER_PROFILE, 32 * LUT_ROWS_PER_PROFILE])
-    // 本帧提交之前，前面几组仍绑定着旧纹理。
     expect(textures[0]!.destroy.mock.calls).toHaveLength(0)
 
     fake.gpu.frame.begin()
     groups.plan(surfaces, count, {} as GPUTextureView, shading, new DrawList())
     expect(textures[0]!.destroy.mock.calls).toHaveLength(1)
     expect(textures[1]!.destroy.mock.calls).toHaveLength(0)
+  })
+})
+
+describe('折射率', () => {
+  it('折射率越大，倒角上的光线偏折越多；不同折射率各占一行', () => {
+    const at = Math.round(LUT_SAMPLES * 0.7)
+    const water = traceProfile({ ...DEFAULT_KEY, ior: 1.33 })[at]!
+    const glass = traceProfile(DEFAULT_KEY)[at]!
+    const dense = traceProfile({ ...DEFAULT_KEY, ior: 1.9 })[at]!
+    expect(Math.abs(water.shift[1]!)).toBeLessThan(Math.abs(glass.shift[1]!))
+    expect(Math.abs(glass.shift[1]!)).toBeLessThan(Math.abs(dense.shift[1]!))
+    const table = new ProfileTable(null)
+    const base = table.rowOf(0.68, 0.68, 3, 1, 0)
+    expect(table.rowOf(0.68, 0.68, 3, 1, 0, 1.45)).toBe(base)
+    expect(table.rowOf(0.68, 0.68, 3, 1, 0, 1.9)).toBe(base + 1)
   })
 })

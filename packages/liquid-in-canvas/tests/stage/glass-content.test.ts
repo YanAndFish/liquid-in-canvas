@@ -8,7 +8,6 @@ import { VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from '../../src/liquid-glas
 import { writeVolumeGroup } from '../../src/liquid-glass/VolumeGroups.hot'
 import { createFakeGpu } from '../helpers/fake-gpu'
 
-/** 创建可以移动位置的玻璃控件。每帧的代码真实运行，GPU 由记录调用的假设备代替。 */
 function setup(height = 60) {
   vi.stubGlobal('DOMMatrix', class {
     translate() {
@@ -62,7 +61,6 @@ function setup(height = 60) {
   })
   layer.start()
   const list = new DrawList()
-  /** 画一帧，返回画布遍里的绘制项数量。 */
   const sync = (event?: Event) => {
     gpu.frame.begin()
     list.reset()
@@ -77,14 +75,12 @@ function setup(height = 60) {
     move: (value: number) => { top = value },
     element,
     root,
-    /** 模拟浏览器为当前玻璃生成绘制记录后的通知。 */
     paint: () => sync(Object.assign(new Event('paint'), {
       changedElements: [element],
     })),
   }
 }
 
-/** 在玻璃里放一个按钮，尺寸与位置由 `left` 决定。 */
 function nestedButton(host: HTMLElement, anchor: HTMLElement, left: number): HTMLButtonElement {
   const button = document.createElement('button')
   host.append(button)
@@ -103,7 +99,6 @@ function nestedButton(host: HTMLElement, anchor: HTMLElement, left: number): HTM
   return button
 }
 
-/** 等待变更记录送达。 */
 function flush(): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, 0))
 }
@@ -260,14 +255,12 @@ describe('玻璃内容纹理', () => {
       sync()
       const moved = layer.surfaces.find(surface => surface.element === second)!
       expect(moved.flow?.active).toBe(true)
-      // 这一帧体积还在旧位置附近，没有直接跳到新按钮上。
       expect(moved.volume.left).toBeLessThan(150)
       expect(layer.surfaces.some(surface => surface.element === first)).toBe(false)
     }
     finally { layer.dispose() }
   })
 
-  // 页面把玻璃属性从旧按钮移到新按钮时，两条变更记录在同一批里，先后取决于框架的更新顺序。
   for (const order of ['旧按钮先注销', '新按钮先注册'] as const) {
     it(`激活玻璃换到另一个按钮的那一帧仍然绘制完整的体积（${order}）`, async () => {
       const { layer, element, anchor, sync } = setup()
@@ -277,7 +270,6 @@ describe('玻璃内容纹理', () => {
           volumes: { groups: { planOf: (surface: unknown) => VolumeGroupPlan | null } }
         }
       }).frame
-      /** 本帧画进体积组的这名成员的不透明度（材质化接近零时整块淡出）。 */
       const drawnOpacity = (surface: GlassSurface) => {
         const plan = frame.volumes.groups.planOf(surface.volume)
         if (!plan)
@@ -314,13 +306,11 @@ describe('玻璃内容纹理', () => {
         sync()
         const moved = layer.surfaces.find(surface => surface.element === second)!
         expect(layer.surfaces.some(surface => surface.element === first)).toBe(false)
-        // 体积从旧按钮接手，已经是完整的玻璃：不重新材质化，这一帧就以原有的不透明度绘制在旧位置附近。
         expect(moved.flow?.active).toBe(true)
         expect(moved.volume.left).toBeLessThan(150)
         expect(moved.materialize.value).toBe(1)
         expect(drawnOpacity(moved)).toBe(1)
 
-        // 迁移途中的每一帧都画着体积。
         for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++) {
           sync()
           expect(drawnOpacity(moved)).toBeGreaterThan(0.99)
@@ -356,15 +346,12 @@ describe('玻璃内容纹理', () => {
       const grown = layer.surfaces.find(surface => surface.element === panel)!
       expect(grown.partner).toBe(source)
       expect(grown.flow?.active).toBe(true)
-      // 从按钮的位置出发，融合距离从接近零开始，两块玻璃不会一起鼓起来。
       expect(grown.volume.left).toBeLessThan(110)
       expect(grown.volume.fusion).toBeLessThan(grown.options.fusion)
-      // 长出来的体积已经是完整的玻璃，内容从按钮的位置展开，而不是从视口原点。
       expect(grown.materialize.value).toBe(1)
       expect(grown.revealGrowing).toBe(true)
       expect(grown.revealX).toBeCloseTo(136, 0)
       expect(grown.revealClip[0]).toBeCloseTo(106, 0)
-      // 按钮下一帧仍在页面上，不算交出体积。
       sync()
       expect(source.handedOver).toBe(false)
       for (let frame = 0; frame < 120; frame++) {
@@ -407,7 +394,6 @@ describe('玻璃内容纹理', () => {
       expect(surface.contentBlur).toBeGreaterThan(0)
       settle()
       expect(surface.materialize.value).toBe(1)
-      // 内容显现只收敛一次：清晰、原尺寸之后不再随玻璃变化。
       expect(surface.reveal).toBe(1)
       sync()
       expect(surface.contentBlur).toBe(0)
@@ -418,7 +404,6 @@ describe('玻璃内容纹理', () => {
       expect(layer.surfaces).toHaveLength(0)
       expect(layer.fading).toEqual([surface])
       const texture = surface.content!.texture
-      // 退去期间仍然绘制体积与内容。
       expect(sync()).toBeGreaterThan(0)
       expect(texture.destroy).not.toHaveBeenCalled()
       settle()
@@ -455,7 +440,6 @@ describe('玻璃内容纹理', () => {
       const surface = layer.surfaces[0]!
       expect(surface.volume.left).toBe(100)
 
-      // 购物袋打开时按钮被隐藏：浏览器读到的布局是空的（这里用偏到左边的位置模拟）。
       shown = false
       offsetLeft = -100
       sync()
@@ -532,7 +516,6 @@ describe('玻璃内容纹理', () => {
       get: () => offsetLeft,
       configurable: true,
     })
-    // 定位父元素足够宽，移动后的玻璃仍在其中可见。
     anchor.getBoundingClientRect = () => new DOMRect(100, 100, 600, 60)
     try {
       element.dataset.glassMorph = ''
@@ -569,5 +552,47 @@ describe('玻璃内容纹理', () => {
       }
     }
     finally { layer.dispose() }
+  })
+})
+
+describe('放到玻璃之下的元素', () => {
+  it('不进玻璃的内容快照：单独上传，画在同层体积之下，并写进页面背景；改回 above 后还原', async () => {
+    const { layer, upload, element, paint, sync } = setup()
+    try {
+      const picture = document.createElement('div')
+      picture.setAttribute('data-glass-place', 'below')
+      Object.defineProperties(picture, {
+        offsetParent: {
+          get: () => element,
+        },
+        offsetLeft: { value: 10 },
+        offsetTop: { value: 5 },
+        offsetWidth: { value: 80 },
+        offsetHeight: { value: 40 },
+      })
+      picture.getClientRects = () => [
+        new DOMRect(110, 105, 80, 40),
+      ] as unknown as DOMRectList
+      element.append(picture)
+      paint()
+      expect(picture.hasAttribute('drawable')).toBe(true)
+      const sources: Element[] = []
+      upload.mockImplementation((source: { source: Element }) => {
+        sources.push(source.source)
+      })
+      const items = sync(Object.assign(new Event('paint'), {
+        changedElements: [picture],
+      }))
+      expect(sources).toContain(picture)
+      expect(items).toBeGreaterThan(0)
+
+      picture.setAttribute('data-glass-place', 'above')
+      await flush()
+      sync()
+      expect(picture.hasAttribute('drawable')).toBe(false)
+    }
+    finally {
+      layer.dispose()
+    }
   })
 })

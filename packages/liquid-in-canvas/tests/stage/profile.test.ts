@@ -23,7 +23,6 @@ describe('玻璃截面', () => {
     expect(tilt(4)).toBeGreaterThan(tilt(8))
     expect(tilt(8)).toBeGreaterThan(tilt(14))
     expect(tilt(16)).toBe(0)
-    // 指数为 1 时是直线斜面，坡度处处相同。
     expect(tilt(3, 1)).toBeCloseTo(tilt(12, 1))
     expect(tilt(3, 1)).toBeCloseTo(Math.SQRT1_2)
   })
@@ -33,7 +32,6 @@ describe('玻璃截面', () => {
     const points = glassProfileOutline(profile, 10, 40, 8)
     expect(points[0]).toEqual([40, 10])
     expect(points.at(-1)).toEqual([40, 58])
-    // 底面倒角结束在 (0, 10 + 6)，顶面倒角从 (0, 58 - 12) 开始，中间是竖直侧面。
     expect(points[1]![0]).toBeCloseTo(profile.bevelWidth / 2)
     expect(points[9]).toEqual([0, 16])
     expect(points[10]![0]).toBeCloseTo(0)
