@@ -49,6 +49,28 @@ describe('玻璃层级与融合', () => {
       [1, 2],
     ])
   })
+  it('迁移中的连接只让成对的两块融合，并在这一组里抬高两者的融合距离', () => {
+    const source = surface(1, 0, 0, 0)
+    const emerging = surface(2, 120, 0, 0)
+    const neighbour = surface(3, -130, 0, 32)
+    emerging.link = source
+    emerging.linkFusion = 24
+    expect(groupGlassSurfaces([source, emerging, neighbour]).map(group => group.map(item => item.id))).toEqual([
+      [1, 2],
+      [3],
+    ])
+    expect(source.fusion).toBe(24)
+    expect(emerging.fusion).toBe(24)
+    expect(neighbour.fusion).toBe(32)
+  })
+  it('连接的融合距离不够跨过间距时不连成一组', () => {
+    const source = surface(1, 0, 0, 0)
+    const emerging = surface(2, 140, 0, 0)
+    emerging.link = source
+    emerging.linkFusion = 24
+    expect(groupGlassSurfaces([source, emerging])).toHaveLength(2)
+    expect(source.fusion).toBe(0)
+  })
   it('不同层级的重叠表面分别绘制', () => {
     expect(groupGlassSurfaces([
       surface(1, 0),

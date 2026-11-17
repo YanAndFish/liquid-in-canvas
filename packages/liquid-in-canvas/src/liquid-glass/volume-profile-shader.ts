@@ -81,7 +81,7 @@ export function profileField(count: number): string {
     : 'grads[index]'
   return /* wgsl */`
 fn glass_field(xy: vec2f) -> Field {
-${each(count, i => `  let c${i} = glass_contour(xy, u.members[${i}]);
+${each(count, i => `  let c${i} = glass_contour_wide(xy, u.members[${i}]);
   let d${i} = c${i}.x;`)}
   var f: Field;
   var distance: f32;

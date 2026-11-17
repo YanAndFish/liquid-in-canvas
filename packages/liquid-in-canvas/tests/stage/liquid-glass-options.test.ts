@@ -46,9 +46,11 @@ describe('parseGlassOptions', () => {
       variant: 'regular',
       anchor: null,
       morph: null,
+      morphFrom: [],
+      morphTo: [],
       morphStretch: 1,
-      morphBounce: 0.33,
-      morphWobble: 0.35,
+      morphBounce: 0.1,
+      morphWobble: 0.1,
       morphContent: 'static',
       materialize: true,
     })
@@ -79,9 +81,11 @@ describe('parseGlassOptions', () => {
       variant: 'regular',
       anchor: null,
       morph: null,
+      morphFrom: [],
+      morphTo: [],
       morphStretch: 1,
-      morphBounce: 0.33,
-      morphWobble: 0.35,
+      morphBounce: 0.1,
+      morphWobble: 0.1,
       morphContent: 'static',
       materialize: true,
     })
@@ -129,9 +133,11 @@ describe('parseGlassOptions', () => {
       variant: 'clear',
       anchor: null,
       morph: null,
+      morphFrom: [],
+      morphTo: [],
       morphStretch: 1,
-      morphBounce: 0.33,
-      morphWobble: 0.35,
+      morphBounce: 0.1,
+      morphWobble: 0.1,
       morphContent: 'static',
       materialize: true,
     })
@@ -180,12 +186,43 @@ describe('parseGlassOptions', () => {
       variant: 'clear',
       anchor: null,
       morph: 'tab',
+      morphFrom: [],
+      morphTo: [],
       morphStretch: 1,
-      morphBounce: 0.33,
-      morphWobble: 0.35,
+      morphBounce: 0.1,
+      morphWobble: 0.1,
       morphContent: 'static',
       materialize: true,
     })
+  })
+
+  it('分裂与合并的名字按空格拆分，缺省一侧时互相补齐', () => {
+    const both = parseGlassOptions(makeElement({
+      'data-glass-morph': 'submit',
+      'data-glass-morph-from': ' clear  card ',
+      'data-glass-morph-to': 'card',
+    }), 'dark')
+    expect(both.morphFrom).toEqual(['clear', 'card'])
+    expect(both.morphTo).toEqual(['card'])
+
+    const from = parseGlassOptions(makeElement({ 'data-glass-morph': 'card', 'data-glass-morph-from': 'trigger' }), 'dark')
+    expect(from.morphTo).toEqual(['trigger'])
+    const to = parseGlassOptions(makeElement({ 'data-glass-morph': 'card', 'data-glass-morph-to': 'trigger' }), 'dark')
+    expect(to.morphFrom).toEqual(['trigger'])
+
+    const unnamed = parseGlassOptions(makeElement({ 'data-glass-morph-from': 'trigger' }), 'dark')
+    expect(unnamed.morph).toBe('')
+    expect(parseGlassOptions(makeElement({ 'data-glass-morph-from': '  ' }), 'dark').morph).toBeNull()
+  })
+
+  it('分裂与合并的名字不从作用域继承', () => {
+    const scope = makeElement({ 'data-glass-scope': '', 'data-glass-morph-from': 'trigger', 'data-glass-morph-to': 'trigger' })
+    const element = makeElement({})
+    scope.append(element)
+    const options = parseGlassOptions(element, 'dark')
+    expect(options.morph).toBeNull()
+    expect(options.morphFrom).toEqual([])
+    expect(options.morphTo).toEqual([])
   })
 
   it('limits the lens strength and treats an empty morph as an unnamed transition', () => {

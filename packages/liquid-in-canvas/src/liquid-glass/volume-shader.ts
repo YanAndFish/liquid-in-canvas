@@ -1,5 +1,6 @@
 import type { StageGpu } from '../gpu'
 import { BLEND_NORMAL, PipelineTable, shaderPrelude, SLOT_CANVAS, SLOT_TARGET, TARGET_FORMAT, wgslFloat } from '../gpu'
+import { CORNER_EASE, CORNER_REACH, CORNER_SQUARE } from './contour'
 import { BLUR_SIGMAS } from './gaussian'
 import { DISPERSION_SPREAD } from './optics-lut'
 import { createFieldBakeShader, FIELD_FORMATS, FIELD_TARGETS } from './volume-field-shader'
@@ -129,12 +130,14 @@ struct Member {
 @group(1) @binding(0) var source: texture_2d<f32>;
 ${BLUR_SIGMAS.map((_, i) => `@group(1) @binding(${i + 1}) var blur${i}: texture_2d<f32>;`).join('\n')}
 
-fn glass_rounding(local: vec2f, m: Member) -> vec2f {
+fn glass_rounding(local: vec2f, m: Member) -> vec4f {
   let radii = m.radius;
   let narrow = min(m.box.z, m.box.w);
   let radius = min(select(select(radii.z, radii.y, local.y < 0.0), select(radii.w, radii.x, local.y < 0.0), local.x < 0.0), narrow);
   let bevel = min(m.profile.x, narrow);
-  return vec2f(radius, max(min(min(radius, bevel - radius), narrow - bevel), 0.0));
+  let room = min(bevel - radius, narrow - bevel);
+  let reach = clamp(bevel * ${wgslFloat(CORNER_REACH)} - radius, 0.0, narrow - radius);
+  return vec4f(radius, reach, max(min(radius, room), 0.0), bevel);
 }
 
 fn glass_contour(xy: vec2f, m: Member) -> vec3f {
@@ -142,7 +145,38 @@ fn glass_contour(xy: vec2f, m: Member) -> vec3f {
   let local = xy - b.xy;
   let corner = glass_rounding(local, m);
   let radius = corner.x;
-  let rounding = corner.y;
+  let reach = corner.y;
+  let w = abs(local) - b.zw + radius;
+  let side = select(vec2f(-1.0), vec2f(1.0), local >= vec2f(0.0));
+  let q = max(w, vec2f(0.0));
+  let l = length(q);
+  let g = max(w.x, w.y);
+  let exact = select(g, l, g > 0.0) - radius;
+  let outward = select(select(vec2f(0.0, 1.0), vec2f(1.0, 0.0), w.x > w.y), q / max(l, 0.00001), g > 0.0);
+  let lifted = w + reach;
+  if (reach <= 0.0 || exact >= 0.0 || lifted.x <= 0.0 || lifted.y <= 0.0) {
+    return vec3f(exact, outward * side);
+  }
+  let power = 2.0 + 2.0 * min(reach / max(radius * ${wgslFloat(CORNER_SQUARE)}, 0.001), 1.0);
+  let scale = max(lifted.x, lifted.y);
+  let unit = lifted / scale;
+  let sum = dot(pow(unit, vec2f(power)), vec2f(1.0));
+  let rounded = scale * pow(sum, 1.0 / power) - radius - reach;
+  let toward = pow(unit, vec2f(power - 1.0)) / pow(sum, (power - 1.0) / power);
+  let ease = corner.w * ${wgslFloat(CORNER_EASE)};
+  let t = min(-exact / ease, 1.0);
+  let weight = t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+  let slope = 30.0 * t * t * (1.0 - t) * (1.0 - t) / ease;
+  let normal = mix(outward, toward, weight) - (rounded - exact) * slope * outward;
+  return vec3f(mix(exact, rounded, weight), normal / max(length(normal), 0.00001) * side);
+}
+
+fn glass_contour_wide(xy: vec2f, m: Member) -> vec3f {
+  let b = m.box;
+  let local = xy - b.xy;
+  let corner = glass_rounding(local, m);
+  let radius = corner.x;
+  let rounding = corner.z;
   let w = abs(local) - b.zw + radius;
   let side = select(vec2f(-1.0), vec2f(1.0), local >= vec2f(0.0));
   let q = max(w, vec2f(0.0));
@@ -169,7 +203,7 @@ fn glass_corner(xy: vec2f, m: Member, lateral: f32) -> bool {
   let corner = glass_rounding(local, m);
   if (corner.x >= min(m.profile.x, min(m.box.z, m.box.w)) - ${wgslFloat(CORNER_MARGIN)}) { return false; }
   let w = abs(local) - m.box.zw + corner.x;
-  let reach = corner.y + lateral;
+  let reach = max(select(0.0, corner.x + corner.y, corner.y > 0.0), corner.z) + lateral;
   if (w.x >= 0.0 && w.y >= 0.0) { return length(w) < reach; }
   return abs(w.x - w.y) < reach;
 }

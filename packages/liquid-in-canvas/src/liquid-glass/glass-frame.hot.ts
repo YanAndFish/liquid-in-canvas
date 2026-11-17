@@ -27,6 +27,8 @@ export interface GlassFrameHost {
   readonly surfaces: readonly GlassSurface[]
   readonly ghosts: GlassGhost[]
   readonly fading: GlassSurface[]
+  readonly morphPending: boolean
+  resolveMorphs: () => void
   release: (surface: GlassSurface) => void
   backdrop: () => SampledTexture | null
   prune: () => void
@@ -39,6 +41,7 @@ export interface GlassFrameHost {
   invalidate: () => void
   startAnimation: () => void
   reducedMotion: () => boolean
+  layoutSettling: () => boolean
 }
 
 const MODAL_SELECTOR = attr(GLASS_MODAL_ATTR)
@@ -67,6 +70,9 @@ function intersectsBox(rect: Rect, box: ElementBox): boolean {
 }
 
 const GHOST_END = 2
+const MORPH_FUSION = 32
+const NECK_START = 0.5
+const NECK_END = 0.92
 const MATERIALIZE_STIFFNESS = 120
 const MATERIALIZE_DAMPING = 12
 const MATERIALIZE_GONE = 0.01
@@ -81,6 +87,15 @@ const REVEAL_GROW = 2
 
 function centerDistance(a: Rect, b: Rect): number {
   return Math.hypot(a.left + a.width / 2 - b.left - b.width / 2, a.top + a.height / 2 - b.top - b.height / 2)
+}
+
+function morphFusion(a: number, b: number): number {
+  return Math.max(a, b, MORPH_FUSION)
+}
+
+function neckFade(progress: number): number {
+  const t = Math.min(1, Math.max(0, (progress - NECK_START) / (NECK_END - NECK_START)))
+  return 1 - t * t * (3 - 2 * t)
 }
 
 function copyRect(target: FlowRect, source: Rect): void {
@@ -171,6 +186,8 @@ export class GlassFrame {
         break
       }
     }
+    if (host.morphPending)
+      host.resolveMorphs()
     this.frameId++
     this.order.begin()
 
@@ -182,7 +199,6 @@ export class GlassFrame {
     let visibleCount = 0
     for (let i = 0; i < surfaces.length; i++) {
       const surface = surfaces[i]!
-      surface.handedOver = false
       if (this.measureSurface(surface, changed, viewWidth, viewHeight, modal, dimming)) {
         this.visible[visibleCount++] = surface
         maxBlur = Math.max(maxBlur, surface.options.blur)
@@ -462,7 +478,8 @@ export class GlassFrame {
         ? surface.host.options.layer
         : surface.options.layer
       volume.options = surface.options
-      volume.fusion = this.fusionOf(surface)
+      volume.fusion = surface.options.fusion
+      this.linkPartner(surface)
       volume.clip[0] = clip
         ? clip.left
         : -UNBOUNDED
@@ -545,16 +562,28 @@ export class GlassFrame {
     return visible
   }
 
-  private fusionOf(surface: GlassSurface): number {
-    const limit = surface.options.fusion
+  private linkPartner(surface: GlassSurface): void {
+    const volume = surface.volume
     const partner = surface.partner
+    volume.link = null
+    volume.linkFusion = 0
     if (partner === null)
-      return limit
+      return
     if (surface.flow === null || !surface.flow.active || !partner.hasVolume) {
       surface.partner = null
-      return limit
+      return
     }
-    return rampedFusion(limit, centerDistance(surface.volume, partner.volume))
+    volume.link = partner.volume
+    volume.linkFusion = this.neck(surface, partner)
+  }
+
+  private neck(surface: GlassSurface, partner: GlassSurface): number {
+    const flow = surface.flow
+    const fusion = morphFusion(surface.options.fusion, partner.options.fusion)
+    const fade = flow === null
+      ? 0
+      : neckFade(flow.progress())
+    return Math.min(fusion * fade, rampedFusion(fusion, centerDistance(surface.volume, partner.volume)))
   }
 
   private updateGhosts(): void {
@@ -563,16 +592,21 @@ export class GlassFrame {
     while (i < ghosts.length) {
       const ghost = ghosts[i]!
       const target = ghost.target
+      const partner = ghost.partner
       const volume = ghost.volume
       const goal = target.volume
+      const owner = partner === null
+        ? goal
+        : partner.volume
       let alive = target.hasVolume && target.element.isConnected && !this.host.reducedMotion()
+        && (partner === null || (partner.hasVolume && partner.element.isConnected))
       if (alive) {
         const point = this.ghostPoint
         point.left = goal.left + goal.width / 2 - GHOST_END / 2
         point.top = goal.top + goal.height / 2 - GHOST_END / 2
         point.width = GHOST_END
         point.height = GHOST_END
-        const options = target.options
+        const options = (partner ?? target).options
         ghost.flow.configure(options.morphStretch, options.morphBounce, options.morphWobble)
         if (ghost.flow.retarget(point))
           this.host.startAnimation()
@@ -584,15 +618,19 @@ export class GlassFrame {
         ghosts.pop()
         continue
       }
-      volume.layer = goal.layer
-      volume.host = goal.host
-      volume.clip[0] = goal.clip[0]!
-      volume.clip[1] = goal.clip[1]!
-      volume.clip[2] = goal.clip[2]!
-      volume.clip[3] = goal.clip[3]!
-      volume.opacity = goal.opacity
-      volume.brightness = goal.brightness
-      volume.fusion = rampedFusion(Math.min(volume.options.fusion, target.options.fusion), centerDistance(volume, goal))
+      volume.layer = owner.layer
+      volume.host = owner.host
+      volume.clip[0] = owner.clip[0]!
+      volume.clip[1] = owner.clip[1]!
+      volume.clip[2] = owner.clip[2]!
+      volume.clip[3] = owner.clip[3]!
+      volume.opacity = owner.opacity
+      volume.brightness = owner.brightness
+      volume.fusion = 0
+      volume.link = owner
+      volume.linkFusion = partner === null
+        ? rampedFusion(morphFusion(volume.options.fusion, target.options.fusion), centerDistance(volume, goal))
+        : this.neck(partner, target)
       i++
     }
   }
@@ -625,7 +663,7 @@ export class GlassFrame {
     const ghosts = this.host.ghosts
     for (let i = 0; i < ghosts.length; i++) {
       const ghost = ghosts[i]!
-      ghost.volume.paintOrder = ghost.target.volume.paintOrder
+      ghost.volume.paintOrder = (ghost.partner ?? ghost.target).volume.paintOrder
       this.volumeList[total++] = ghost.volume
     }
     this.volumeCount = total
@@ -894,9 +932,14 @@ export class GlassFrame {
       copyRect(volume, surface.rect)
       return
     }
-    const options = surface.options
-    flow.configure(options.morphStretch, options.morphBounce, options.morphWobble)
     const resting = !flow.active
+    if (resting && ((surface.reveal < 1 && !surface.revealGrowing) || this.host.layoutSettling())) {
+      flow.snap(surface.layout)
+      copyRect(volume, surface.rect)
+      return
+    }
+    const options = surface.options
+    flow.configure(options.morphStretch, options.morphBounce, options.morphWobble, morphFusion(options.fusion, 0))
     if (flow.retarget(surface.layout)) {
       const layout = surface.layout
       if (resting && surface.reveal >= 1 && options.materialize && layout.width * layout.height > volume.width * volume.height * GROW_RATIO)
@@ -913,13 +956,15 @@ export class GlassFrame {
     volume.top = surface.originY + body.top
     volume.width = body.width
     volume.height = body.height
-    if (options.fusion > 0 && flow.tail(body)) {
+    if (flow.tail(body)) {
       const tail = surface.tail
       tail.left = surface.originX + body.left
       tail.top = surface.originY + body.top
       tail.width = body.width
       tail.height = body.height
-      tail.fusion = flow.tailFusion(options.fusion)
+      tail.fusion = 0
+      tail.link = volume
+      tail.linkFusion = flow.tailFusion(morphFusion(options.fusion, 0))
       surface.hasTail = true
     }
   }

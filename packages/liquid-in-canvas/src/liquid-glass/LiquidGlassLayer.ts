@@ -11,7 +11,7 @@ import { reducedMotionQuery } from '../shared/motion'
 import { onGlassDefaultsChange } from './defaults'
 import { LiquidFlow } from './flow.hot'
 import { GlassFrame } from './glass-frame.hot'
-import { glassOptionsSignature, parseGlassOptions } from './options'
+import { glassOptionsSignature, glassScopes, parseGlassOptions } from './options'
 import { createSurface, createUnderContent } from './surface'
 import { GlassThemeSource } from './theme'
 
@@ -38,7 +38,24 @@ interface PaintEventLike extends Event {
   changedElements?: readonly Element[]
 }
 
+interface Departed {
+  name: string
+  scopes: readonly HTMLElement[]
+  rect: Rect
+  time: number
+  ghost: GlassGhost | null
+  fading: GlassSurface | null
+}
+
+interface Leaving {
+  surface: GlassSurface
+  consumed: boolean
+}
+
 const HANDOVER_WINDOW = 400
+const EMIT_SCALE = 0.6
+const EMIT_DEPTH = 0.2
+const RESOURCE_SETTLE = 300
 const WARM_VOLUME_COUNTS = [1, 2, 3, 4]
 const WARM_OCCLUDER_COUNTS = [0, 1, 2]
 const GLASS_SELECTOR = attr(GLASS_ATTR)
@@ -67,6 +84,68 @@ function offsetPlacement(element: HTMLElement, base: { left: number, top: number
   }
 }
 
+function copyRect(rect: Rect): Rect {
+  return {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+  }
+}
+
+function layerOf(surface: GlassSurface): number {
+  return surface.host ? surface.host.options.layer : surface.options.layer
+}
+
+function emission(source: Rect, target: Rect): Rect {
+  const centerX = target.left + target.width / 2
+  const centerY = target.top + target.height / 2
+  const right = source.left + source.width
+  const bottom = source.top + source.height
+  const outX = centerX < source.left
+    ? centerX - source.left
+    : Math.max(centerX - right, 0)
+  const outY = centerY < source.top
+    ? centerY - source.top
+    : Math.max(centerY - bottom, 0)
+  const sideways = Math.abs(outX) >= Math.abs(outY)
+  const width = Math.max(1, Math.min(target.width, source.width) * (outX !== 0 && sideways
+    ? EMIT_DEPTH
+    : EMIT_SCALE))
+  const height = Math.max(1, Math.min(target.height, source.height) * (outY !== 0 && !sideways
+    ? EMIT_DEPTH
+    : EMIT_SCALE))
+  const x = Math.min(Math.max(centerX, source.left + width / 2), right - width / 2)
+  const y = Math.min(Math.max(centerY, source.top + height / 2), bottom - height / 2)
+  return {
+    left: x - width / 2,
+    top: y - height / 2,
+    width,
+    height,
+  }
+}
+
+function pickByScope<T>(
+  items: readonly T[],
+  scopesOf: (item: T) => readonly HTMLElement[],
+  scopes: readonly HTMLElement[],
+  elementOf?: (item: T) => HTMLElement,
+): T | null {
+  for (let level = 0; level <= scopes.length; level++) {
+    const scope = scopes[level] ?? null
+    let best: T | null = null
+    for (const item of items) {
+      if (scope !== null && !scopesOf(item).includes(scope))
+        continue
+      if (best === null || (elementOf && elementOf(best).compareDocumentPosition(elementOf(item)) & Node.DOCUMENT_POSITION_PRECEDING))
+        best = item
+    }
+    if (best !== null)
+      return best
+  }
+  return null
+}
+
 export class LiquidGlassLayer implements GlassFrameHost {
   readonly surfaces: GlassSurface[] = []
   readonly ghosts: GlassGhost[] = []
@@ -80,7 +159,12 @@ export class LiquidGlassLayer implements GlassFrameHost {
   private readonly onFault: (cause: unknown) => void
   private readonly byElement = new Map<HTMLElement, GlassSurface>()
   private readonly paintToggle = new WeakSet<HTMLElement>()
-  private readonly departed = new Map<string, { rect: Rect, time: number }>()
+  private departed: Departed[] = []
+  private readonly entering: GlassSurface[] = []
+  private readonly leaving: Leaving[] = []
+  private quiet = false
+  private resourceTime = -Infinity
+  private mutationTime = -Infinity
   private pressed: HTMLElement | null = null
   private animation = 0
   private previousTime = 0
@@ -132,6 +216,8 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.stopDefaults = onGlassDefaultsChange(() => this.refreshAll())
     window.addEventListener('resize', this.handleWindowResize, { passive: true })
     this.root.addEventListener('pointerdown', this.handlePointer, { passive: true })
+    this.root.addEventListener('load', this.handleResource, { capture: true, passive: true })
+    document.fonts?.addEventListener('loadingdone', this.handleResource)
     this.root.addEventListener('pointerleave', this.handlePointerLeave)
     window.addEventListener('pointerup', this.handlePointerUp)
     window.addEventListener('pointercancel', this.handlePointerUp)
@@ -156,6 +242,8 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.disposed = true
     cancelAnimationFrame(this.animation)
     this.root.removeEventListener('pointerdown', this.handlePointer)
+    this.root.removeEventListener('load', this.handleResource, { capture: true })
+    document.fonts?.removeEventListener('loadingdone', this.handleResource)
     this.root.removeEventListener('pointerleave', this.handlePointerLeave)
     window.removeEventListener('pointerup', this.handlePointerUp)
     window.removeEventListener('pointercancel', this.handlePointerUp)
@@ -170,7 +258,9 @@ export class LiquidGlassLayer implements GlassFrameHost {
       this.unregister(this.surfaces[this.surfaces.length - 1]!)
     while (this.fading.length)
       this.release(this.fading[this.fading.length - 1]!)
-    this.departed.clear()
+    this.departed = []
+    this.entering.length = 0
+    this.leaving.length = 0
     this.ghosts.length = 0
     this.frame?.dispose()
     this.frame = null
@@ -366,8 +456,14 @@ export class LiquidGlassLayer implements GlassFrameHost {
   }
 
   private scan(): void {
-    for (const element of this.root.querySelectorAll<HTMLElement>(GLASS_SELECTOR))
-      this.register(element)
+    this.quiet = true
+    try {
+      for (const element of this.root.querySelectorAll<HTMLElement>(GLASS_SELECTOR))
+        this.register(element)
+    }
+    finally {
+      this.quiet = false
+    }
   }
 
   private register(element: HTMLElement): void {
@@ -410,6 +506,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
       anchor,
       options,
       signature: glassOptionsSignature(options),
+      scopes: glassScopes(element),
       content,
       textureWidth: size.width,
       textureHeight: size.height,
@@ -419,7 +516,13 @@ export class LiquidGlassLayer implements GlassFrameHost {
     Object.assign(surface.rect, initial.rect)
     surface.originX = initial.originX
     surface.originY = initial.originY
-    this.attachFlow(surface)
+    if (options.morph !== null) {
+      surface.flow = new LiquidFlow(surface.layout)
+      if (!this.quiet && !this.reducedMotion()) {
+        surface.pending = true
+        this.entering.push(surface)
+      }
+    }
 
     if (!host) {
       this.canvas.updateElementGeometry(element, {
@@ -467,36 +570,21 @@ export class LiquidGlassLayer implements GlassFrameHost {
         other.partner = null
     }
     for (let i = this.ghosts.length - 1; i >= 0; i--) {
-      if (this.ghosts[i]!.target === surface)
+      if (this.ghosts[i]!.target === surface || this.ghosts[i]!.partner === surface)
         this.ghosts.splice(i, 1)
     }
-    const remaining = surface.options.morph && surface.hasVolume && !surface.handedOver && !this.reducedMotion()
-      ? this.sameName(surface.options.morph)
-      : null
-    const fade = !remaining
-      && !surface.options.morph
-      && surface.host === null
-      && surface.options.materialize
-      && surface.visible
-      && surface.content !== null
+    if (surface.pending) {
+      surface.pending = false
+      this.entering.splice(this.entering.indexOf(surface), 1)
+    }
+    surface.partner = null
+    surface.volume.link = null
+    const morphing = surface.options.morph !== null
+      && surface.hasVolume
       && !this.disposed
       && !this.reducedMotion()
-    if (remaining) {
-      this.ghosts.push(this.createGhost(surface, remaining))
-      this.startAnimation()
-    }
-    else if (surface.options.morph && surface.hasVolume && !surface.handedOver) {
-      const volume = surface.volume
-      this.departed.set(surface.options.morph, {
-        rect: {
-          left: volume.left,
-          top: volume.top,
-          width: volume.width,
-          height: volume.height,
-        },
-        time: performance.now(),
-      })
-    }
+    if (morphing)
+      this.leaving.push({ surface, consumed: false })
     surface.resizeObserver?.disconnect()
     if (surface.retryTimer !== null) {
       window.clearTimeout(surface.retryTimer)
@@ -513,113 +601,228 @@ export class LiquidGlassLayer implements GlassFrameHost {
       surface.element.removeAttribute('drawable')
     if (this.paintToggle.delete(surface.element) || surface.element.style.boxShadow.includes('rgba(0, 0, 0, 0)'))
       surface.element.style.boxShadow = ''
-    if (fade) {
-      surface.fading = true
-      surface.hiding = false
-      surface.hasTail = false
-      this.fading.push(surface)
+    if (morphing)
       this.startAnimation()
-    }
-    else {
-      disposeElementTexture(surface.content)
-      surface.content = null
-    }
+    else if (this.fades(surface))
+      this.beginFade(surface)
+    else
+      this.dropContent(surface)
     this.onInvalidate()
   }
 
-  private attachFlow(surface: GlassSurface): void {
+  layoutSettling(): boolean {
+    const now = performance.now()
+    return now - this.resourceTime < RESOURCE_SETTLE && this.mutationTime < this.resourceTime
+  }
+
+  private readonly handleResource = (): void => {
+    this.resourceTime = performance.now()
+    for (const surface of this.surfaces)
+      surface.dirty = true
+    this.onInvalidate()
+  }
+
+  get morphPending(): boolean {
+    return this.entering.length > 0 || this.leaving.length > 0
+  }
+
+  resolveMorphs(): void {
+    const now = performance.now()
+    this.departed = this.departed.filter(entry => now - entry.time < HANDOVER_WINDOW)
+    const entering = this.entering.splice(0)
+    for (const surface of entering)
+      this.resolveEnter(surface, now)
+    const leaving = this.leaving.splice(0)
+    for (const entry of leaving) {
+      if (!entry.consumed)
+        this.resolveLeave(entry.surface, now)
+    }
+  }
+
+  private fades(surface: GlassSurface): boolean {
+    return surface.host === null
+      && surface.options.materialize
+      && surface.visible
+      && surface.content !== null
+      && !this.disposed
+      && !this.reducedMotion()
+  }
+
+  private beginFade(surface: GlassSurface): void {
+    surface.fading = true
+    surface.hiding = false
+    surface.hasTail = false
+    surface.volume.link = null
+    this.fading.push(surface)
+    this.startAnimation()
+  }
+
+  private dropContent(surface: GlassSurface): void {
+    disposeElementTexture(surface.content)
+    surface.content = null
+  }
+
+  private resolveEnter(surface: GlassSurface, now: number): void {
+    if (!surface.pending)
+      return
+    surface.pending = false
+    if (this.byElement.get(surface.element) !== surface || !this.shownNow(surface.element))
+      return
     const name = surface.options.morph
-    surface.inherited = false
-    if (name === null) {
-      surface.flow = null
-      return
-    }
-    const source = name && !this.reducedMotion()
-      ? this.handover(name, surface)
+    const inherited = name
+      ? this.takeDeparted(name, surface, now)
       : null
-    if (!source) {
-      surface.flow = new LiquidFlow(surface.layout)
-      surface.snapFlow = true
+    if (inherited) {
+      this.startFlow(surface, inherited, null)
       return
     }
-    const rect = source.rect
+    for (const from of surface.options.morphFrom) {
+      const source = this.findPresent(from, surface)
+      if (!source)
+        continue
+      if (source.pending)
+        this.resolveEnter(source, now)
+      const start = emission(this.currentVolume(source), surface.rect)
+      this.startFlow(surface, start, source)
+      if (layerOf(source) !== layerOf(surface) || source.host !== surface.host)
+        this.ghosts.push(this.createGhost(source.options, start, source, surface))
+      return
+    }
+  }
+
+  private startFlow(surface: GlassSurface, rect: Rect, partner: GlassSurface | null): void {
     surface.flow = new LiquidFlow({
       left: rect.left - surface.originX,
       top: rect.top - surface.originY,
       width: rect.width,
       height: rect.height,
     })
-    surface.partner = source.partner
+    surface.partner = partner
     surface.snapFlow = false
     surface.inherited = true
     this.startAnimation()
   }
 
-  private sameName(name: string, except: GlassSurface | null = null): GlassSurface | null {
-    for (const other of this.surfaces) {
-      if (other !== except && other.options.morph === name && other.hasVolume)
-        return other
+  private resolveLeave(surface: GlassSurface, now: number): void {
+    const name = surface.options.morph
+    let target: GlassSurface | null = null
+    for (const to of surface.options.morphTo) {
+      target = this.findPresent(to, surface)
+      if (target)
+        break
     }
-    return null
+    const rect = copyRect(surface.volume)
+    let ghost: GlassGhost | null = null
+    let fading: GlassSurface | null = null
+    if (target) {
+      ghost = this.createGhost(surface.options, rect, target, null)
+      this.ghosts.push(ghost)
+      this.dropContent(surface)
+      this.startAnimation()
+    }
+    else if (this.fades(surface)) {
+      fading = surface
+      this.beginFade(surface)
+    }
+    else {
+      this.dropContent(surface)
+    }
+    if (name) {
+      this.departed.push({
+        name,
+        scopes: surface.scopes,
+        rect,
+        time: now,
+        ghost,
+        fading,
+      })
+    }
   }
 
-  private createGhost(from: GlassSurface, target: GlassSurface): GlassGhost {
-    const source = from.volume
-    const rect = {
-      left: source.left,
-      top: source.top,
-      width: source.width,
-      height: source.height,
+  private takeDeparted(name: string, surface: GlassSurface, now: number): Rect | null {
+    const leaving = this.leaving.filter(entry => !entry.consumed && entry.surface.options.morph === name)
+    const chosen = pickByScope(leaving, entry => entry.surface.scopes, surface.scopes)
+    if (chosen) {
+      chosen.consumed = true
+      this.dropContent(chosen.surface)
+      return copyRect(chosen.surface.volume)
     }
+    const departed = pickByScope(
+      this.departed.filter(entry => entry.name === name && now - entry.time < HANDOVER_WINDOW),
+      entry => entry.scopes,
+      surface.scopes,
+    )
+    if (!departed)
+      return null
+    this.departed.splice(this.departed.indexOf(departed), 1)
+    const ghost = departed.ghost
+    if (ghost) {
+      const index = this.ghosts.indexOf(ghost)
+      if (index >= 0) {
+        this.ghosts.splice(index, 1)
+        return copyRect(ghost.volume)
+      }
+    }
+    const fading = departed.fading
+    if (fading && this.fading.includes(fading)) {
+      const rect = copyRect(fading.volume)
+      this.release(fading)
+      return rect
+    }
+    return departed.rect
+  }
+
+  private findPresent(name: string, requester: GlassSurface): GlassSurface | null {
+    const candidates = this.surfaces.filter(other => other !== requester
+      && other.options.morph === name
+      && (other.pending || other.hasVolume || this.shownNow(other.element)))
+    return pickByScope(candidates, other => other.scopes, requester.scopes, other => other.element)
+  }
+
+  private shownNow(element: HTMLElement): boolean {
+    return element.isConnected
+      && (typeof element.checkVisibility !== 'function' || element.checkVisibility({ visibilityProperty: true }))
+  }
+
+  private currentVolume(surface: GlassSurface): Rect {
+    if (surface.hasVolume && !surface.pending)
+      return copyRect(surface.volume)
+    if (surface.flow && !surface.snapFlow) {
+      const body = { left: 0, top: 0, width: 0, height: 0 }
+      surface.flow.rect(body)
+      return {
+        left: body.left + surface.originX,
+        top: body.top + surface.originY,
+        width: body.width,
+        height: body.height,
+      }
+    }
+    return copyRect(surface.rect)
+  }
+
+  private createGhost(options: GlassOptions, rect: Rect, target: GlassSurface, partner: GlassSurface | null): GlassGhost {
+    const owner = partner ?? target
     return {
-      name: from.options.morph!,
       target,
+      partner,
       flow: new LiquidFlow(rect),
       volume: {
         ...rect,
         id: this.nextGhostId--,
-        layer: target.volume.layer,
-        options: from.options,
-        fusion: from.options.fusion,
-        clip: [...target.volume.clip],
-        opacity: target.volume.opacity,
-        brightness: target.volume.brightness,
-        paintOrder: target.volume.paintOrder,
+        layer: owner.volume.layer,
+        options,
+        fusion: 0,
+        clip: [...owner.volume.clip],
+        opacity: owner.volume.opacity,
+        brightness: owner.volume.brightness,
+        paintOrder: owner.volume.paintOrder,
         press: 0,
         materialize: 1,
-        host: target.volume.host,
+        host: owner.volume.host,
+        link: null,
+        linkFusion: 0,
       },
     }
-  }
-
-  private handover(name: string, surface: GlassSurface): { rect: Rect, partner: GlassSurface | null } | null {
-    for (let i = 0; i < this.ghosts.length; i++) {
-      const ghost = this.ghosts[i]!
-      if (ghost.name !== name)
-        continue
-      this.ghosts.splice(i, 1)
-      const volume = ghost.volume
-      return {
-        rect: {
-          left: volume.left,
-          top: volume.top,
-          width: volume.width,
-          height: volume.height,
-        },
-        partner: ghost.target,
-      }
-    }
-    const departed = this.departed.get(name)
-    this.departed.delete(name)
-    if (departed && performance.now() - departed.time < HANDOVER_WINDOW)
-      return { rect: departed.rect, partner: null }
-    for (const other of this.surfaces) {
-      if (other !== surface && other.options.morph === name && other.hasVolume && !other.handedOver) {
-        other.handedOver = true
-        return { rect: other.volume, partner: other }
-      }
-    }
-    return null
   }
 
   private readonly handleWindowResize = (): void => {
@@ -638,6 +841,8 @@ export class LiquidGlassLayer implements GlassFrameHost {
   private handleMutations(records: MutationRecord[]): void {
     let invalidated = false
     for (const record of records) {
+      if (record.type !== 'attributes' || record.attributeName !== 'style' || !this.byElement.has(record.target as HTMLElement))
+        this.mutationTime = performance.now()
       if (record.type === 'attributes') {
         const target = record.target as HTMLElement
         const name = record.attributeName ?? ''
@@ -749,6 +954,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
     const morph = surface.options.morph
     surface.options = options
     surface.signature = signature
+    surface.scopes = glassScopes(surface.element)
     surface.anchor = this.resolveAnchor(surface.element, options)
     if (options.morph !== morph) {
       surface.flow = options.morph === null

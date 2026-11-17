@@ -226,6 +226,74 @@ describe('液体迁移', () => {
     }
   })
 
+  it('斜向移动时不整体放大，拉长交给落在后面的拖尾', () => {
+    const square = {
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 200,
+    }
+    const corner = {
+      left: 400,
+      top: 400,
+      width: 200,
+      height: 200,
+    }
+    const flow = new LiquidFlow(square)
+    flow.configure(2, 0.1, 0.1)
+    flow.retarget(corner)
+    const tail = { left: 0, top: 0, width: 0, height: 0 }
+    let largest = 0
+    let trailed = 0
+    for (let frame = 0; frame < 240 && flow.active; frame++) {
+      flow.advance(1 / 120)
+      const body = rectOf(flow)
+      largest = Math.max(largest, body.width * body.height)
+      if (flow.tail(tail)) {
+        const behind = (body.left + body.width / 2 - tail.left - tail.width / 2) + (body.top + body.height / 2 - tail.top - tail.height / 2)
+        trailed = Math.max(trailed, behind)
+        expect(tail.width).toBeCloseTo(tail.height, 0)
+      }
+    }
+    expect(largest).toBeLessThan(200 * 200 * 1.25)
+    expect(trailed).toBeGreaterThan(60)
+    expect(rectOf(flow)).toEqual(corner)
+  })
+
+  it('跳到别处时拖尾留在出发点附近，被本体拉走后并回本体', () => {
+    const flow = new LiquidFlow(FROM)
+    flow.configure(1, 0.1, 0.1)
+    flow.retarget(TO)
+    const tail = { left: 0, top: 0, width: 0, height: 0 }
+    let seen = false
+    for (let frame = 0; frame < 30; frame++) {
+      flow.advance(1 / 120)
+      if (flow.tail(tail)) {
+        seen = true
+        expect(tail.left + tail.width / 2).toBeLessThan(rectOf(flow).left + rectOf(flow).width / 2)
+        expect(tail.width / tail.height).toBeCloseTo(100 / 40, 1)
+      }
+    }
+    expect(seen).toBe(true)
+    for (let frame = 0; frame < 600 && flow.active; frame++)
+      flow.advance(1 / 120)
+    expect(flow.tail(tail)).toBe(false)
+  })
+
+  it('进度从 0 增加到 1，静止与重新定位后都有定义', () => {
+    const flow = new LiquidFlow(FROM)
+    expect(flow.progress()).toBe(1)
+    flow.retarget(TO)
+    expect(flow.progress()).toBe(0)
+    const values = [0]
+    for (let frame = 0; frame < 600 && flow.active; frame++) {
+      flow.advance(1 / 120)
+      values.push(flow.progress())
+    }
+    expect(values.at(-1)).toBe(1)
+    expect(values.some(value => value > 0.3 && value < 0.9)).toBe(true)
+  })
+
   it('拉伸为 0 时没有拖尾', () => {
     const flow = new LiquidFlow(FROM)
     flow.configure(0, 0.33, 0.35)

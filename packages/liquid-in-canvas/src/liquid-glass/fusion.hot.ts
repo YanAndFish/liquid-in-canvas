@@ -18,6 +18,8 @@ export interface VolumeSurface {
   materialize: number
   host: number | null
   depthFrom?: VolumeSurface
+  link?: VolumeSurface | null
+  linkFusion?: number
 }
 
 export interface GlassGroup {
@@ -39,8 +41,28 @@ export function surfaceGap(a: VolumeSurface, b: VolumeSurface): number {
 function fusable(a: VolumeSurface, b: VolumeSurface): boolean {
   if (a.layer !== b.layer || a.host !== b.host)
     return false
-  const reach = Math.min(a.fusion, b.fusion)
+  let reach = Math.min(a.fusion, b.fusion)
+  if (a.link === b)
+    reach = Math.max(reach, a.linkFusion ?? 0)
+  if (b.link === a)
+    reach = Math.max(reach, b.linkFusion ?? 0)
   return reach > 0 && surfaceGap(a, b) <= reach
+}
+
+function raiseLinks(members: VolumeSurface[], count: number): void {
+  for (let i = 0; i < count; i++) {
+    const member = members[i]!
+    const link = member.link
+    const fusion = member.linkFusion ?? 0
+    if (!link || fusion <= 0)
+      continue
+    for (let j = 0; j < count; j++) {
+      if (members[j] !== link)
+        continue
+      member.fusion = Math.max(member.fusion, fusion)
+      link.fusion = Math.max(link.fusion, fusion)
+    }
+  }
 }
 
 export const MATERIALIZE_SCALE = 0.08
@@ -86,6 +108,7 @@ export class GlassGroups {
           members[group.count++] = surfaces[candidate]!
         }
       }
+      raiseLinks(members, group.count)
       sortById(members, group.count)
     }
   }

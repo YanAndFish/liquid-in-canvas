@@ -219,7 +219,7 @@ class GlassTunerView implements GlassTuner {
       'data-glass-radius': 999,
       'data-glass-fusion': 40,
       'data-glass-variant': 'clear',
-      'data-glass-morph': 'lg-tuner',
+      'data-glass-morph': 'lg-tuner-launcher',
     })
     this.element = h('div', { class: 'lg-tuner' }, [this.launcher])
     this.element.style.zIndex = String(options.zIndex ?? 1000)
@@ -636,6 +636,7 @@ class GlassTunerView implements GlassTuner {
       'data-glass-fusion': 40,
       'data-glass-variant': 'regular',
       'data-glass-morph': 'lg-tuner',
+      'data-glass-morph-from': 'lg-tuner-launcher',
       'data-glass-blur': 28,
       'data-glass-refraction': 20,
     }, [

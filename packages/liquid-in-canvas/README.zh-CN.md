@@ -130,10 +130,12 @@ await mountLiquidGlass({
 | `data-glass-fusion` | 融合距离，0 表示关闭 | 32 |
 | `data-glass-elevation` | 玻璃底面到背景的距离 | 16 |
 | `data-glass-anchor` | 用于定位的祖先选择器 | `offsetParent` |
-| `data-glass-morph` | 液体迁移，见下文。空值或 `true` 表示自身位置或尺寸变化时流动过去，其他值同时是迁移的名字；`false` 关闭（`true` / `false` 开关 0.3.0+） | 关闭 |
+| `data-glass-morph` | 液体迁移，见下文。空值或 `true` 表示自身位置或尺寸变化时流动过去，其他值同时是迁移的名字，标识同一块玻璃；`false` 关闭（`true` / `false` 开关 0.3.0+） | 关闭 |
+| `data-glass-morph-from`（0.5.0+） | 出现时从哪块玻璃里分出来：空格分隔的迁移名字，按顺序取第一块在场的。没写时取 `data-glass-morph-to` | 同 `-to` |
+| `data-glass-morph-to`（0.5.0+） | 消失时并入哪块玻璃，写法同上。没写时取 `data-glass-morph-from` | 同 `-from` |
 | `data-glass-morph-stretch` | 液体迁移的拉伸，0–2。0 表示整体平移，越大前缘与后缘拉得越开、拖尾越长 | 1 |
-| `data-glass-morph-bounce` | 液体迁移的回弹，0–1。0 表示前缘不越过目标 | 0.33 |
-| `data-glass-morph-wobble` | 液体迁移的晃动，0–1。到达时被压扁，随后在压扁与拉长之间振荡；0 表示不晃动 | 0.35 |
+| `data-glass-morph-bounce` | 液体迁移的回弹，0–1。0 表示前缘不越过目标 | 0.1（0.5.0 前 0.33） |
+| `data-glass-morph-wobble` | 液体迁移的晃动，0–1。到达时被压扁，随后在压扁与拉长之间振荡；0 表示不晃动 | 0.1（0.5.0 前 0.35） |
 | `data-glass-morph-content`（0.3.0+） | 液体迁移期间玻璃上的内容：`static` 停在元素位置（尺寸过渡时随玻璃展开显露）；`clip` 停在元素位置并裁剪在体积内，相当于 `overflow: hidden`；`follow` 随体积一起拉伸、回弹和晃动 | `static` |
 | `data-glass-materialize` | 生效与移除的过渡。出现（注册或由隐藏变为显示）时光线先弯折、再成为磨砂并略微越过；从 DOM 移除或隐藏时在原处退去。`none` 或 `false`（0.3.0+）关闭 | 开启 |
 
@@ -150,7 +152,7 @@ await mountLiquidGlass({
 </section>
 ```
 
-`data-glass-morph` 不从作用域继承：它的名字标识单块玻璃，传下去会让作用域里的玻璃都成为同一组迁移。作用域的参数变化时，其中的玻璃立即更新。
+`data-glass-morph`、`-from`、`-to` 不从作用域继承：迁移名字标识单块玻璃，传下去会让作用域里的玻璃都成为同一组迁移。作用域的参数变化时，其中的玻璃立即更新。
 
 辅助属性（画布渲染）：
 
@@ -204,9 +206,25 @@ const pill: LiquidGlassAttributes = { 'data-liquid-glass': '', 'data-glass-varia
 
 - 嵌套玻璃只有体积：它的 HTML 已经包含在外层玻璃的快照里，文字由外层清晰地画在它上面。它画在外层体积之上，与外层同层，不与外层融合，只与同一外层里的其他嵌套玻璃融合。只支持一层嵌套。
 - 嵌套玻璃折射的是页面背景，不是外层玻璃本身（不同玻璃之间没有递归折射），所以它看起来像嵌在磨砂外层里的一块通透玻璃。
-- 切换激活项时，把 `data-liquid-glass` 连同同名的 `data-glass-morph` 从旧按钮移到新按钮（框架里按激活状态绑定属性即可）。画布渲染下，玻璃体积从旧位置流向新位置：朝运动方向的一端先到并略微越过目标，另一端被拖在后面，体积先被拉长变细再收拢。
-- 同一个元素的 `data-glass-morph` 为空值时，它自己的位置或尺寸变化（不含滚动和窗口缩放）也以同样的方式过渡，例如拖动一块玻璃：本体紧跟元素，后面拖出一团与它融合的液滴，方向就是拖动方向（包括斜向）；松手后本体越过落点再弹回，液滴甩过本体后收拢，晃动几下停下。拖尾需要非零的融合距离。位置按 `offsetLeft` / `offsetTop` 测量：拖动时要改变玻璃元素自己的 `left` / `top`（或布局位置），只移动外层容器或使用 `transform` 不会触发流动。
-- 同名玻璃仍在页面上时，新出现的玻璃从它里面流出来，例如面板从按钮里长出来：两者同名，面板一步出现在最终位置，玻璃从按钮的位置和尺寸流向面板，内容随玻璃展开显露。面板移除时，它的体积流回按钮并被吸收。
+- 切换激活项时，把 `data-liquid-glass` 连同同名的 `data-glass-morph` 从旧按钮移到新按钮（框架里按激活状态绑定属性即可）。同名表示同一块玻璃：旧的离开、新的出现（400 ms 内）时，玻璃体积从旧位置流向新位置。主体保持自己的形状移过去，后面拖着一段液体，由细颈连着，到位后并回主体；沿坐标轴移动时主体本身也会被拉长。同名的玻璃同时在场时不交接，新玻璃按普通玻璃出现（0.5.0+；更早的版本里新玻璃会从同名玻璃里流出，0.5.0 起改用 `data-glass-morph-from` 声明）。
+- 同一个元素的 `data-glass-morph` 为空值时，它自己的位置或尺寸变化（不含滚动和窗口缩放）也以同样的方式过渡，例如拖动一块玻璃：本体紧跟元素，后面拖出一团与它融合的液滴，方向就是拖动方向（包括斜向）；松手后本体收拢到落点，液滴并回本体。位置按 `offsetLeft` / `offsetTop` 测量：拖动时要改变玻璃元素自己的 `left` / `top`（或布局位置），只移动外层容器或使用 `transform` 不会触发流动。
+- 分裂与合并（0.5.0+）用 `data-glass-morph-from` / `-to` 声明，值是其他玻璃的迁移名字：
+  - 出现时从 `-from` 列表里第一块在场的玻璃分出来：从来源朝向新玻璃的那条边拉出一道液流，伸到目的地后颈部变细并断开，来源留在原处，看起来是合并的倒放。面板一步出现在最终位置即可，内容随玻璃展开显露。
+  - 消失时并入 `-to` 列表里第一块在场的玻璃，带着颈部流进去被吸收。没有在场的目标时在原处退去。
+  - 只写一侧时另一侧取同样的列表，所以通常只写 `-from`。只写 `-from` / `-to` 而不写 `data-glass-morph` 时，迁移也会打开。
+  - 名字先在最近的 `data-glass-scope` 里查找，再到外层，列表组件里每一项可以用同样的名字。同一层作用域里有多块同名玻璃时取文档顺序靠前的一块。
+  - 迁移期间的连接不受两块玻璃各自的 `data-glass-fusion` 和所在层的限制，静止后恢复各自的设置。来源在另一层时，连接画在新玻璃的层里，随后缩回来源。
+  - 只对挂载与移除（包括增删 `data-liquid-glass`）生效。页面初次挂载时已经在场的玻璃直接到位；用 CSS 隐藏或显示不会触发分裂与合并。
+
+```html
+<button data-liquid-glass data-glass-morph="login-trigger">登录</button>
+<form data-liquid-glass data-glass-morph="login-card" data-glass-morph-from="login-trigger">…</form>
+<button data-liquid-glass data-glass-morph="login-submit" data-glass-morph-from="login-clear login-card">登录</button>
+<button data-liquid-glass data-glass-morph="login-clear" data-glass-morph-from="login-submit login-card">清除</button>
+```
+
+  卡片从触发按钮流下来，关闭时流回去；两个操作按钮先出现的一个从卡片下沿分出，后出现的一个从已有的按钮旁边分出；其中一个消失时并入另一个。
+- 打开页面时（0.5.0+）玻璃在原处显现，显现期间的布局变化直接到位；图片、字体加载把玻璃推开（期间页面没有自己的 DOM 变更）时也直接到位，不当作迁移。
 - 用 `data-glass-morph` 过渡尺寸时，元素应一步切换到新尺寸，由玻璃负责过渡。逐帧改变元素尺寸会让画布每帧重建内容快照，文字和控件会闪烁。
 - 玻璃停下时的回弹与晃动默认不带动内容。想让内容不超出晃动的玻璃，用 `data-glass-morph-content="clip"`；想让内容像贴在玻璃上一样跟着变形，用 `follow`。
 - `data-glass-morph-stretch`、`-bounce`、`-wobble` 调整流动的手感，缺省值来自全局默认参数里的 `morphStretch`、`morphBounce`、`morphWobble`。
@@ -258,7 +276,7 @@ tuner.destroy()
 - `renderer`：自定义“渲染方式”一节的数据来源（`GlassTunerRenderer`）。切换渲染方式需要 `dispose()` 后重新挂载，由你实现 `setMode`；`rendererFromMount(() => currentMount, { setMode })` 可以在重新挂载后跟随新的挂载。渲染器在面板之外变化时调用 `tuner.update()`。
 - `locale`（`'zh' | 'en'`，缺省按 `<html lang>`）、`theme`（缺省与舞台一样跟随页面主题，调整的是当前主题的材质）、`layer`（展开时的玻璃层，缺省 1）、`zIndex`、`position`、`hidden`、`open`。
 - 面板自带样式表（创建时插入 `<head>`），不依赖页面的 CSS 重置；颜色来自 `--lg-tuner-text`、`--lg-tuner-line`、`--lg-tuner-accent` 等自定义属性，在 `.lg-tuner` 上覆盖即可使用页面自己的配色。
-- 入口与面板声明了同名的 `data-glass-morph`：画布渲染下面板的玻璃从入口里流出来，回退实现里用缩放过渡。
+- 面板声明了 `data-glass-morph-from` 指向入口：画布渲染下面板的玻璃从入口里分出来，关闭时流回入口；回退实现里用缩放过渡。
 
 ## 分辨率与性能
 

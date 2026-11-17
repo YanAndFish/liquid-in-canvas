@@ -66,9 +66,10 @@ export interface GlassSurface extends ContentSource {
 
   flow: LiquidFlow | null
   snapFlow: boolean
-  handedOver: boolean
+  pending: boolean
   inherited: boolean
   partner: GlassSurface | null
+  scopes: readonly HTMLElement[]
 
   content: ElementTexture | null
   textureWidth: number
@@ -117,8 +118,8 @@ export interface GlassSurface extends ContentSource {
 }
 
 export interface GlassGhost {
-  readonly name: string
   readonly target: GlassSurface
+  readonly partner: GlassSurface | null
   readonly flow: LiquidFlow
   readonly volume: VolumeSurface
 }
@@ -130,6 +131,7 @@ export interface SurfaceInit {
   anchor: HTMLElement | null
   options: GlassOptions
   signature: string
+  scopes: readonly HTMLElement[]
   content: ElementTexture | null
   textureWidth: number
   textureHeight: number
@@ -141,7 +143,7 @@ export function createSurface(init: SurfaceInit): GlassSurface {
     ...init,
     flow: null,
     snapFlow: true,
-    handedOver: false,
+    pending: false,
     inherited: false,
     partner: null,
     sizeDirty: false,
@@ -195,6 +197,8 @@ export function createSurface(init: SurfaceInit): GlassSurface {
       press: 0,
       materialize: 1,
       host: init.host?.id ?? null,
+      link: null,
+      linkFusion: 0,
     },
     hasVolume: false,
     tail: {
@@ -213,6 +217,8 @@ export function createSurface(init: SurfaceInit): GlassSurface {
       press: 0,
       materialize: 1,
       host: init.host?.id ?? null,
+      link: null,
+      linkFusion: 0,
     },
     hasTail: false,
     under: [],

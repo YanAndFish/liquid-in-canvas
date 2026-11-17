@@ -36,6 +36,8 @@ export const GLASS_OPTION_ATTRS = [
   'data-glass-shadow-size',
   'data-glass-anchor',
   'data-glass-morph',
+  'data-glass-morph-from',
+  'data-glass-morph-to',
   'data-glass-morph-stretch',
   'data-glass-morph-bounce',
   'data-glass-morph-wobble',
@@ -91,9 +93,20 @@ export interface GlassOptions {
   anchor: string | null
   /**
    * 液体迁移。null 表示关闭；空字符串表示这块玻璃自己的位置或尺寸变化时以液体流动过渡；
-   * 非空时还作为名字：同名的玻璃消失、另一块同名玻璃出现时，体积从旧位置流向新位置。
+   * 非空时还作为名字，标识同一块玻璃：同名的玻璃离开、另一块同名玻璃出现时，体积从旧位置流向新位置。
+   * 声明了 `morphFrom` 或 `morphTo` 而没有声明名字时为空字符串。
    */
   morph: string | null
+  /**
+   * 出现时从中分出的玻璃名字，按顺序取第一块在场的。没有声明时取 `morphTo`。
+   * @since 0.5.0
+   */
+  morphFrom: readonly string[]
+  /**
+   * 消失时并入的玻璃名字，按顺序取第一块在场的。没有声明时取 `morphFrom`。
+   * @since 0.5.0
+   */
+  morphTo: readonly string[]
   /** 液体迁移的拉伸，0–2。0 表示整体平移，越大前缘与后缘拉得越开。 */
   morphStretch: number
   /** 液体迁移的回弹，0–1。0 表示不越过目标。 */
@@ -108,19 +121,25 @@ export interface GlassOptions {
 
 const SCOPE_SELECTOR = attr(GLASS_SCOPE_ATTR)
 
-const UNSCOPED = new Set<string>(['data-glass-morph'])
+const UNSCOPED = new Set<string>(['data-glass-morph', 'data-glass-morph-from', 'data-glass-morph-to'])
+
+export function glassScopes(element: HTMLElement): HTMLElement[] {
+  const scopes: HTMLElement[] = []
+  let scope = element.parentElement?.closest<HTMLElement>(SCOPE_SELECTOR)
+  while (scope) {
+    scopes.push(scope)
+    scope = scope.parentElement?.closest<HTMLElement>(SCOPE_SELECTOR)
+  }
+  return scopes
+}
 
 export class GlassAttributeSource {
   private readonly element: HTMLElement
-  private readonly scopes: HTMLElement[] = []
+  private readonly scopes: HTMLElement[]
 
   constructor(element: HTMLElement) {
     this.element = element
-    let scope = element.parentElement?.closest<HTMLElement>(SCOPE_SELECTOR)
-    while (scope) {
-      this.scopes.push(scope)
-      scope = scope.parentElement?.closest<HTMLElement>(SCOPE_SELECTOR)
-    }
+    this.scopes = glassScopes(element)
   }
 
   get(name: string): string | null {
@@ -212,6 +231,10 @@ export function parseMorph(raw: string | null): string | null {
   return value
 }
 
+export function parseMorphNames(raw: string | null): string[] {
+  return raw?.trim().split(/\s+/).filter(name => name.length > 0) ?? []
+}
+
 function parseMorphContent(raw: string | null): GlassMorphContent {
   const value = raw?.trim().toLowerCase()
   return value === 'clip' || value === 'follow'
@@ -232,6 +255,10 @@ export function parseGlassOptions(
   const source = new GlassAttributeSource(element)
   const variant = parseVariant(source.get('data-glass-variant'))
   const material = defaults.materials[variant][theme]
+  const from = parseMorphNames(element.getAttribute('data-glass-morph-from'))
+  const to = parseMorphNames(element.getAttribute('data-glass-morph-to'))
+  const morph = parseMorph(element.getAttribute('data-glass-morph'))
+  const related = from.length > 0 || to.length > 0
 
   return {
     layer: Math.round(numberAttribute(source, 'data-glass-layer', 0, GLASS_LAYER_RANGE)),
@@ -256,7 +283,13 @@ export function parseGlassOptions(
     shadowSize: numberAttribute(source, 'data-glass-shadow-size', material.shadowSize, GLASS_LIMITS.shadowSize),
     variant,
     anchor: parseAnchor(source.get('data-glass-anchor')),
-    morph: parseMorph(element.getAttribute('data-glass-morph')),
+    morph: morph ?? (related ? '' : null),
+    morphFrom: from.length > 0
+      ? from
+      : to,
+    morphTo: to.length > 0
+      ? to
+      : from,
     morphStretch: numberAttribute(source, 'data-glass-morph-stretch', defaults.morphStretch, GLASS_LIMITS.morphStretch),
     morphBounce: numberAttribute(source, 'data-glass-morph-bounce', defaults.morphBounce, GLASS_LIMITS.morphBounce),
     morphWobble: numberAttribute(source, 'data-glass-morph-wobble', defaults.morphWobble, GLASS_LIMITS.morphWobble),
@@ -290,6 +323,8 @@ export function glassOptionsSignature(options: GlassOptions): string {
     variant: options.variant,
     anchor: options.anchor,
     morph: options.morph,
+    morphFrom: options.morphFrom,
+    morphTo: options.morphTo,
     morphStretch: options.morphStretch,
     morphBounce: options.morphBounce,
     morphWobble: options.morphWobble,
