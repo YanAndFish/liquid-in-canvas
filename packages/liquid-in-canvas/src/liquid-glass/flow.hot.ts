@@ -117,6 +117,7 @@ export class LiquidFlow {
   private bounce = 1 / 3
   private wobble = 0
   private join = 0
+  private radius = 0
   private span = 0
 
   constructor(start: FlowRect) {
@@ -146,8 +147,9 @@ export class LiquidFlow {
     return Math.min(1, Math.max(0, 1 - this.remaining() / this.span))
   }
 
-  configure(stretch: number, bounce: number, wobble: number, join = 0): void {
+  configure(stretch: number, bounce: number, wobble: number, join = 0, radius = 0): void {
     this.join = Math.max(0, join)
+    this.radius = Math.max(0, radius)
     this.stretch = Math.max(0, stretch)
     this.bounce = Math.min(1, Math.max(0, bounce))
     this.wobble = Math.min(1, Math.max(0, wobble))
@@ -351,8 +353,25 @@ export class LiquidFlow {
   private tailReach(unitX: number, unitY: number): number {
     const width = this.restWidth.value
     const height = this.restHeight.value
-    const across = (Math.abs(unitX) * width + Math.abs(unitY) * height) / 2
-    const joined = across * (1 + TAIL_SIZE * (1 - TAIL_TAPER)) + this.join * TAIL_JOIN
+    const bodyRadius = Math.min(this.radius, width / 2, height / 2)
+    const scale = TAIL_SIZE * (1 - TAIL_TAPER)
+    const tailRadius = Math.min(width, height) * scale / 2
+    const coreX = width * (1 + scale) / 2 - bodyRadius - tailRadius
+    const coreY = height * (1 + scale) / 2 - bodyRadius - tailRadius
+    const round = bodyRadius + tailRadius + this.join * TAIL_JOIN
+    const alongX = Math.abs(unitX)
+    const alongY = Math.abs(unitY)
+    const sideX = alongX > 0
+      ? (coreX + round) / alongX
+      : Infinity
+    const sideY = alongY > 0
+      ? (coreY + round) / alongY
+      : Infinity
+    let joined = Math.min(sideX, sideY)
+    if (joined * alongX > coreX && joined * alongY > coreY) {
+      const facing = alongX * coreX + alongY * coreY
+      joined = facing + Math.sqrt(Math.max(facing * facing - coreX * coreX - coreY * coreY + round * round, 0))
+    }
     return Math.min(this.stretch * TAIL_REACH * Math.min(width, height), joined)
   }
 

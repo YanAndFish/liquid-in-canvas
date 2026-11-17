@@ -20,6 +20,7 @@ export interface VolumeSurface {
   depthFrom?: VolumeSurface
   link?: VolumeSurface | null
   linkFusion?: number
+  round?: boolean
 }
 
 export interface GlassGroup {
