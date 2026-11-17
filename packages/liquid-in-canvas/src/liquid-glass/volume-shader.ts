@@ -6,7 +6,7 @@ import { createFieldBakeShader, FIELD_FORMATS, FIELD_TARGETS } from './volume-fi
 import { createHybridVolumeShader } from './volume-hybrid-shader'
 import { createProfileVolumeShader } from './volume-profile-shader'
 
-export const VOLUME_GROUP_FLOATS = 20
+export const VOLUME_GROUP_FLOATS = 16
 export const VOLUME_MEMBER_FLOATS = 36
 export const VOLUME_TEXTURES = 1 + BLUR_SIGMAS.length
 
@@ -114,7 +114,6 @@ export function volumeCommon(count: number): string {
   shadow: vec4f,
   valid: vec4f,
   field: vec4f,
-  dirty: vec4f,
   members: array<Member, ${count}>,`, /* wgsl */`
 struct Member {
   box: vec4f,

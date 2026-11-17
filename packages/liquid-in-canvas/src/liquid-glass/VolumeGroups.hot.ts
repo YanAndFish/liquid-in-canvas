@@ -504,20 +504,6 @@ export class VolumeGroups {
           data[group + 13] = Math.round((entry.anchorY + entry.originY) * entry.ratio)
           data[group + 14] = entry.ratio * cssWidth / targetWidth
           data[group + 15] = entry.fade
-          data[group + 6] = entry.dirtyFade
-          if (entry.dirty) {
-            const dirty = entry.dirtyRect
-            data[group + 16] = entry.anchorX + dirty[0]!
-            data[group + 17] = entry.anchorY + dirty[1]!
-            data[group + 18] = entry.anchorX + dirty[2]!
-            data[group + 19] = entry.anchorY + dirty[3]!
-          }
-          else {
-            data[group + 16] = 1
-            data[group + 17] = 1
-            data[group + 18] = 0
-            data[group + 19] = 0
-          }
           pipelines = this.fieldPipelines
           textures = this.fieldGroup(fields, entry, plan.level)
         }
@@ -541,7 +527,7 @@ export class VolumeGroups {
   ): void {
     const target = entry.textures!
     const floats = HEADER_FLOATS + VOLUME_GROUP_FLOATS + plan.count * VOLUME_MEMBER_FLOATS
-    const start = this.frame.rect(floats, fields.bakeLeft, fields.bakeTop, fields.bakeRight, fields.bakeBottom, target.width, target.height, target.width, target.height)
+    const start = this.frame.rect(floats, 0, 0, 1, 1, 1, 1, target.width, target.height)
     const data = this.frame.data
     data.copyWithin(start + HEADER_FLOATS, source + HEADER_FLOATS, source + floats)
     data[start + 4] = targetWidth

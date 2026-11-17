@@ -12,7 +12,6 @@ export const FIELD_DRIFT = 1.5
 export const FIELD_SETTLE_MS = 50
 export const FIELD_SETTLE_MAX_MS = 400
 export const FIELD_FLAP_MS = 400
-export const FIELD_LOCAL_LIMIT = 0.6
 export const FIELD_FADE_IN_MS = 100
 export const FIELD_FADE_OUT_MS = 80
 export const FIELD_FADE_STEP_MS = 34
@@ -39,19 +38,11 @@ export interface FieldEntry {
   live: boolean
   stale: boolean
   fade: number
-  anchor: number
   anchorX: number
   anchorY: number
-  readonly baked: Float32Array
   bakedAt: number
   settle: number
   flapped: boolean
-  dirty: boolean
-  readonly dirtyRect: Float32Array
-  dirtyFade: number
-  dirtyChangedAt: number
-  dirtyBaked: boolean
-  readonly refreshRect: Float32Array
   originX: number
   originY: number
   ratio: number
@@ -77,19 +68,11 @@ export function createFieldEntry(): FieldEntry {
     live: false,
     stale: false,
     fade: 0,
-    anchor: -1,
     anchorX: 0,
     anchorY: 0,
-    baked: new Float32Array(FIELD_MAX_MEMBERS * 4),
     bakedAt: -Infinity,
     settle: FIELD_SETTLE_MS,
     flapped: false,
-    dirty: false,
-    dirtyRect: new Float32Array(4),
-    dirtyFade: 1,
-    dirtyChangedAt: 0,
-    dirtyBaked: false,
-    refreshRect: new Float32Array(4),
     originX: 0,
     originY: 0,
     ratio: 1,

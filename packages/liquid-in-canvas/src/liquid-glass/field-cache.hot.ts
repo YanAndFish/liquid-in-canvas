@@ -15,7 +15,6 @@ import {
   FIELD_FADE_STEP_MS,
   FIELD_FLAP_MS,
   FIELD_IDLE_FRAMES,
-  FIELD_LOCAL_LIMIT,
   FIELD_MAX_MEMBERS,
   FIELD_SETTLE_MAX_MS,
   FIELD_SETTLE_MS,
@@ -23,7 +22,7 @@ import {
   FIELD_TEXEL_BUDGET,
   FIELD_TOLERANCE,
 } from './field-cache'
-import { FIELD_FEATHER, HYBRID_CLIP_PAD, hybridLateral } from './volume-hybrid-shader'
+import { HYBRID_CLIP_PAD, hybridLateral } from './volume-hybrid-shader'
 import { MEMBER_PROXIMITY, memberCornered } from './volume-members.hot'
 import { VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from './volume-shader'
 
@@ -58,27 +57,6 @@ function settleFade(value: number): number {
       : value
 }
 
-function unite(target: Float32Array, rect: Float32Array): void {
-  target[0] = Math.min(target[0]!, rect[0]!)
-  target[1] = Math.min(target[1]!, rect[1]!)
-  target[2] = Math.max(target[2]!, rect[2]!)
-  target[3] = Math.max(target[3]!, rect[3]!)
-}
-
-function largestMember(data: Float32Array, members: number, count: number): number {
-  let best = 0
-  let area = -1
-  for (let i = 0; i < count; i++) {
-    const m = members + i * VOLUME_MEMBER_FLOATS
-    const size = data[m + 2]! * data[m + 3]!
-    if (size > area) {
-      area = size
-      best = i
-    }
-  }
-  return best
-}
-
 function edge(near: boolean, position: number, far: number): number {
   return near
     ? position
@@ -94,14 +72,7 @@ export class FieldCache {
   private readonly entries: FieldEntry[] = []
   private readonly empty: FieldTextures
   private readonly retired: GPUTexture[] = []
-  bakeLeft = 0
-  bakeTop = 0
-  bakeRight = 0
-  bakeBottom = 0
   private baking: FieldEntry | null = null
-  private partial = false
-  private readonly changes = new Uint8Array(FIELD_MAX_MEMBERS)
-  private readonly scratch = new Float32Array(4)
   private frameId = 0
   private now = 0
   private left = 0
@@ -141,15 +112,11 @@ export class FieldCache {
       return entry
     entry.frame = this.frameId
     const members = group + VOLUME_GROUP_FLOATS
-    if (entry.anchor < 0)
-      entry.anchor = largestMember(data, members, count)
-    const a = members + entry.anchor * VOLUME_MEMBER_FLOATS
-    const anchorX = data[a]!
-    const anchorY = data[a + 1]!
+    const anchorX = data[members]!
+    const anchorY = data[members + 1]!
     entry.anchorX = anchorX
     entry.anchorY = anchorY
     const signature = entry.signature
-    const changes = this.changes
     let change = STILL
     let s = 0
     for (let i = 0; i < count; i++) {
@@ -159,50 +126,41 @@ export class FieldCache {
       const halfWidth = data[m + 2]!
       const halfHeight = data[m + 3]!
       const halfDepth = data[m + 8]!
-      let c = put(signature, s++, x - anchorX, FIELD_DRIFT)
-      c = Math.max(c, put(signature, s++, y - anchorY, FIELD_DRIFT))
-      c = Math.max(c, put(signature, s++, halfWidth, FIELD_DRIFT))
-      c = Math.max(c, put(signature, s++, halfHeight, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, x - anchorX, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, y - anchorY, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, halfWidth, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, halfHeight, FIELD_DRIFT))
       for (let k = 4; k < 11; k++)
-        c = Math.max(c, put(signature, s++, data[m + k]!, FIELD_DRIFT))
-      c = Math.max(c, put(signature, s++, data[m + MEMBER_PROXIMITY]! * data[m + 10]!, FIELD_DRIFT))
+        change = Math.max(change, put(signature, s++, data[m + k]!, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, data[m + MEMBER_PROXIMITY]! * data[m + 10]!, FIELD_DRIFT))
       const pad = hybridLateral(profiles.reachOf(data[m + 28]!), halfDepth) + halfDepth + HYBRID_CLIP_PAD
       const clipLeft = data[m + 12]!
       const clipTop = data[m + 13]!
       const clipRight = data[m + 14]!
       const clipBottom = data[m + 15]!
-      c = Math.max(c, put(signature, s++, edge(clipLeft > x - halfWidth - pad, clipLeft - anchorX, -FIELD_CLIP_FAR), FIELD_DRIFT))
-      c = Math.max(c, put(signature, s++, edge(clipTop > y - halfHeight - pad, clipTop - anchorY, -FIELD_CLIP_FAR), FIELD_DRIFT))
-      c = Math.max(c, put(signature, s++, edge(clipRight < x + halfWidth + pad, clipRight - anchorX, FIELD_CLIP_FAR), FIELD_DRIFT))
-      c = Math.max(c, put(signature, s++, edge(clipBottom < y + halfHeight + pad, clipBottom - anchorY, FIELD_CLIP_FAR), FIELD_DRIFT))
-      c = Math.max(c, put(signature, s++, data[m + 17]!, 0))
-      c = Math.max(c, put(signature, s++, data[m + 32]!, 0))
-      c = Math.max(c, put(signature, s++, data[m + 24]!, FIELD_DRIFT))
-      c = Math.max(c, put(signature, s++, data[m + 25]!, FIELD_DRIFT))
-      c = Math.max(c, put(signature, s++, data[m + 26]!, 0))
-      c = Math.max(c, put(signature, s++, data[m + 27]!, FIELD_DRIFT))
-      changes[i] = c
-      change = Math.max(change, c)
+      change = Math.max(change, put(signature, s++, edge(clipLeft > x - halfWidth - pad, clipLeft - anchorX, -FIELD_CLIP_FAR), FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, edge(clipTop > y - halfHeight - pad, clipTop - anchorY, -FIELD_CLIP_FAR), FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, edge(clipRight < x + halfWidth + pad, clipRight - anchorX, FIELD_CLIP_FAR), FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, edge(clipBottom < y + halfHeight + pad, clipBottom - anchorY, FIELD_CLIP_FAR), FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, data[m + 17]!, 0))
+      change = Math.max(change, put(signature, s++, data[m + 32]!, 0))
+      change = Math.max(change, put(signature, s++, data[m + 24]!, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, data[m + 25]!, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, data[m + 26]!, 0))
+      change = Math.max(change, put(signature, s++, data[m + 27]!, FIELD_DRIFT))
     }
     if (change === MOVED)
-      this.moved(entry, data, group, count, profiles)
-    else if (change === DRIFT && entry.live)
-      this.drifted(entry, data, group, count, profiles)
+      this.moved(entry)
+    else if (change === DRIFT)
+      entry.stale = true
     const step = Math.min(Math.max(this.now - entry.seenAt, 0), FIELD_FADE_STEP_MS)
     entry.seenAt = this.now
     entry.fade = settleFade(entry.live
       ? entry.fade + step / FIELD_FADE_IN_MS
       : entry.fade - step / FIELD_FADE_OUT_MS)
-    if (entry.dirty) {
-      entry.dirtyFade = settleFade(entry.dirtyBaked
-        ? entry.dirtyFade + step / FIELD_FADE_IN_MS
-        : entry.dirtyFade - step / FIELD_FADE_OUT_MS)
-      if (entry.dirtyBaked && entry.dirtyFade >= 1)
-        entry.dirty = false
-    }
-    if (change === STILL && entry.settle > FIELD_SETTLE_MS && entry.live && !entry.dirty && this.now - entry.bakedAt > FIELD_SETTLE_MAX_MS * 2)
+    if (change === STILL && entry.settle > FIELD_SETTLE_MS && entry.live && this.now - entry.bakedAt > FIELD_SETTLE_MAX_MS * 2)
       entry.settle = FIELD_SETTLE_MS
-    if (!entry.live || entry.stale || entry.dirty || entry.fade < 1)
+    if (!entry.live || entry.stale || entry.fade < 1)
       this.settling = true
     return entry
   }
@@ -210,28 +168,22 @@ export class FieldCache {
   prepare(entry: FieldEntry, data: Float32Array, group: number, count: number, profiles: ReachSource, ratio: number): boolean {
     if (this.baking !== null)
       return false
-    let partial = false
-    let settledDirty = false
     if (entry.live) {
       if (entry.textures !== null && Math.abs(entry.ratio - ratio) > 1e-4) {
         this.invalidate(entry)
         this.settling = true
         return false
       }
-      settledDirty = entry.dirty && !entry.dirtyBaked && this.now - entry.dirtyChangedAt >= entry.settle
-      if (!entry.stale && !settledDirty)
+      if (!entry.stale)
         return false
-      partial = entry.textures !== null
     }
     else if (this.now - entry.changedAt < entry.settle) {
       return false
     }
-    const refresh = entry.stale
     entry.live = true
     entry.stale = false
-    this.measure(data, group, count, profiles, entry.anchor)
+    this.measure(data, group, count, profiles)
     if (this.right <= this.left || this.bottom <= this.top) {
-      entry.dirty = false
       this.drop(entry)
       return false
     }
@@ -240,16 +192,10 @@ export class FieldCache {
     const width = Math.ceil(Math.ceil((entry.anchorX + this.right + 1 - originX) * ratio) / FIELD_SIZE_STEP) * FIELD_SIZE_STEP
     const height = Math.ceil(Math.ceil((entry.anchorY + this.bottom + 1 - originY) * ratio) / FIELD_SIZE_STEP) * FIELD_SIZE_STEP
     const current = entry.textures
-    if (partial && (current!.width !== width || current!.height !== height
-      || Math.abs(entry.originX - (originX - entry.anchorX)) > 1e-3 || Math.abs(entry.originY - (originY - entry.anchorY)) > 1e-3)) {
-      partial = false
-    }
-    if (!partial && (current === null || current.width !== width || current.height !== height)) {
+    if (current === null || current.width !== width || current.height !== height) {
       this.drop(entry)
-      if (!this.reserve(width * height)) {
-        entry.dirty = false
+      if (!this.reserve(width * height))
         return false
-      }
       entry.textures = createFieldTextures(this.gpu, width, height)
       entry.version++
       this.texels += width * height
@@ -257,34 +203,8 @@ export class FieldCache {
     entry.originX = originX - entry.anchorX
     entry.originY = originY - entry.anchorY
     entry.ratio = ratio
-    if (partial) {
-      const rect = this.scratch
-      rect[0] = Infinity
-      rect[1] = Infinity
-      rect[2] = -Infinity
-      rect[3] = -Infinity
-      if (refresh)
-        unite(rect, entry.refreshRect)
-      if (settledDirty)
-        unite(rect, entry.dirtyRect)
-      this.bakeLeft = Math.max(0, Math.floor((rect[0]! - entry.originX) * ratio))
-      this.bakeTop = Math.max(0, Math.floor((rect[1]! - entry.originY) * ratio))
-      this.bakeRight = Math.min(width, Math.ceil((rect[2]! - entry.originX) * ratio))
-      this.bakeBottom = Math.min(height, Math.ceil((rect[3]! - entry.originY) * ratio))
-      if (settledDirty)
-        entry.dirtyBaked = true
-    }
-    else {
-      this.bakeLeft = 0
-      this.bakeTop = 0
-      this.bakeRight = width
-      this.bakeBottom = height
-      entry.dirty = false
-    }
-    this.partial = partial
-    this.recordBaked(entry, data, group, count)
-    if (this.bakeRight <= this.bakeLeft || this.bakeBottom <= this.bakeTop)
-      return false
+    entry.bakedAt = this.now
+    entry.flapped = false
     this.baking = entry
     return true
   }
@@ -298,7 +218,7 @@ export class FieldCache {
     if (entry === null || entry.textures === null || this.list.count === 0)
       return
     const target = entry.textures
-    this.frame.encodeFieldPass(encoder, target.views, target.width, target.height, this.list, this.partial)
+    this.frame.encodeFieldPass(encoder, target.views, target.width, target.height, this.list)
   }
 
   reset(): void {
@@ -318,103 +238,18 @@ export class FieldCache {
       empty[i]!.destroy()
   }
 
-  private moved(entry: FieldEntry, data: Float32Array, group: number, count: number, profiles: ReachSource): void {
+  private moved(entry: FieldEntry): void {
     if (this.now - entry.bakedAt < FIELD_FLAP_MS && !entry.flapped) {
       entry.settle = Math.min(entry.settle * 2, FIELD_SETTLE_MAX_MS)
       entry.flapped = true
     }
-    const textures = entry.textures
-    if (!entry.live || textures === null || this.changes[entry.anchor] === MOVED) {
-      this.invalidate(entry)
-      return
-    }
-    const rect = this.scratch
-    this.region(entry, data, group, count, profiles, MOVED, rect)
-    const left = entry.originX
-    const top = entry.originY
-    const right = left + textures.width / entry.ratio
-    const bottom = top + textures.height / entry.ratio
-    const overlap = Math.max(0, Math.min(rect[2]!, right) - Math.max(rect[0]!, left))
-      * Math.max(0, Math.min(rect[3]!, bottom) - Math.max(rect[1]!, top))
-    if (overlap > FIELD_LOCAL_LIMIT * (right - left) * (bottom - top)) {
-      this.invalidate(entry)
-      return
-    }
-    if (!entry.dirty) {
-      entry.dirty = true
-      entry.dirtyFade = 1
-      entry.dirtyRect.set(rect)
-    }
-    else {
-      unite(entry.dirtyRect, rect)
-    }
-    entry.dirtyBaked = false
-    entry.dirtyChangedAt = this.now
-    this.drifted(entry, data, group, count, profiles)
-  }
-
-  private drifted(entry: FieldEntry, data: Float32Array, group: number, count: number, profiles: ReachSource): void {
-    const rect = this.scratch
-    this.region(entry, data, group, count, profiles, DRIFT, rect)
-    if (rect[2]! <= rect[0]!)
-      return
-    if (!entry.stale) {
-      entry.stale = true
-      entry.refreshRect.set(rect)
-    }
-    else {
-      unite(entry.refreshRect, rect)
-    }
-  }
-
-  private region(entry: FieldEntry, data: Float32Array, group: number, count: number, profiles: ReachSource, level: number, target: Float32Array): void {
-    const members = group + VOLUME_GROUP_FLOATS
-    let lateral = 0
-    let fusion = 0
-    for (let i = 0; i < count; i++) {
-      const m = members + i * VOLUME_MEMBER_FLOATS
-      lateral = Math.max(lateral, hybridLateral(profiles.reachOf(data[m + 28]!), data[m + 8]!))
-      fusion = Math.max(fusion, data[m + 10]!)
-    }
-    const margin = Math.max(data[group + 3]! + lateral + 1, fusion * 2 + lateral) + FIELD_FEATHER + 2
-    target[0] = Infinity
-    target[1] = Infinity
-    target[2] = -Infinity
-    target[3] = -Infinity
-    const baked = entry.baked
-    for (let i = 0; i < count; i++) {
-      if (this.changes[i] !== level)
-        continue
-      const m = members + i * VOLUME_MEMBER_FLOATS
-      const x = data[m]! - entry.anchorX
-      const y = data[m + 1]! - entry.anchorY
-      const b = i * 4
-      target[0] = Math.min(target[0]!, x - data[m + 2]!, baked[b]! - baked[b + 2]!) - margin
-      target[1] = Math.min(target[1]!, y - data[m + 3]!, baked[b + 1]! - baked[b + 3]!) - margin
-      target[2] = Math.max(target[2]!, x + data[m + 2]!, baked[b]! + baked[b + 2]!) + margin
-      target[3] = Math.max(target[3]!, y + data[m + 3]!, baked[b + 1]! + baked[b + 3]!) + margin
-    }
+    this.invalidate(entry)
   }
 
   private invalidate(entry: FieldEntry): void {
     entry.live = false
     entry.stale = false
-    entry.dirty = false
     entry.changedAt = this.now
-  }
-
-  private recordBaked(entry: FieldEntry, data: Float32Array, group: number, count: number): void {
-    const members = group + VOLUME_GROUP_FLOATS
-    const baked = entry.baked
-    for (let i = 0; i < count; i++) {
-      const m = members + i * VOLUME_MEMBER_FLOATS
-      baked[i * 4] = data[m]! - entry.anchorX
-      baked[i * 4 + 1] = data[m + 1]! - entry.anchorY
-      baked[i * 4 + 2] = data[m + 2]!
-      baked[i * 4 + 3] = data[m + 3]!
-    }
-    entry.bakedAt = this.now
-    entry.flapped = false
   }
 
   private flush(): void {
@@ -466,12 +301,9 @@ export class FieldCache {
     for (let j = 0; j < plan.count; j++)
       chosen.ids[j] = plan.members[j]!.id
     chosen.signature.fill(Number.NaN)
-    chosen.anchor = -1
     chosen.settle = FIELD_SETTLE_MS
     chosen.bakedAt = -Infinity
     chosen.flapped = false
-    chosen.dirty = false
-    chosen.dirtyFade = 1
     chosen.stale = false
     chosen.frame = -1
     chosen.seenAt = this.now
@@ -479,14 +311,14 @@ export class FieldCache {
     return chosen
   }
 
-  private measure(data: Float32Array, group: number, count: number, profiles: ReachSource, anchor: number): void {
+  private measure(data: Float32Array, group: number, count: number, profiles: ReachSource): void {
     this.left = Infinity
     this.top = Infinity
     this.right = -Infinity
     this.bottom = -Infinity
     const members = group + VOLUME_GROUP_FLOATS
-    const anchorX = data[members + anchor * VOLUME_MEMBER_FLOATS]!
-    const anchorY = data[members + anchor * VOLUME_MEMBER_FLOATS + 1]!
+    const anchorX = data[members]!
+    const anchorY = data[members + 1]!
     let lateral = 0
     let fusion = 0
     for (let i = 0; i < count; i++) {
@@ -566,7 +398,6 @@ export class FieldCache {
       this.drop(victim)
       victim.live = false
       victim.stale = false
-      victim.dirty = false
       victim.fade = 0
       victim.changedAt = this.now
     }
@@ -590,7 +421,6 @@ export class FieldCache {
     entry.count = 0
     entry.live = false
     entry.stale = false
-    entry.dirty = false
     entry.fade = 0
   }
 }
