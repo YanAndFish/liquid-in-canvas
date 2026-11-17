@@ -399,6 +399,48 @@ describe('折射场缓存', () => {
     expect(groups.settling).toBe(false)
   })
 
+  it('迁移中的成员即使在回弹顶点短暂停住也不写入缓存，迁移结束后只写入一次', () => {
+    const { run, frame, encode, groups } = setup()
+    const flowing = (moving: boolean): VolumeSurface[] => [
+      surface(1, 0),
+      {
+        ...surface(2, 210),
+        moving,
+      },
+      surface(3, 700),
+    ]
+    let bakes = 0
+    for (let i = 0; i < SETTLE_FRAMES * 2; i++) {
+      const fused = frame(flowing(true)).find(item => item.label.endsWith(':2'))!
+      expect(fused.label).toBe('volume-profile:0:2')
+      bakes += encode().length
+    }
+    expect(bakes).toBe(0)
+    expect(groups.settling).toBe(true)
+    for (let i = 0; i < SETTLE_FRAMES; i++) {
+      frame(flowing(false))
+      bakes += encode().length
+    }
+    expect(bakes).toBe(1)
+    expect(run(1, flowing(false)).map(item => item.label).sort()).toEqual(['volume-field:0:2', 'volume-profile:0:1'])
+  })
+
+  it('迁移中的成员小幅漂移时不原地重新求交，缓存淡出后等迁移结束', () => {
+    const { run, frame, encode, fieldOf } = setup()
+    run(SETTLE_FRAMES, scene())
+    const fused = frame([
+      surface(1, 0),
+      {
+        ...surface(2, 210.5),
+        moving: true,
+      },
+      surface(3, 700),
+    ]).find(item => item.label.endsWith(':2'))!
+    expect(encode()).toHaveLength(0)
+    expect(fused.label).toBe('volume-field:0:2')
+    expect(fieldOf(fused)[3]).toBeLessThan(1)
+  })
+
   it('明显变化之后不等旧结果淡完：没有明显变化满规定时间就重新求交，从当前的比例接着淡入', () => {
     const { run, frameAt, now, encode, fieldOf } = setup()
     run(SETTLE_FRAMES + Math.ceil(FIELD_FLAP_MS / TICK), scene())

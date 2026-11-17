@@ -106,6 +106,11 @@ export interface LiquidGlassAttributes {
   /** 液体迁移的晃动，0–1。缺省来自全局默认参数。 */
   'data-glass-morph-wobble'?: GlassNumberAttribute | null
   /**
+   * 液体迁移的速度倍数，0.25–4。1 为缺省节奏，2 用一半的时间到达。缺省来自全局默认参数。
+   * @since 0.6.0
+   */
+  'data-glass-morph-speed'?: GlassNumberAttribute | null
+  /**
    * 液体迁移期间玻璃上的内容，只对画布渲染有效。`static` 停在元素位置（尺寸过渡时随玻璃展开显露）；
    * `clip` 停在元素位置并裁剪在体积之内，相当于 `overflow: hidden`；`follow` 随体积一起拉伸、回弹和晃动。缺省 `static`。
    * @since 0.3.0

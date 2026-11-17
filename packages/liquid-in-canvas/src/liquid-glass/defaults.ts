@@ -47,10 +47,15 @@ export interface GlassDefaults {
   elevation: number
   /** 液体迁移的拉伸：前后缘的速度差，0 表示整体平移。 */
   morphStretch: number
-  /** 液体迁移的回弹：前缘越过目标后弹回的程度，0 表示不越过。 */
+  /** 液体迁移的回弹：前缘越过目标后弹回的程度，0 表示不越过。0.6.0 起越过的距离与它成正比，1 约为迁移距离的四分之一。 */
   morphBounce: number
   /** 液体迁移的晃动：到达后在拉长与压扁之间振荡的程度，0 表示不晃动。 */
   morphWobble: number
+  /**
+   * 液体迁移的速度倍数，1 为缺省节奏，2 用一半的时间到达，回弹与晃动的形状不变。
+   * @since 0.6.0
+   */
+  morphSpeed: number
   /** 各材质在深浅主题下的外观。 */
   materials: Record<GlassVariant, Record<GlassTheme, GlassMaterial>>
 }
@@ -63,6 +68,8 @@ export interface GlassDefaultsPatch {
   morphStretch?: number
   morphBounce?: number
   morphWobble?: number
+  /** @since 0.6.0 */
+  morphSpeed?: number
   materials?: {
     [V in GlassVariant]?: {
       [T in GlassTheme]?: Partial<GlassMaterial>
@@ -70,7 +77,7 @@ export interface GlassDefaultsPatch {
   }
 }
 
-type NumericKey = Exclude<keyof GlassMaterial, 'tint'> | 'radius' | 'fusion' | 'elevation' | 'morphStretch' | 'morphBounce' | 'morphWobble'
+type NumericKey = Exclude<keyof GlassMaterial, 'tint'> | 'radius' | 'fusion' | 'elevation' | 'morphStretch' | 'morphBounce' | 'morphWobble' | 'morphSpeed'
 
 /** 各数值参数的取值范围，属性与默认值都会被限制在其中。 */
 export const GLASS_LIMITS: Readonly<Record<NumericKey, readonly [min: number, max: number]>> = {
@@ -80,6 +87,7 @@ export const GLASS_LIMITS: Readonly<Record<NumericKey, readonly [min: number, ma
   morphStretch: [0, 2],
   morphBounce: [0, 1],
   morphWobble: [0, 1],
+  morphSpeed: [0.25, 4],
   blur: [0, 80],
   refraction: [0, 80],
   bevelWidth: [0.1, 4],
@@ -123,6 +131,7 @@ const BASE_NUMBERS = [
   'morphStretch',
   'morphBounce',
   'morphWobble',
+  'morphSpeed',
 ] as const
 
 /** 库内置的默认参数。 */
@@ -131,8 +140,9 @@ export const BUILTIN_GLASS_DEFAULTS: GlassDefaults = deepFreeze({
   fusion: 32,
   elevation: 16,
   morphStretch: 1,
-  morphBounce: 0.1,
+  morphBounce: 0.4,
   morphWobble: 0.1,
+  morphSpeed: 1,
   materials: {
     regular: {
       dark: {
@@ -263,6 +273,7 @@ function merge(previous: GlassDefaults, patch: GlassDefaultsPatch): GlassDefault
     morphStretch: previous.morphStretch,
     morphBounce: previous.morphBounce,
     morphWobble: previous.morphWobble,
+    morphSpeed: previous.morphSpeed,
     materials: {
       regular: { ...previous.materials.regular },
       clear: { ...previous.materials.clear },

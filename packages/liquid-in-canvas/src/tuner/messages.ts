@@ -9,7 +9,7 @@ export type Text = readonly [zh: string, en: string]
 
 export type MaterialNumber = Exclude<keyof GlassMaterial, 'tint'>
 export type ShapeNumber = 'fusion' | 'elevation' | 'radius'
-export type MorphNumber = 'morphStretch' | 'morphBounce' | 'morphWobble'
+export type MorphNumber = 'morphStretch' | 'morphBounce' | 'morphWobble' | 'morphSpeed'
 
 export interface Field<Key extends string> {
   key: Key
@@ -144,6 +144,11 @@ export const MORPH_FIELDS: readonly Field<MorphNumber>[] = [
     key: 'morphWobble',
     label: ['晃动', 'Wobble'],
     step: 0.01,
+  },
+  {
+    key: 'morphSpeed',
+    label: ['速度', 'Speed'],
+    step: 0.05,
   },
 ]
 

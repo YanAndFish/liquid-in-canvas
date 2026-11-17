@@ -49,8 +49,9 @@ describe('parseGlassOptions', () => {
       morphFrom: [],
       morphTo: [],
       morphStretch: 1,
-      morphBounce: 0.1,
+      morphBounce: 0.4,
       morphWobble: 0.1,
+      morphSpeed: 1,
       morphContent: 'static',
       materialize: true,
     })
@@ -84,8 +85,9 @@ describe('parseGlassOptions', () => {
       morphFrom: [],
       morphTo: [],
       morphStretch: 1,
-      morphBounce: 0.1,
+      morphBounce: 0.4,
       morphWobble: 0.1,
+      morphSpeed: 1,
       morphContent: 'static',
       materialize: true,
     })
@@ -136,8 +138,9 @@ describe('parseGlassOptions', () => {
       morphFrom: [],
       morphTo: [],
       morphStretch: 1,
-      morphBounce: 0.1,
+      morphBounce: 0.4,
       morphWobble: 0.1,
+      morphSpeed: 1,
       morphContent: 'static',
       materialize: true,
     })
@@ -189,8 +192,9 @@ describe('parseGlassOptions', () => {
       morphFrom: [],
       morphTo: [],
       morphStretch: 1,
-      morphBounce: 0.1,
+      morphBounce: 0.4,
       morphWobble: 0.1,
+      morphSpeed: 1,
       morphContent: 'static',
       materialize: true,
     })

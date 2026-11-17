@@ -41,6 +41,7 @@ export const GLASS_OPTION_ATTRS = [
   'data-glass-morph-stretch',
   'data-glass-morph-bounce',
   'data-glass-morph-wobble',
+  'data-glass-morph-speed',
   'data-glass-morph-content',
   'data-glass-materialize',
 ] as const
@@ -113,6 +114,11 @@ export interface GlassOptions {
   morphBounce: number
   /** 液体迁移的晃动，0–1。0 表示到达后不晃动。 */
   morphWobble: number
+  /**
+   * 液体迁移的速度倍数，0.25–4。1 为缺省节奏，越大越快到达，回弹与晃动的形状不变。
+   * @since 0.6.0
+   */
+  morphSpeed: number
   /** 液体迁移期间内容的表现，见 `GlassMorphContent`。0.3.0 起。 */
   morphContent: GlassMorphContent
   /** 出现与移除时以材质化过渡：光线先弯折再成为磨砂。`data-glass-materialize="none"` 关闭。 */
@@ -293,6 +299,7 @@ export function parseGlassOptions(
     morphStretch: numberAttribute(source, 'data-glass-morph-stretch', defaults.morphStretch, GLASS_LIMITS.morphStretch),
     morphBounce: numberAttribute(source, 'data-glass-morph-bounce', defaults.morphBounce, GLASS_LIMITS.morphBounce),
     morphWobble: numberAttribute(source, 'data-glass-morph-wobble', defaults.morphWobble, GLASS_LIMITS.morphWobble),
+    morphSpeed: numberAttribute(source, 'data-glass-morph-speed', defaults.morphSpeed, GLASS_LIMITS.morphSpeed),
     morphContent: parseMorphContent(source.get('data-glass-morph-content')),
     materialize: parseMaterialize(source.get('data-glass-materialize')),
   }
@@ -328,6 +335,7 @@ export function glassOptionsSignature(options: GlassOptions): string {
     morphStretch: options.morphStretch,
     morphBounce: options.morphBounce,
     morphWobble: options.morphWobble,
+    morphSpeed: options.morphSpeed,
     morphContent: options.morphContent,
     materialize: options.materialize,
   })

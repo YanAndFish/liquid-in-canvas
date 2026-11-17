@@ -21,6 +21,7 @@ export interface VolumeSurface {
   link?: VolumeSurface | null
   linkFusion?: number
   round?: boolean
+  moving?: boolean
 }
 
 export interface GlassGroup {

@@ -30,8 +30,12 @@ export interface ReachSource {
   reachOf: (row: number) => number
 }
 
+export interface FieldMember extends StackMember {
+  readonly moving?: boolean
+}
+
 export interface FieldGroup {
-  readonly members: readonly StackMember[]
+  readonly members: readonly FieldMember[]
   readonly count: number
 }
 
@@ -149,10 +153,17 @@ export class FieldCache {
       change = Math.max(change, put(signature, s++, data[m + 26]!, 0))
       change = Math.max(change, put(signature, s++, data[m + 27]!, FIELD_DRIFT))
     }
+    let moving = false
+    for (let i = 0; i < count; i++)
+      moving = moving || plan.members[i]!.moving === true
     if (change === MOVED)
       this.moved(entry)
+    else if (moving && change === DRIFT && entry.live)
+      this.invalidate(entry)
     else if (change === DRIFT)
       entry.stale = true
+    if (moving && !entry.live)
+      entry.changedAt = this.now
     const step = Math.min(Math.max(this.now - entry.seenAt, 0), FIELD_FADE_STEP_MS)
     entry.seenAt = this.now
     entry.fade = settleFade(entry.live
