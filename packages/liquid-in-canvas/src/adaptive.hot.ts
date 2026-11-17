@@ -30,6 +30,10 @@ export class AdaptiveScale {
   scale = 1
   relaxed = false
   canvasScale = 1
+  spanBound = true
+  span = Infinity
+  bounded = 0
+  private spanMin = Infinity
   private relaxable = false
   private canvasFloor = 1
   private last = 0
@@ -69,6 +73,14 @@ export class AdaptiveScale {
     this.trial = NONE
     this.skipUntil.fill(0)
     this.skipDelay.fill(SKIP_DELAY)
+    this.span = Infinity
+    this.spanMin = Infinity
+    this.bounded = 0
+  }
+
+  gpuSpan(ms: number): void {
+    if (ms < this.spanMin)
+      this.spanMin = ms
   }
 
   setRelaxable(relaxable: boolean): void {
@@ -112,6 +124,8 @@ export class AdaptiveScale {
     const mean = this.total / this.count
     this.total = 0
     this.count = 0
+    this.span = this.spanMin
+    this.spanMin = Infinity
 
     if (this.raised !== NONE && now - this.raisedAt >= PROBATION_MS) {
       this.raised = NONE
@@ -127,7 +141,7 @@ export class AdaptiveScale {
         this.skipUntil[trial] = now + this.skipDelay[trial]!
         this.skipDelay[trial] = Math.min(this.skipDelay[trial]! * 2, SKIP_DELAY_MAX)
         if (mean > SLOW_INTERVAL)
-          this.lower(this.next(now), before)
+          this.lower(this.next(now, before), before)
         return true
       }
       this.trialMin = Math.min(this.trialMin, mean)
@@ -136,7 +150,7 @@ export class AdaptiveScale {
       this.trial = NONE
       this.skipDelay[trial] = SKIP_DELAY
       if (this.trialMin > SLOW_INTERVAL)
-        return this.lower(this.next(now), this.trialMin)
+        return this.lower(this.next(now, this.trialMin), this.trialMin)
     }
 
     if (mean > SLOW_INTERVAL) {
@@ -152,7 +166,7 @@ export class AdaptiveScale {
         if (this.unraise())
           return true
       }
-      return this.lower(this.next(now), before)
+      return this.lower(this.next(now, before), before)
     }
     this.slowWindows = 0
     this.slowMin = Infinity
@@ -189,6 +203,7 @@ export class AdaptiveScale {
     this.slowWindows = 0
     this.slowMin = Infinity
     this.fastSince = 0
+    this.spanMin = Infinity
   }
 
   private unraise(): boolean {
@@ -223,10 +238,16 @@ export class AdaptiveScale {
     return false
   }
 
-  private next(now: number): number {
+  private next(now: number, before: number): number {
+    const shading = !this.spanBound || before - FAST_INTERVAL <= this.span
     for (let means = OPTICS; means < MEANS; means++) {
-      if (now >= this.skipUntil[means]! && this.available(means))
-        return means
+      if (now < this.skipUntil[means]! || !this.available(means))
+        continue
+      if (means !== CANVAS && !shading) {
+        this.bounded++
+        continue
+      }
+      return means
     }
     return NONE
   }

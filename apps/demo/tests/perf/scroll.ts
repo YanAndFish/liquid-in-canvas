@@ -18,7 +18,16 @@ interface ObservedStage {
       enabled: boolean
       onFrame: ((passes: PassTiming[]) => void) | null
     }
+    span: {
+      ms: number
+      samples: number
+    }
   } | null
+  adaptive: {
+    spanBound: boolean
+    span: number
+    bounded: number
+  }
   setResolution: CanvasStage['setResolution']
   setOptics: CanvasStage['setOptics']
   setFieldCache: CanvasStage['setFieldCache']
@@ -66,6 +75,9 @@ let durations: number[] = []
 let paints: number[] = []
 let frames: number[] = []
 let gpuTimes: number[] = []
+let spanSamples: number[] = []
+let lastSpanSample = 0
+let readAdaptive: (() => ObservedStage['adaptive']) | null = null
 let gpuPassSums: number[] = []
 let gpuPassTimes: number[][] = []
 let gpuPassInfo: PassInfo[][] = []
@@ -122,6 +134,9 @@ prototype.draw = function (event) {
       this.setResolution(resolutionOverride)
     applyStageQuery(this, query)
     readMetrics = this.getMetrics.bind(this)
+    if (query.get('spanBound') === '0')
+      this.adaptive.spanBound = false
+    readAdaptive = () => this.adaptive
   }
   const gpu = this.gpu
   if (!adapterInfo && gpu) {
@@ -163,6 +178,10 @@ prototype.draw = function (event) {
   const start = performance.now()
   draw.call(this, event)
   durations.push(performance.now() - start)
+  if (gpu && gpu.span.samples !== lastSpanSample) {
+    lastSpanSample = gpu.span.samples
+    spanSamples.push(gpu.span.ms)
+  }
   paints.push(start)
   recordAdaptation(this, start)
 }
@@ -206,6 +225,7 @@ button.onclick = () => {
   paints = []
   frames = []
   gpuTimes = []
+  spanSamples = []
   gpuPassSums = []
   gpuPassTimes = []
   gpuPassInfo = []
@@ -255,6 +275,15 @@ button.onclick = () => {
         animationInterval: distribution(intervals(frames)),
         longAnimationFrames: intervals(frames).filter(value => value > 50).length,
         gpu: distribution(gpuTimes),
+        span: {
+          ...distribution(spanSamples),
+          min: spanSamples.length
+            ? Math.min(...spanSamples)
+            : null,
+          bound: readAdaptive?.().spanBound ?? null,
+          window: readAdaptive?.().span ?? null,
+          bounded: readAdaptive?.().bounded ?? null,
+        },
         gpuPassSum: distribution(gpuPassSums),
         gpuPassTimes,
         gpuPassInfo,

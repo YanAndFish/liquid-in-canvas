@@ -643,3 +643,76 @@ describe('见效判断', () => {
     expect(adaptive.scale).toBe(1)
   })
 })
+
+function untilChangeWithSpan(adaptive: AdaptiveScale, clock: { now: number }, load: Load, span: number, limit = 20000): number {
+  for (let i = 1; i <= limit; i++) {
+    clock.now += intervalOf(adaptive, load)
+    adaptive.gpuSpan(span)
+    if (adaptive.sample(clock.now))
+      return i
+  }
+  return -1
+}
+
+describe('按 GPU 跨度排除手段', () => {
+  it('要省的时间超过舞台自己的 GPU 跨度时跳过光路与着色倍率，直接降低画布倍率', () => {
+    const adaptive = new AdaptiveScale()
+    adaptive.setRelaxable(true)
+    adaptive.setCanvasFloor(1 / 3)
+    const clock = { now: 0 }
+    expect(untilChangeWithSpan(adaptive, clock, PIXEL_BOUND, 2)).toBeGreaterThan(0)
+    expect(adaptive.relaxed).toBe(false)
+    expect(adaptive.scale).toBe(1)
+    expect(adaptive.canvasScale).toBeCloseTo(Math.sqrt(17.5 / 33))
+    expect(adaptive.bounded).toBeGreaterThan(0)
+  })
+
+  it('画布倍率一级关闭时什么都不改', () => {
+    const adaptive = new AdaptiveScale()
+    adaptive.setRelaxable(true)
+    const clock = { now: 0 }
+    expect(untilChangeWithSpan(adaptive, clock, PIXEL_BOUND, 2, 3000)).toBe(-1)
+    expect(adaptive.relaxed).toBe(false)
+    expect(adaptive.scale).toBe(1)
+    expect(adaptive.canvasScale).toBe(1)
+  })
+
+  it('跨度足够大时照常先试光路', () => {
+    const adaptive = new AdaptiveScale()
+    adaptive.setRelaxable(true)
+    const clock = { now: 0 }
+    untilChangeWithSpan(adaptive, clock, GLASS_BOUND, 21)
+    expect(adaptive.relaxed).toBe(true)
+    expect(adaptive.bounded).toBe(0)
+  })
+
+  it('没有跨度样本或关闭判据时与原来一致', () => {
+    const bound = new AdaptiveScale()
+    bound.setRelaxable(true)
+    untilChange(bound, { now: 0 }, PIXEL_BOUND)
+    expect(bound.relaxed).toBe(true)
+
+    const off = new AdaptiveScale()
+    off.setRelaxable(true)
+    off.spanBound = false
+    untilChangeWithSpan(off, { now: 0 }, PIXEL_BOUND, 2)
+    expect(off.relaxed).toBe(true)
+  })
+
+  it('取窗口内最小的跨度，排队拉长的样本不会放行', () => {
+    const adaptive = new AdaptiveScale()
+    adaptive.setRelaxable(true)
+    adaptive.setCanvasFloor(1 / 3)
+    const clock = { now: 0 }
+    for (let i = 0; i < 20000; i++) {
+      clock.now += intervalOf(adaptive, PIXEL_BOUND)
+      adaptive.gpuSpan(i % 4 === 0
+        ? 2
+        : 25)
+      if (adaptive.sample(clock.now))
+        break
+    }
+    expect(adaptive.relaxed).toBe(false)
+    expect(adaptive.canvasScale).toBeLessThan(1)
+  })
+})
