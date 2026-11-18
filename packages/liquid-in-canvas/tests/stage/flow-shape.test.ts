@@ -150,7 +150,7 @@ function migrate(start: FlowRect, target: FlowRect, radius: number, configure: (
       continue
     }
     tailFrames++
-    const shape = sample(fused(box, taperField(taper), flow.tailFusion(32)), union(body, tail), centerX, centerY, unitX, unitY)
+    const shape = sample(fused(box, taperField(taper), flow.tailFusion()), union(body, tail), centerX, centerY, unitX, unitY)
     widest = Math.max(widest, shape.across)
     const behind = [
       ...shape.profile.entries(),
@@ -175,7 +175,7 @@ describe('液体迁移的形状', () => {
     const result = migrate(button, { ...button, left: 306 }, 22, flow => flow.configure(1, 0.4, 0.1, 22))
     expect(result.tailFrames).toBeGreaterThan(3)
     expect(result.widest).toBeLessThanOrEqual(result.rest + 1.5)
-    expect(result.necked).toBeLessThanOrEqual(4)
+    expect(result.necked).toBeLessThanOrEqual(1.5)
   })
 
   it('斜向跳到别处时，融合后的轮廓垂直于运动方向不比静止时粗，向后单调收细', () => {
@@ -188,7 +188,7 @@ describe('液体迁移的形状', () => {
     const result = migrate(square, { ...square, left: 240, top: 180 }, 26, flow => flow.configure(2, 1, 1, 26))
     expect(result.tailFrames).toBeGreaterThan(3)
     expect(result.widest).toBeLessThanOrEqual(result.rest + 1.5)
-    expect(result.necked).toBeLessThanOrEqual(4)
+    expect(result.necked).toBeLessThanOrEqual(1.5)
   })
 
   it('接近横向但略带斜度时，拖尾不让轮廓变粗', () => {
@@ -201,7 +201,7 @@ describe('液体迁移的形状', () => {
     const result = migrate(button, { ...button, left: 300, top: 40 }, 22, flow => flow.configure(2, 0.4, 0.4, 22))
     expect(result.tailFrames).toBeGreaterThan(3)
     expect(result.widest).toBeLessThanOrEqual(result.rest + 1.5)
-    expect(result.necked).toBeLessThanOrEqual(4)
+    expect(result.necked).toBeLessThanOrEqual(1.5)
   })
 
   it('拖尾从本体里的大圆收细到尾尖：越长尾尖越细，根部始终在本体之内', () => {
@@ -269,6 +269,78 @@ describe('液体迁移的形状', () => {
       flow.rect(body)
       expect(body.height).toBeLessThanOrEqual(40 + 1e-6)
     }
+  })
+})
+
+describe('拖尾的粘性', () => {
+  const drag = (speed: number, frames: number) => {
+    const flow = new LiquidFlow({
+      left: 0,
+      top: 0,
+      width: 64,
+      height: 64,
+    })
+    flow.configure(1, 0.4, 0.1, 26)
+    let left = 0
+    for (let frame = 0; frame < frames; frame++) {
+      if (frame % 2 === 0) {
+        left += speed / 60
+        flow.retarget({ left, top: 0, width: 64, height: 64 })
+      }
+      flow.advance(1 / 120)
+    }
+    return { flow, left }
+  }
+
+  it('匀速拖动时拖尾紧跟本体，尾尖不细于根部的一半', () => {
+    const { flow } = drag(600, 60)
+    const body = { left: 0, top: 0, width: 0, height: 0 }
+    const tail = { left: 0, top: 0, width: 0, height: 0 }
+    const taper = {
+      startX: 0,
+      startY: 0,
+      startRadius: 0,
+      endX: 0,
+      endY: 0,
+      endRadius: 0,
+    }
+    flow.rect(body)
+    expect(flow.tail(tail, taper)).toBe(true)
+    const lag = body.left + body.width / 2 - taper.endX
+    expect(lag).toBeGreaterThan(0)
+    expect(lag / 600).toBeLessThan(0.075)
+    expect(taper.endRadius).toBeGreaterThanOrEqual(taper.startRadius * 0.5 - 1e-6)
+  })
+
+  it('骤然停下后，越过本体的尾尖只是一个圆钝的小鼓包', () => {
+    const { flow, left } = drag(1500, 40)
+    const body = { left: 0, top: 0, width: 0, height: 0 }
+    const tail = { left: 0, top: 0, width: 0, height: 0 }
+    const taper = {
+      startX: 0,
+      startY: 0,
+      startRadius: 0,
+      endX: 0,
+      endY: 0,
+      endRadius: 0,
+    }
+    let bulge = 0
+    let aheadFrames = 0
+    for (let frame = 0; frame < 240 && flow.active; frame++) {
+      flow.advance(1 / 120)
+      flow.rect(body)
+      if (!flow.tail(tail, taper))
+        continue
+      const front = body.left + body.width
+      if (taper.endX > body.left + body.width / 2) {
+        aheadFrames++
+        bulge = Math.max(bulge, taper.endX + taper.endRadius - front)
+        expect(taper.endRadius).toBeGreaterThan(taper.startRadius * 0.75)
+      }
+    }
+    expect(left).toBeGreaterThan(400)
+    expect(aheadFrames).toBeGreaterThan(0)
+    expect(bulge).toBeLessThan(28 * 0.15 + 1)
   })
 })
 

@@ -973,7 +973,7 @@ export class GlassFrame {
       tail.height = body.height
       tail.fusion = 0
       tail.link = volume
-      tail.linkFusion = flow.tailFusion(morphFusion(options.fusion, 0))
+      tail.linkFusion = flow.tailFusion()
       tail.moving = true
       surface.hasTail = true
     }

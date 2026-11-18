@@ -28,12 +28,14 @@ const WOBBLE_GAIN = 0.00012
 const WOBBLE_LIMIT = 0.4
 const TRACK_WINDOW = 0.05
 const TRACK_STIFFNESS = 900
-const TAIL_STIFFNESS = 140
-const TAIL_OVERSHOOT = 0.3
+const TAIL_STIFFNESS = 520
+const TAIL_OVERSHOOT = 0.04
 const TAIL_LENGTH = 1.2
-const TAIL_ROOT = 0.88
-const TIP_SHORT = 0.6
-const TIP_LONG = 0.28
+const TAIL_FUSION = 0.5
+const TIP_SHORT = 0.78
+const TIP_LONG = 0.5
+const AHEAD_BULGE = 0.15
+const AHEAD_TIP = 0.9
 const TAIL_SEARCH = 14
 const FUSION_PER_DISTANCE = 0.8
 const MIN_SPEED = 0.25
@@ -141,13 +143,14 @@ export class LiquidFlow {
   private span = 0
   private bodyWidth = 0
   private bodyHeight = 0
-  private tailHalf = 0
   private tailStartX = 0
   private tailStartY = 0
   private tailStartRadius = 0
   private tailEndX = 0
   private tailEndY = 0
   private tailEndRadius = 0
+  private alignedX = 0
+  private alignedY = 0
 
   constructor(start: FlowRect) {
     this.left = new EdgeSpring(start.left)
@@ -373,9 +376,8 @@ export class LiquidFlow {
     return true
   }
 
-  tailFusion(limit: number): number {
-    const distance = Math.hypot(this.tailX - (this.left.value + this.right.value) / 2, this.tailY - (this.top.value + this.bottom.value) / 2)
-    return Math.min(rampedFusion(limit, distance), Math.max(0.5, (this.tailHalf - this.tailStartRadius) / 2))
+  tailFusion(): number {
+    return TAIL_FUSION
   }
 
   private departs(target: FlowRect): boolean {
@@ -454,24 +456,60 @@ export class LiquidFlow {
     return low
   }
 
-  private tailLimit(unitX: number, unitY: number): number {
-    const radius = Math.min(this.bodyWidth, this.bodyHeight) / 2 * TAIL_ROOT
-    return this.rootOffset(unitX, unitY, radius) + this.stretch * TAIL_LENGTH * 2 * radius
+  private ahead(unitX: number, unitY: number): number {
+    const t = Math.min(1, Math.max(0, (unitX * this.directionX + unitY * this.directionY + 0.2) / 0.6))
+    return t * t * (3 - 2 * t)
   }
 
-  private shapeTail(centerX: number, centerY: number, unitX: number, unitY: number, distance: number): boolean {
-    const half = Math.min(this.bodyWidth, this.bodyHeight) / 2
-    const startRadius = half * TAIL_ROOT
+  private align(unitX: number, unitY: number): void {
+    const alongX = unitX * unitX
+    const alongY = unitY * unitY
+    const weight = Math.max(0, Math.abs(alongX - alongY)) ** 3
+    const x = alongX >= alongY
+      ? unitX + (Math.sign(unitX) - unitX) * weight
+      : unitX * (1 - weight)
+    const y = alongX >= alongY
+      ? unitY * (1 - weight)
+      : unitY + (Math.sign(unitY) - unitY) * weight
+    const length = Math.hypot(x, y)
+    this.alignedX = length > 0
+      ? x / length
+      : unitX
+    this.alignedY = length > 0
+      ? y / length
+      : unitY
+  }
+
+  private tailReach(unitX: number, unitY: number, radius: number, offset: number, ahead: number): number {
+    const behind = this.stretch * TAIL_LENGTH * 2 * radius
+    const along = (this.bodyWidth * Math.abs(unitX) + this.bodyHeight * Math.abs(unitY)) / 2
+    const front = Math.max(0, along + (AHEAD_BULGE - AHEAD_TIP) * radius - offset)
+    return behind + (Math.min(front, behind) - behind) * ahead
+  }
+
+  private tailLimit(towardX: number, towardY: number): number {
+    this.align(towardX, towardY)
+    const radius = Math.min(this.bodyWidth, this.bodyHeight) / 2
+    const offset = this.rootOffset(this.alignedX, this.alignedY, radius)
+    return offset + this.tailReach(this.alignedX, this.alignedY, radius, offset, this.ahead(towardX, towardY))
+  }
+
+  private shapeTail(centerX: number, centerY: number, towardX: number, towardY: number, distance: number): boolean {
+    this.align(towardX, towardY)
+    const unitX = this.alignedX
+    const unitY = this.alignedY
+    const startRadius = Math.min(this.bodyWidth, this.bodyHeight) / 2
     const offset = this.rootOffset(unitX, unitY, startRadius)
+    const ahead = this.ahead(towardX, towardY)
     const reach = Math.max(this.stretch * TAIL_LENGTH * 2 * startRadius, 1e-3)
-    const length = Math.max(0, distance - offset)
-    const endRadius = startRadius * (TIP_SHORT + (TIP_LONG - TIP_SHORT) * Math.min(1, length / reach))
-    this.tailHalf = half
+    const length = Math.max(0, Math.min(distance, offset + this.tailReach(unitX, unitY, startRadius, offset, ahead)) - offset)
+    const behind = TIP_SHORT + (TIP_LONG - TIP_SHORT) * Math.min(1, length / reach)
+    const endRadius = startRadius * (behind + (AHEAD_TIP - behind) * ahead)
     this.tailStartX = centerX + unitX * offset
     this.tailStartY = centerY + unitY * offset
     this.tailStartRadius = startRadius
-    this.tailEndX = centerX + unitX * Math.max(distance, offset)
-    this.tailEndY = centerY + unitY * Math.max(distance, offset)
+    this.tailEndX = centerX + unitX * (offset + length)
+    this.tailEndY = centerY + unitY * (offset + length)
     this.tailEndRadius = endRadius
     return length > startRadius - endRadius + TAIL_VISIBLE
   }

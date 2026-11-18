@@ -156,7 +156,7 @@ describe('液体迁移', () => {
     expect(rectOf(flow)).toEqual(TO)
   })
 
-  it('拖尾的融合距离从很小开始，且不超过本体与拖尾粗细差的四分之一', () => {
+  it('拖尾与本体只用很小的连接距离：根部就是本体端头，不需要平滑合并来连接', () => {
     const flow = new LiquidFlow({
       left: 0,
       top: 0,
@@ -164,23 +164,19 @@ describe('液体迁移', () => {
       height: 64,
     })
     flow.configure(1, 0.33, 0.35)
-    const body = { left: 0, top: 0, width: 0, height: 0 }
     const tail = { left: 0, top: 0, width: 0, height: 0 }
     let left = 0
-    const fusions: number[] = []
+    let seen = 0
     for (let frame = 0; frame < 20; frame++) {
       left += 12
       flow.retarget({ left, top: 0, width: 64, height: 64 })
       flow.advance(1 / 60)
-      flow.rect(body)
       if (flow.tail(tail)) {
-        const fusion = flow.tailFusion(40)
-        fusions.push(fusion)
-        expect(fusion).toBeLessThanOrEqual(Math.max(0.5, (Math.min(body.width, body.height) - tail.height) / 4) + 1e-6)
+        seen++
+        expect(flow.tailFusion()).toBe(0.5)
       }
     }
-    expect(fusions.length).toBeGreaterThan(5)
-    expect(fusions[0]).toBeLessThan(8)
+    expect(seen).toBeGreaterThan(5)
   })
 
   it('尺寸过渡期间报告 resizing，只移动位置时不报告', () => {
@@ -319,7 +315,7 @@ describe('液体迁移', () => {
         const body = rectOf(flow)
         expect(tail.left + tail.width / 2).toBeLessThan(body.left + body.width / 2)
         expect(tail.width).toBeGreaterThan(tail.height)
-        expect(tail.height).toBeLessThan(body.height)
+        expect(tail.height).toBeLessThanOrEqual(body.height + 1e-6)
       }
     }
     expect(seen).toBe(true)
