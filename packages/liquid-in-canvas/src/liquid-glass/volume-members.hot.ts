@@ -2,8 +2,11 @@ import type { NumberSink } from './fusion.hot'
 import { CORNER_MARGIN, VOLUME_MEMBER_FLOATS } from './volume-shader'
 
 export const MEMBER_PROXIMITY = 31
+export const MEMBER_TAPER = 35
 
 export function memberCornered(data: NumberSink, offset: number): boolean {
+  if (data[offset + MEMBER_TAPER]! > 0.5)
+    return false
   const narrow = Math.min(data[offset + 2]!, data[offset + 3]!)
   const bevel = Math.min(data[offset + 24]!, narrow)
   for (let k = 0; k < 4; k++) {

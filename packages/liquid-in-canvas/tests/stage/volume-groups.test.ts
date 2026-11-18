@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { HEADER_FLOATS } from '../../src/frame'
 import { DrawList } from '../../src/frame.hot'
 import { parseGlassOptions } from '../../src/liquid-glass/options'
+import { memberCornered } from '../../src/liquid-glass/volume-members.hot'
 import { VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from '../../src/liquid-glass/volume-shader'
 import { VolumeGroups, VolumePlanner, writeVolumeGroup } from '../../src/liquid-glass/VolumeGroups.hot'
 import { glassVolumeRenderOrder } from '../../src/render-order'
@@ -173,20 +174,46 @@ describe('三维玻璃组', () => {
     expect(data[member + 26]).toBe(2.75)
     expect(data[member + 27]).toBe(1)
   })
-  it('液体尾巴取满圆角：方形玻璃拖出的是圆形液滴', () => {
+  it('液滴形拖尾按包围盒中心写入两端圆心与半径，并标记为锥形，不按圆角拐角处理', () => {
     const planner = new VolumePlanner()
     const tail = {
-      ...surface(1, 0, { 'data-glass-radius': '28' }),
+      ...surface(1, 0, { 'data-glass-radius': '4' }),
+      left: 0,
+      top: 0,
       width: 120,
-      height: 80,
-      round: true,
+      height: 40,
+      taper: {
+        startX: 20,
+        startY: 20,
+        startRadius: 20,
+        endX: 112,
+        endY: 20,
+        endRadius: 8,
+      },
     }
     planner.build([tail], 1, 1000, 600)
     const data = new Float32Array(HEADER_FLOATS + VOLUME_GROUP_FLOATS + VOLUME_MEMBER_FLOATS)
     writeVolumeGroup(data, 0, planner.plans[0]!)
     const member = VOLUME_GROUP_FLOATS
     expect([
+      ...data.slice(member, member + 2),
+    ]).toEqual([60, 20])
+    expect([
       ...data.slice(member + 4, member + 8),
-    ]).toEqual([40, 40, 40, 40])
+    ]).toEqual([-40, 0, 52, 0])
+    expect([
+      ...data.slice(member + 33, member + 36),
+    ]).toEqual([20, 8, 1])
+    expect(memberCornered(data, member)).toBe(false)
+
+    const plain = new VolumePlanner()
+    plain.build([
+      surface(1, 0, { 'data-glass-radius': '4' }),
+    ], 1, 1000, 600)
+    writeVolumeGroup(data, 0, plain.plans[0]!)
+    expect([
+      ...data.slice(member + 33, member + 36),
+    ]).toEqual([0, 0, 0])
+    expect(memberCornered(data, member)).toBe(true)
   })
 })

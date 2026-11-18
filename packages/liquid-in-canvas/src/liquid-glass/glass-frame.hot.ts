@@ -607,7 +607,7 @@ export class GlassFrame {
         point.width = GHOST_END
         point.height = GHOST_END
         const options = (partner ?? target).options
-        ghost.flow.configure(options.morphStretch, options.morphBounce, options.morphWobble)
+        ghost.flow.configure(options.morphStretch, options.morphBounce, options.morphWobble, 0, options.morphSpeed)
         if (ghost.flow.retarget(point))
           this.host.startAnimation()
         ghost.flow.rect(volume)
@@ -627,6 +627,7 @@ export class GlassFrame {
       volume.opacity = owner.opacity
       volume.brightness = owner.brightness
       volume.fusion = 0
+      volume.moving = true
       volume.link = owner
       volume.linkFusion = partner === null
         ? rampedFusion(morphFusion(volume.options.fusion, target.options.fusion), centerDistance(volume, goal))
@@ -922,6 +923,7 @@ export class GlassFrame {
     const volume = surface.volume
     const flow = surface.flow
     surface.hasTail = false
+    volume.moving = false
     if (flow === null) {
       copyRect(volume, surface.rect)
       return
@@ -940,7 +942,7 @@ export class GlassFrame {
     }
     const options = surface.options
     const radius = options.radius
-    flow.configure(options.morphStretch, options.morphBounce, options.morphWobble, morphFusion(options.fusion, 0), Math.max(radius[0], radius[1], radius[2], radius[3]))
+    flow.configure(options.morphStretch, options.morphBounce, options.morphWobble, Math.max(radius[0], radius[1], radius[2], radius[3]), options.morphSpeed)
     if (flow.retarget(surface.layout)) {
       const layout = surface.layout
       if (resting && surface.reveal >= 1 && options.materialize && layout.width * layout.height > volume.width * volume.height * GROW_RATIO)
@@ -951,21 +953,28 @@ export class GlassFrame {
       copyRect(volume, surface.rect)
       return
     }
+    volume.moving = true
     const body = this.body
     flow.rect(body)
     volume.left = surface.originX + body.left
     volume.top = surface.originY + body.top
     volume.width = body.width
     volume.height = body.height
-    if (flow.tail(body)) {
-      const tail = surface.tail
+    const tail = surface.tail
+    const taper = tail.taper!
+    if (flow.tail(body, taper)) {
+      taper.startX += surface.originX
+      taper.startY += surface.originY
+      taper.endX += surface.originX
+      taper.endY += surface.originY
       tail.left = surface.originX + body.left
       tail.top = surface.originY + body.top
       tail.width = body.width
       tail.height = body.height
       tail.fusion = 0
       tail.link = volume
-      tail.linkFusion = flow.tailFusion(morphFusion(options.fusion, 0))
+      tail.linkFusion = flow.tailFusion()
+      tail.moving = true
       surface.hasTail = true
     }
   }

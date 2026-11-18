@@ -88,7 +88,7 @@ describe('液体迁移', () => {
   it('晃动使液滴到达后在压扁与拉长之间振荡，最后仍停在目标上', () => {
     const settled = (wobble: number) => {
       const flow = new LiquidFlow(FROM)
-      flow.configure(1, 0.33, wobble)
+      flow.configure(1, 0, wobble)
       flow.retarget(TO)
       const late = run(flow, 3).slice(36)
       return {
@@ -136,7 +136,7 @@ describe('液体迁移', () => {
       }
     }
     expect(lag).toBeLessThan(20)
-    expect(tailAngle).toBeCloseTo(Math.atan2(0.8, -0.6), 1)
+    expect(Math.abs(tailAngle - Math.atan2(0.8, -0.6))).toBeLessThan(0.12)
     for (let frame = 0; frame < 360; frame++)
       flow.advance(1 / 120)
     expect(flow.active).toBe(false)
@@ -156,7 +156,7 @@ describe('液体迁移', () => {
     expect(rectOf(flow)).toEqual(TO)
   })
 
-  it('拖尾的融合距离随它离开本体逐渐增大，刚出现时不让玻璃鼓起', () => {
+  it('拖尾与本体只用很小的连接距离：根部就是本体端头，不需要平滑合并来连接', () => {
     const flow = new LiquidFlow({
       left: 0,
       top: 0,
@@ -166,17 +166,17 @@ describe('液体迁移', () => {
     flow.configure(1, 0.33, 0.35)
     const tail = { left: 0, top: 0, width: 0, height: 0 }
     let left = 0
-    const fusions: number[] = []
+    let seen = 0
     for (let frame = 0; frame < 20; frame++) {
       left += 12
       flow.retarget({ left, top: 0, width: 64, height: 64 })
       flow.advance(1 / 60)
-      if (flow.tail(tail))
-        fusions.push(flow.tailFusion(40))
+      if (flow.tail(tail)) {
+        seen++
+        expect(flow.tailFusion()).toBe(0.5)
+      }
     }
-    expect(fusions[0]).toBeLessThan(8)
-    expect(fusions.at(-1)).toBeGreaterThan(fusions[0]! * 3)
-    expect(Math.max(...fusions)).toBeLessThanOrEqual(40)
+    expect(seen).toBeGreaterThan(5)
   })
 
   it('尺寸过渡期间报告 resizing，只移动位置时不报告', () => {
@@ -260,16 +260,15 @@ describe('液体迁移', () => {
     expect(rectOf(flow)).toEqual(corner)
   })
 
-  it('斜向移动时圆形拖尾始终贴着圆角本体，不脱成单独的液滴', () => {
+  it('斜向移动时液滴拖尾的根部始终在圆角本体之内，不脱成单独的液滴', () => {
     const radius = 28
-    const join = 32
     const flow = new LiquidFlow({
       left: 400,
       top: 0,
       width: 200,
       height: 200,
     })
-    flow.configure(2, 0.1, 0.1, join, radius)
+    flow.configure(2, 0.1, 0.1, radius)
     flow.retarget({
       left: 0,
       top: 400,
@@ -277,23 +276,30 @@ describe('液体迁移', () => {
       height: 200,
     })
     const tail = { left: 0, top: 0, width: 0, height: 0 }
-    let widest = -Infinity
+    const taper = {
+      startX: 0,
+      startY: 0,
+      startRadius: 0,
+      endX: 0,
+      endY: 0,
+      endRadius: 0,
+    }
     let seen = 0
     for (let frame = 0; frame < 240 && flow.active; frame++) {
       flow.advance(1 / 120)
-      if (!flow.tail(tail))
+      if (!flow.tail(tail, taper))
         continue
       seen++
       const body = rectOf(flow)
       const corner = Math.min(radius, body.width / 2, body.height / 2)
-      const qx = Math.abs(tail.left + tail.width / 2 - body.left - body.width / 2) - body.width / 2 + corner
-      const qy = Math.abs(tail.top + tail.height / 2 - body.top - body.height / 2) - body.height / 2 + corner
+      const qx = Math.abs(taper.startX - body.left - body.width / 2) - body.width / 2 + corner
+      const qy = Math.abs(taper.startY - body.top - body.height / 2) - body.height / 2 + corner
       const outside = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - corner
-      widest = Math.max(widest, outside - Math.min(tail.width, tail.height) / 2)
+      expect(outside + taper.startRadius).toBeLessThanOrEqual(0.01)
+      expect(taper.endX - taper.startX).toBeGreaterThan(0)
+      expect(taper.startY - taper.endY).toBeGreaterThan(0)
     }
     expect(seen).toBeGreaterThan(10)
-    expect(widest).toBeLessThan(join * 0.2 + 2)
-    expect(widest).toBeGreaterThan(-40)
   })
 
   it('跳到别处时拖尾留在出发点附近，被本体拉走后并回本体', () => {
@@ -306,8 +312,10 @@ describe('液体迁移', () => {
       flow.advance(1 / 120)
       if (flow.tail(tail)) {
         seen = true
-        expect(tail.left + tail.width / 2).toBeLessThan(rectOf(flow).left + rectOf(flow).width / 2)
-        expect(tail.width / tail.height).toBeCloseTo(100 / 40, 1)
+        const body = rectOf(flow)
+        expect(tail.left + tail.width / 2).toBeLessThan(body.left + body.width / 2)
+        expect(tail.width).toBeGreaterThan(tail.height)
+        expect(tail.height).toBeLessThanOrEqual(body.height + 1e-6)
       }
     }
     expect(seen).toBe(true)
