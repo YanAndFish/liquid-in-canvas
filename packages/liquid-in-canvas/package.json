@@ -1,7 +1,7 @@
 {
   "name": "liquid-in-canvas",
   "type": "module",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Liquid glass for live HTML, rendered with HTML-in-Canvas and WebGPU.",
   "homepage": "https://github.com/YanAndFish/liquid-in-canvas#readme",
   "repository": {
