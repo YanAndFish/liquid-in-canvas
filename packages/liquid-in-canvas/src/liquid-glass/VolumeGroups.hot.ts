@@ -14,7 +14,7 @@ import { SLOT_CANVAS, SLOT_TARGET } from '../gpu'
 import { glassVolumeRenderOrder } from '../render-order'
 import { linearTint, srgbToLinear } from './color'
 import { bindFieldTextures } from './field-cache'
-import { GlassGroups, writePressedBox } from './fusion.hot'
+import { GlassGroups, surfaceScale, writePressedBox } from './fusion.hot'
 import { createFieldCache, createProfileTable, createStackLevels, createVolumeBands, createVolumePlan, growInt32 } from './pools'
 import { profileBevelHeight, profileBevelWidth, profileHalfDepth } from './profile'
 import { assignStackLevels, MAX_STACK_LEVELS, stackMargin } from './stack.hot'
@@ -205,12 +205,18 @@ export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGr
     const radius = options.radius
     const clip = member.clip
     writePressedBox(data, offset, member)
-    if (member.round) {
-      const round = Math.min(data[offset + 2]!, data[offset + 3]!)
-      data[offset + 4] = round
-      data[offset + 5] = round
-      data[offset + 6] = round
-      data[offset + 7] = round
+    const taper = member.taper
+    if (taper) {
+      const scale = surfaceScale(member)
+      const x = data[offset]!
+      const y = data[offset + 1]!
+      data[offset + 4] = (taper.startX - x) * scale
+      data[offset + 5] = (taper.startY - y) * scale
+      data[offset + 6] = (taper.endX - x) * scale
+      data[offset + 7] = (taper.endY - y) * scale
+      data[offset + 33] = taper.startRadius * scale
+      data[offset + 34] = taper.endRadius * scale
+      data[offset + 35] = 1
     }
     else {
       data[offset + 4] = radius[0]
@@ -244,6 +250,11 @@ export function writeVolumeGroup(data: NumberSink, start: number, plan: VolumeGr
     data[offset + 29] = 1 + (options.saturation - 1) * amount
     data[offset + 30] = 1 + (options.brightness - 1) * amount
     data[offset + 32] = options.ior
+    if (!taper) {
+      data[offset + 33] = 0
+      data[offset + 34] = 0
+      data[offset + 35] = 0
+    }
     if (profiles) {
       const bevelWidth = Math.max(Math.min(data[offset + 24]!, data[offset + 2]!, data[offset + 3]!), 0.5)
       const row = profiles.rowOf(bevelWidth / halfDepth, data[offset + 25]! / halfDepth, options.bevelCurve, options.bottomBevel, options.dispersion, options.ior)

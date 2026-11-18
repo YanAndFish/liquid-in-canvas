@@ -960,8 +960,13 @@ export class GlassFrame {
     volume.top = surface.originY + body.top
     volume.width = body.width
     volume.height = body.height
-    if (flow.tail(body)) {
-      const tail = surface.tail
+    const tail = surface.tail
+    const taper = tail.taper!
+    if (flow.tail(body, taper)) {
+      taper.startX += surface.originX
+      taper.startY += surface.originY
+      taper.endX += surface.originX
+      taper.endY += surface.originY
       tail.left = surface.originX + body.left
       tail.top = surface.originY + body.top
       tail.width = body.width

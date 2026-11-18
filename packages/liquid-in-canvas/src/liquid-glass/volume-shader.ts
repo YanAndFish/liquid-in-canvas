@@ -140,7 +140,43 @@ fn glass_rounding(local: vec2f, m: Member) -> vec4f {
   return vec4f(radius, reach, max(min(radius, room), 0.0), bevel);
 }
 
+fn glass_taper(xy: vec2f, m: Member) -> vec3f {
+  let start = m.box.xy + m.radius.xy;
+  let end = m.box.xy + m.radius.zw;
+  let ra = m.refraction.y;
+  let rb = m.refraction.z;
+  let span = end - start;
+  let length_ = length(span);
+  if (length_ <= abs(ra - rb) + 0.001) {
+    let big = select(end, start, ra >= rb);
+    let offset = xy - big;
+    let distance = length(offset);
+    return vec3f(distance - max(ra, rb), select(vec2f(1.0, 0.0), offset / max(distance, 0.00001), distance > 0.00001));
+  }
+  let along = span / length_;
+  let across = vec2f(-along.y, along.x);
+  let p = xy - start;
+  let x = dot(p, along);
+  let signed = dot(p, across);
+  let y = abs(signed);
+  let sine = (ra - rb) / length_;
+  let cosine = sqrt(max(1.0 - sine * sine, 0.0));
+  let k = x * cosine - y * sine;
+  if (k < 0.0) {
+    let distance = length(p);
+    return vec3f(distance - ra, select(-along, p / max(distance, 0.00001), distance > 0.00001));
+  }
+  if (k > length_ * cosine) {
+    let q = xy - end;
+    let distance = length(q);
+    return vec3f(distance - rb, select(along, q / max(distance, 0.00001), distance > 0.00001));
+  }
+  let side = select(-1.0, 1.0, signed >= 0.0);
+  return vec3f(y * cosine + x * sine - ra, along * sine + across * side * cosine);
+}
+
 fn glass_contour(xy: vec2f, m: Member) -> vec3f {
+  if (m.refraction.w > 0.5) { return glass_taper(xy, m); }
   let b = m.box;
   let local = xy - b.xy;
   let corner = glass_rounding(local, m);
@@ -172,6 +208,7 @@ fn glass_contour(xy: vec2f, m: Member) -> vec3f {
 }
 
 fn glass_contour_wide(xy: vec2f, m: Member) -> vec3f {
+  if (m.refraction.w > 0.5) { return glass_taper(xy, m); }
   let b = m.box;
   let local = xy - b.xy;
   let corner = glass_rounding(local, m);
@@ -199,6 +236,7 @@ fn glass_outline(xy: vec2f, m: Member) -> f32 {
 }
 
 fn glass_corner(xy: vec2f, m: Member, lateral: f32) -> bool {
+  if (m.refraction.w > 0.5) { return false; }
   let local = xy - m.box.xy;
   let corner = glass_rounding(local, m);
   if (corner.x >= min(m.profile.x, min(m.box.z, m.box.w)) - ${wgslFloat(CORNER_MARGIN)}) { return false; }

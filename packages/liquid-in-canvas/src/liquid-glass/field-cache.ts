@@ -6,7 +6,7 @@ import { bindVolumeTextures } from './volume-shader'
 
 export const FIELD_MAX_MEMBERS = 8
 export const FIELD_ENTRIES = 12
-export const FIELD_SIGNATURE_FLOATS = 22
+export const FIELD_SIGNATURE_FLOATS = 24
 export const FIELD_TOLERANCE = 0.01
 export const FIELD_DRIFT = 1.5
 export const FIELD_SETTLE_MS = 50

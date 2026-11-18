@@ -1,3 +1,12 @@
+export interface FlowTaper {
+  startX: number
+  startY: number
+  startRadius: number
+  endX: number
+  endY: number
+  endRadius: number
+}
+
 export interface FlowRect {
   left: number
   top: number
@@ -21,12 +30,11 @@ const TRACK_WINDOW = 0.05
 const TRACK_STIFFNESS = 900
 const TAIL_STIFFNESS = 140
 const TAIL_OVERSHOOT = 0.3
-const TAIL_LENGTH = 1.5
-const TAIL_WIDTH = 0.6
-const TAIL_THIN = 0.35
-const TAIL_OVERLAP = 0.5
-const TAIL_FUSION = 0.25
-const TAIL_SEARCH = 12
+const TAIL_LENGTH = 1.2
+const TAIL_ROOT = 0.88
+const TIP_SHORT = 0.6
+const TIP_LONG = 0.28
+const TAIL_SEARCH = 14
 const FUSION_PER_DISTANCE = 0.8
 const MIN_SPEED = 0.25
 const MAX_SPEED = 4
@@ -133,14 +141,13 @@ export class LiquidFlow {
   private span = 0
   private bodyWidth = 0
   private bodyHeight = 0
-  private tailWidth = 0
-  private tailReference = 0
-  private tailUnitX = 0
-  private tailUnitY = 0
-  private tailCenterX = 0
-  private tailCenterY = 0
-  private tailHalfWidth = 0
-  private tailHalfHeight = 0
+  private tailHalf = 0
+  private tailStartX = 0
+  private tailStartY = 0
+  private tailStartRadius = 0
+  private tailEndX = 0
+  private tailEndY = 0
+  private tailEndRadius = 0
 
   constructor(start: FlowRect) {
     this.left = new EdgeSpring(start.left)
@@ -206,18 +213,22 @@ export class LiquidFlow {
     const track = TRACK_STIFFNESS * pace
     const alongX = this.directionX * this.directionX
     const alongY = this.directionY * this.directionY
-    const stretchX = this.stretch * Math.max(0, alongX - alongY)
-    const stretchY = this.stretch * Math.max(0, alongY - alongX)
+    const stretchX = this.stretch * Math.max(0, alongX - alongY) ** 3
+    const stretchY = this.stretch * Math.max(0, alongY - alongX) ** 3
     aim(this.left, this.right, target.left, right, base, tracking
       ? track
       : base * LEADING_RATIO ** stretchX, tracking
       ? track
-      : base * TRAILING_RATIO ** stretchX, leadingDamping, tracking ? leadingDamping : trailingDamping)
+      : base * TRAILING_RATIO ** stretchX, leadingDamping, tracking
+      ? leadingDamping
+      : leadingDamping + (trailingDamping - leadingDamping) * Math.min(1, stretchX))
     aim(this.top, this.bottom, target.top, bottom, base, tracking
       ? track
       : base * LEADING_RATIO ** stretchY, tracking
       ? track
-      : base * TRAILING_RATIO ** stretchY, leadingDamping, tracking ? leadingDamping : trailingDamping)
+      : base * TRAILING_RATIO ** stretchY, leadingDamping, tracking
+      ? leadingDamping
+      : leadingDamping + (trailingDamping - leadingDamping) * Math.min(1, stretchY))
     this.restWidth.aim(base, leadingDamping, target.width)
     this.restHeight.aim(base, leadingDamping, target.height)
     if (!tracking && this.departs(target) && shift / 2 >= JUMP_TAIL * Math.min(target.width, target.height, this.restWidth.value, this.restHeight.value))
@@ -332,7 +343,7 @@ export class LiquidFlow {
     out.height = this.bodyHeight
   }
 
-  tail(out: FlowRect): boolean {
+  tail(out: FlowRect, taper?: FlowTaper): boolean {
     if (!this.moving || this.stretch <= 0)
       return false
     const centerX = (this.left.value + this.right.value) / 2
@@ -341,17 +352,30 @@ export class LiquidFlow {
     if (distance < TAIL_VISIBLE)
       return false
     this.measureBody()
-    this.shapeTail(centerX, centerY, (this.tailX - centerX) / distance, (this.tailY - centerY) / distance, distance)
-    out.left = this.tailCenterX - this.tailHalfWidth
-    out.top = this.tailCenterY - this.tailHalfHeight
-    out.width = this.tailHalfWidth * 2
-    out.height = this.tailHalfHeight * 2
+    if (!this.shapeTail(centerX, centerY, (this.tailX - centerX) / distance, (this.tailY - centerY) / distance, distance))
+      return false
+    const startRadius = this.tailStartRadius
+    const endRadius = this.tailEndRadius
+    const left = Math.min(this.tailStartX - startRadius, this.tailEndX - endRadius)
+    const top = Math.min(this.tailStartY - startRadius, this.tailEndY - endRadius)
+    out.left = left
+    out.top = top
+    out.width = Math.max(this.tailStartX + startRadius, this.tailEndX + endRadius) - left
+    out.height = Math.max(this.tailStartY + startRadius, this.tailEndY + endRadius) - top
+    if (taper) {
+      taper.startX = this.tailStartX
+      taper.startY = this.tailStartY
+      taper.startRadius = startRadius
+      taper.endX = this.tailEndX
+      taper.endY = this.tailEndY
+      taper.endRadius = endRadius
+    }
     return true
   }
 
   tailFusion(limit: number): number {
     const distance = Math.hypot(this.tailX - (this.left.value + this.right.value) / 2, this.tailY - (this.top.value + this.bottom.value) / 2)
-    return Math.min(rampedFusion(limit, distance), Math.max(0.5, (this.tailReference - this.tailWidth) * TAIL_FUSION))
+    return Math.min(rampedFusion(limit, distance), Math.max(0.5, (this.tailHalf - this.tailStartRadius) / 2))
   }
 
   private departs(target: FlowRect): boolean {
@@ -409,71 +433,47 @@ export class LiquidFlow {
     return (width - 2 * radius) * acrossX + (height - 2 * radius) * acrossY + 2 * radius
   }
 
-  private tailLength(unitX: number, unitY: number): number {
-    const along = (this.bodyWidth * Math.abs(unitX) + this.bodyHeight * Math.abs(unitY)) / 2
-    return along + this.stretch * TAIL_LENGTH * Math.min(this.bodyWidth, this.bodyHeight)
-  }
-
-  private shapeTail(centerX: number, centerY: number, unitX: number, unitY: number, distance: number): void {
-    const reference = Math.min(this.bodyWidth, this.bodyHeight)
-    const length = Math.max(this.tailLength(unitX, unitY), 1)
-    const width = reference * TAIL_WIDTH * (1 - TAIL_THIN * Math.min(1, distance / length))
-    const radius = width / 2
-    const horizontal = Math.abs(unitX) >= Math.abs(unitY)
-    const major = horizontal
-      ? Math.abs(unitX)
-      : Math.abs(unitY)
-    const minor = horizontal
-      ? Math.abs(unitY)
-      : Math.abs(unitX)
-    let extend = distance * major * (major * major - minor * minor) / 2
-    if (minor > 0)
-      extend = Math.min(extend, Math.max(0, (reference / 2 - radius) / (2 * minor)))
-    const tipX = centerX + unitX * distance
-    const tipY = centerY + unitY * distance
-    this.tailReference = reference
-    this.tailWidth = width
-    this.tailUnitX = unitX
-    this.tailUnitY = unitY
-    if (horizontal) {
-      this.tailCenterX = tipX - Math.sign(unitX) * extend
-      this.tailCenterY = tipY
-      this.tailHalfWidth = radius + extend
-      this.tailHalfHeight = radius
-    }
-    else {
-      this.tailCenterX = tipX
-      this.tailCenterY = tipY - Math.sign(unitY) * extend
-      this.tailHalfWidth = radius
-      this.tailHalfHeight = radius + extend
-    }
-  }
-
-  private joined(centerX: number, centerY: number, unitX: number, unitY: number, distance: number): boolean {
-    this.shapeTail(centerX, centerY, unitX, unitY, distance)
-    const radius = this.tailWidth / 2
-    const nearX = this.tailCenterX - centerX - Math.sign(this.tailUnitX) * (this.tailHalfWidth - radius)
-    const nearY = this.tailCenterY - centerY - Math.sign(this.tailUnitY) * (this.tailHalfHeight - radius)
-    const bodyRadius = Math.min(this.radius, this.bodyWidth / 2, this.bodyHeight / 2)
-    const coreX = Math.max(0, Math.abs(nearX) - (this.bodyWidth / 2 - bodyRadius))
-    const coreY = Math.max(0, Math.abs(nearY) - (this.bodyHeight / 2 - bodyRadius))
-    return Math.hypot(coreX, coreY) <= bodyRadius + radius * (1 - TAIL_OVERLAP)
-  }
-
-  private tailReach(centerX: number, centerY: number, unitX: number, unitY: number): number {
-    const length = this.tailLength(unitX, unitY)
-    if (this.joined(centerX, centerY, unitX, unitY, length))
-      return length
+  private rootOffset(unitX: number, unitY: number, radius: number): number {
+    const halfWidth = this.bodyWidth / 2
+    const halfHeight = this.bodyHeight / 2
+    const coreX = Math.max(0, halfWidth - radius)
+    const coreY = Math.max(0, halfHeight - radius)
+    const corner = Math.max(0, Math.min(this.radius, halfWidth, halfHeight) - radius)
     let low = 0
-    let high = length
+    let high = Math.max(coreX, coreY) + corner
     for (let i = 0; i < TAIL_SEARCH; i++) {
       const middle = (low + high) / 2
-      if (this.joined(centerX, centerY, unitX, unitY, middle))
+      const qx = Math.abs(unitX * middle) - coreX + corner
+      const qy = Math.abs(unitY * middle) - coreY + corner
+      const outside = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - corner
+      if (outside <= 0)
         low = middle
       else
         high = middle
     }
     return low
+  }
+
+  private tailLimit(unitX: number, unitY: number): number {
+    const radius = Math.min(this.bodyWidth, this.bodyHeight) / 2 * TAIL_ROOT
+    return this.rootOffset(unitX, unitY, radius) + this.stretch * TAIL_LENGTH * 2 * radius
+  }
+
+  private shapeTail(centerX: number, centerY: number, unitX: number, unitY: number, distance: number): boolean {
+    const half = Math.min(this.bodyWidth, this.bodyHeight) / 2
+    const startRadius = half * TAIL_ROOT
+    const offset = this.rootOffset(unitX, unitY, startRadius)
+    const reach = Math.max(this.stretch * TAIL_LENGTH * 2 * startRadius, 1e-3)
+    const length = Math.max(0, distance - offset)
+    const endRadius = startRadius * (TIP_SHORT + (TIP_LONG - TIP_SHORT) * Math.min(1, length / reach))
+    this.tailHalf = half
+    this.tailStartX = centerX + unitX * offset
+    this.tailStartY = centerY + unitY * offset
+    this.tailStartRadius = startRadius
+    this.tailEndX = centerX + unitX * Math.max(distance, offset)
+    this.tailEndY = centerY + unitY * Math.max(distance, offset)
+    this.tailEndRadius = endRadius
+    return length > startRadius - endRadius + TAIL_VISIBLE
   }
 
   private stepTail(step: number, stiffness: number, damping: number): void {
@@ -498,9 +498,7 @@ export class LiquidFlow {
     const unitX = offsetX / distance
     const unitY = offsetY / distance
     this.measureBody()
-    if (distance <= this.tailLength(unitX, unitY) && this.joined(centerX, centerY, unitX, unitY, distance))
-      return
-    const reach = this.tailReach(centerX, centerY, unitX, unitY)
+    const reach = this.tailLimit(unitX, unitY)
     if (distance <= reach)
       return
     this.tailX = centerX + unitX * reach

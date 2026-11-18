@@ -1,6 +1,15 @@
 import type { GlassOptions } from './options'
 import { createGroup, growUint8 } from './pools'
 
+export interface VolumeTaper {
+  startX: number
+  startY: number
+  startRadius: number
+  endX: number
+  endY: number
+  endRadius: number
+}
+
 export interface VolumeSurface {
   id: number
   left: number
@@ -20,7 +29,7 @@ export interface VolumeSurface {
   depthFrom?: VolumeSurface
   link?: VolumeSurface | null
   linkFusion?: number
-  round?: boolean
+  taper?: VolumeTaper | null
   moving?: boolean
 }
 

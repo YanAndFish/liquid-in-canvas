@@ -152,6 +152,8 @@ export class FieldCache {
       change = Math.max(change, put(signature, s++, data[m + 25]!, FIELD_DRIFT))
       change = Math.max(change, put(signature, s++, data[m + 26]!, 0))
       change = Math.max(change, put(signature, s++, data[m + 27]!, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, data[m + 33]!, FIELD_DRIFT))
+      change = Math.max(change, put(signature, s++, data[m + 34]!, FIELD_DRIFT))
     }
     let moving = false
     for (let i = 0; i < count; i++)
