@@ -3,6 +3,7 @@ import type { VolumeGroupPlan } from '../../src/liquid-glass/VolumeGroups.hot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DrawList } from '../../src/frame.hot'
 import { createElementTexture } from '../../src/gpu'
+import { CONTENT_FLOATS, createContentShader } from '../../src/liquid-glass/content-shader'
 import { LiquidGlassLayer } from '../../src/liquid-glass/LiquidGlassLayer'
 import { VOLUME_GROUP_FLOATS, VOLUME_MEMBER_FLOATS } from '../../src/liquid-glass/volume-shader'
 import { writeVolumeGroup } from '../../src/liquid-glass/VolumeGroups.hot'
@@ -740,6 +741,221 @@ describe('玻璃内容纹理', () => {
       else {
         expect(contentClip).toEqual([0, 0, 800, 600])
       }
+    }
+    finally { layer.dispose() }
+  })
+
+  it('内容着色器包含圆角 SDF 裁剪与倒角边缘折射，且 uniform 布局与 CONTENT_FLOATS 一致', () => {
+    for (const occluders of [0, 2]) {
+      const code = createContentShader(occluders)
+      const uniformBlock = /struct Uniforms \{([\s\S]*?)\n\}/.exec(code)?.[1] ?? ''
+      const vec4Fields = (uniformBlock.match(/: vec4f/g) ?? []).length
+      expect((vec4Fields - 2) * 4).toBe(CONTENT_FLOATS)
+      expect(code).toContain('fn content_shape(position: vec2f) -> ContentShape')
+      expect(code).toContain('let shape_alpha = select(1.0, 1.0 - smoothstep(-0.75, 0.5, shape.sdf), u.morph.x > 0.5);')
+      expect(code).toContain('if (u.params.w < 0.05 && u.morph.y < 0.005)')
+      expect(code).toContain('textureSampleLevel(content, samp,')
+    }
+  })
+
+  it('同元素展开与收拢都会触发圆角轮廓裁剪、边缘折射与模糊，收拢时保留旧内容纹理直至淡出释放', async () => {
+    const { layer, sync, root, anchor } = setup()
+    const canvas = root.parentElement as HTMLCanvasElement
+    const frame = (layer as unknown as { frame: { advanceMotion: (seconds: number, pressed: HTMLElement | null, reduced: boolean) => boolean } }).frame
+    const settle = () => {
+      for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++)
+        sync()
+    }
+    let width = 52
+    let height = 52
+    const box = document.createElement('div')
+    box.dataset.liquidGlass = ''
+    box.dataset.glassMorph = ''
+    Object.defineProperties(box, {
+      offsetParent: {
+        get: () => anchor,
+      },
+      offsetLeft: { value: 0 },
+      offsetTop: { value: 0 },
+      offsetWidth: {
+        get: () => width,
+        configurable: true,
+      },
+      offsetHeight: {
+        get: () => height,
+        configurable: true,
+      },
+    })
+    box.getClientRects = () => [
+      new DOMRect(100, 100, width, height),
+    ] as unknown as DOMRectList
+    anchor.getBoundingClientRect = () => new DOMRect(100, 100, 600, 600)
+    canvas.getElementImageDefaultSize = (target: Element) => {
+      const el = target as HTMLElement
+      return { width: el.offsetWidth || 160, height: el.offsetHeight || 60 }
+    }
+    root.append(box)
+    try {
+      await flush()
+      sync()
+      settle()
+      const surface = layer.surfaces.find(s => s.element === box)!
+      expect(surface.contentWarp).toBe(0)
+      expect(surface.contentShapeClip).toBe(0)
+      expect(surface.contentBlur).toBe(0)
+
+      width = 260
+      height = 240
+      surface.sizeDirty = true
+      const openOldTexture = surface.content!.texture
+      sync()
+      expect(surface.revealGrowing).toBe(true)
+      expect(surface.contentShapeClip).toBe(1)
+      expect(surface.contentWarp).toBeGreaterThan(0.5)
+      expect(surface.contentBlur).toBeGreaterThan(0)
+      expect(surface.outgoing?.active).toBe(true)
+      expect(openOldTexture.destroy).not.toHaveBeenCalled()
+      settle()
+      sync()
+      expect(openOldTexture.destroy).toHaveBeenCalled()
+      expect(surface.outgoing).toBeNull()
+      expect(surface.contentWarp).toBe(0)
+      expect(surface.contentShapeClip).toBe(0)
+      expect(surface.contentBlur).toBe(0)
+
+      width = 52
+      height = 52
+      surface.sizeDirty = true
+      const closeOldTexture = surface.content!.texture
+      sync()
+      expect(surface.revealGrowing).toBe(false)
+      expect(surface.revealCross).toBe(true)
+      expect(surface.contentShapeClip).toBe(1)
+      expect(surface.contentWarp).toBeGreaterThan(0.5)
+      expect(surface.outgoing?.active).toBe(true)
+      expect(surface.outgoing?.contentWarp).toBeGreaterThan(0)
+      expect(surface.outgoing?.contentShapeClip).toBe(1)
+      expect(closeOldTexture.destroy).not.toHaveBeenCalled()
+      settle()
+      sync()
+      expect(closeOldTexture.destroy).toHaveBeenCalled()
+      expect(surface.outgoing).toBeNull()
+      expect(surface.contentWarp).toBe(0)
+      expect(surface.contentShapeClip).toBe(0)
+      expect(surface.contentBlur).toBe(0)
+    }
+    finally { layer.dispose() }
+  })
+
+  it('非嵌套同名玻璃交接时保留旧内容纹理随形态变化模糊弯曲淡出，结束后释放', async () => {
+    const { layer, sync, root, anchor } = setup()
+    const frame = (layer as unknown as { frame: { advanceMotion: (seconds: number, pressed: HTMLElement | null, reduced: boolean) => boolean } }).frame
+    const makePanel = (left: number, width: number, height: number) => {
+      const panel = document.createElement('div')
+      panel.dataset.liquidGlass = ''
+      panel.dataset.glassMorph = 'morph-card'
+      Object.defineProperties(panel, {
+        offsetParent: {
+          get: () => anchor,
+        },
+        offsetLeft: { value: left },
+        offsetTop: { value: 0 },
+        offsetWidth: { value: width },
+        offsetHeight: { value: height },
+      })
+      panel.getClientRects = () => [
+        new DOMRect(100 + left, 100, width, height),
+      ] as unknown as DOMRectList
+      root.append(panel)
+      return panel
+    }
+    try {
+      const card = makePanel(0, 200, 160)
+      await flush()
+      sync()
+      for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++)
+        sync()
+      const cardSurface = layer.surfaces.find(s => s.element === card)!
+      const cardTexture = cardSurface.content!.texture
+
+      card.remove()
+      const pill = makePanel(60, 64, 190)
+      await flush()
+      sync()
+      const pillSurface = layer.surfaces.find(s => s.element === pill)!
+      expect(pillSurface.outgoing?.active).toBe(true)
+      expect(pillSurface.outgoing?.content?.texture).toBe(cardTexture)
+      expect(cardTexture.destroy).not.toHaveBeenCalled()
+      expect(pillSurface.contentShapeClip).toBe(1)
+      expect(pillSurface.contentWarp).toBeGreaterThan(0.5)
+      expect(pillSurface.revealCross).toBe(true)
+
+      frame.advanceMotion(1 / 60, null, false)
+      sync()
+      expect(pillSurface.outgoing?.contentBlur).toBeGreaterThan(0)
+      expect(pillSurface.outgoing?.contentWarp).toBeGreaterThan(0.3)
+
+      for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++)
+        sync()
+      sync()
+      expect(pillSurface.outgoing).toBeNull()
+      expect(cardTexture.destroy).toHaveBeenCalledTimes(1)
+      expect(pillSurface.contentWarp).toBe(0)
+      expect(pillSurface.contentBlur).toBe(0)
+    }
+    finally { layer.dispose() }
+  })
+
+  it('非嵌套玻璃按 data-glass-morph-to 并入目标时，残影保留旧内容纹理随收缩淡出并最终释放', async () => {
+    const { layer, sync, root, anchor } = setup()
+    const frame = (layer as unknown as { frame: { advanceMotion: (seconds: number, pressed: HTMLElement | null, reduced: boolean) => boolean } }).frame
+    const makeBox = (left: number, width: number, height: number) => {
+      const box = document.createElement('div')
+      box.dataset.liquidGlass = ''
+      Object.defineProperties(box, {
+        offsetParent: {
+          get: () => anchor,
+        },
+        offsetLeft: { value: left },
+        offsetTop: { value: 0 },
+        offsetWidth: { value: width },
+        offsetHeight: { value: height },
+      })
+      box.getClientRects = () => [
+        new DOMRect(100 + left, 100, width, height),
+      ] as unknown as DOMRectList
+      root.append(box)
+      return box
+    }
+    try {
+      const launcher = makeBox(0, 52, 52)
+      launcher.dataset.glassMorph = 'launcher'
+      const sheet = makeBox(120, 220, 200)
+      sheet.dataset.glassMorph = 'sheet'
+      sheet.dataset.glassMorphTo = 'launcher'
+      await flush()
+      sync()
+      for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++)
+        sync()
+      const sheetSurface = layer.surfaces.find(s => s.element === sheet)!
+      const sheetTexture = sheetSurface.content!.texture
+
+      sheet.remove()
+      await flush()
+      sync()
+      expect(layer.ghosts).toHaveLength(1)
+      const ghost = layer.ghosts[0]!
+      expect(ghost.outgoing?.active).toBe(true)
+      expect(ghost.outgoing?.content?.texture).toBe(sheetTexture)
+      expect(ghost.outgoing?.contentShapeClip).toBe(1)
+      expect(ghost.outgoing?.contentWarp).toBeGreaterThan(0)
+      expect(sheetTexture.destroy).not.toHaveBeenCalled()
+
+      for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++)
+        sync()
+      sync()
+      expect(layer.ghosts).toHaveLength(0)
+      expect(sheetTexture.destroy).toHaveBeenCalledTimes(1)
     }
     finally { layer.dispose() }
   })

@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>液态玻璃形态变化与内容折射检查（WWDC25 05:06 对照）</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; background: #e8eaee; color: #16181d; }
+    canvas, #app { width: 100vw; height: 100vh; display: block; }
+    #app {
+      position: relative;
+      overflow: clip;
+      background:
+        linear-gradient(90deg, rgba(0, 0, 0, .055) 1px, transparent 1px) 0 0 / 48px 48px,
+        linear-gradient(0deg, rgba(0, 0, 0, .055) 1px, transparent 1px) 0 0 / 48px 48px,
+        radial-gradient(circle at 20% 20%, #f7f8fa, #d4d8e0 65%, #c3c8d4);
+    }
+    .grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(280px, 360px));
+      gap: 40px;
+      padding: 48px;
+      justify-content: center;
+      align-content: start;
+    }
+    .cell {
+      position: relative;
+      height: 310px;
+      border-radius: 28px;
+      padding: 20px;
+      background: rgba(255, 255, 255, .36);
+      border: 1px solid rgba(255, 255, 255, .6);
+    }
+    .cell-title {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      color: #4c5360;
+      margin-bottom: 14px;
+    }
+    .stage-box { position: relative; height: 250px; }
+
+    .menu-shell {
+      position: absolute;
+      left: 16px;
+      bottom: 8px;
+      overflow: clip;
+      color: #15171c;
+    }
+    .menu-toggle {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 52px;
+      height: 52px;
+      border: 0;
+      background: transparent;
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .menu-list {
+      width: 210px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      font-size: 16px;
+      font-weight: 500;
+    }
+    .menu-item { display: flex; align-items: center; gap: 12px; }
+    .glyph { width: 22px; text-align: center; font-size: 17px; }
+
+    .bar-pill {
+      position: absolute;
+      left: 16px;
+      bottom: 12px;
+      width: 230px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .bar-menu {
+      position: absolute;
+      left: 16px;
+      bottom: 12px;
+      width: 210px;
+      height: 220px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      font-size: 17px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .shape-card {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 196px;
+      height: 160px;
+      margin-left: -98px;
+      margin-top: -80px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      font-size: 18px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .shape-pill {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 68px;
+      height: 198px;
+      margin-left: -34px;
+      margin-top: -99px;
+      padding: 20px 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 22px;
+      cursor: pointer;
+    }
+
+    .launcher {
+      position: absolute;
+      right: 16px;
+      bottom: 12px;
+      width: 52px;
+      height: 52px;
+      border: 0;
+      background: transparent;
+      font-size: 22px;
+      cursor: pointer;
+    }
+    .split-panel {
+      position: absolute;
+      right: 16px;
+      bottom: 76px;
+      width: 240px;
+      height: 168px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      cursor: pointer;
+    }
+    .split-panel h3 { font-size: 16px; font-weight: 600; }
+    .split-panel p { font-size: 13px; color: #3a404c; line-height: 1.5; }
+
+    #controls {
+      position: fixed;
+      left: 20px;
+      bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 16px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .92);
+      box-shadow: 0 8px 28px rgba(0, 0, 0, .12);
+      font-size: 13px;
+    }
+    #controls button {
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid #cdd3dd;
+      background: #fff;
+      cursor: pointer;
+    }
+    #controls label { display: flex; align-items: center; gap: 6px; }
+  </style>
+</head>
+<body>
+<canvas id="stage" content="drawable">
+  <div id="app" drawable data-glass-scope data-glass-morph-speed="0.6">
+    <div class="grid">
+      <div class="cell">
+        <div class="cell-title">1. 同元素展开 / 收拢（按钮 ↔ 菜单）</div>
+        <div class="stage-box" id="scene-resize">
+          <div id="resize-glass" class="menu-shell" data-liquid-glass data-glass-radius="26" data-glass-morph="" style="width: 52px; height: 52px;">
+            <button id="resize-btn" class="menu-toggle" type="button">☰</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-title">2. 同名交接（底部栏 ↔ 垂直菜单）</div>
+        <div class="stage-box" id="scene-bar"></div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-title">3. 同名跨比例交接（卡片 ↔ 竖胶囊）</div>
+        <div class="stage-box" id="scene-card"></div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-title">4. 分裂与并入（morph-from / morph-to）</div>
+        <div class="stage-box" id="scene-split">
+          <button id="split-launcher" class="launcher" type="button" data-liquid-glass data-glass-radius="999" data-glass-morph="demo-launcher">+</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</canvas>
+<div id="controls">
+  <button id="toggle-all" type="button">全部切换</button>
+  <label>速度 <input id="speed" type="range" min="0.25" max="1.5" step="0.05" value="0.6"><span id="speed-val">0.60×</span></label>
+  <label>内容模式
+    <select id="mode">
+      <option value="static" selected>static</option>
+      <option value="clip">clip</option>
+      <option value="follow">follow</option>
+    </select>
+  </label>
+  <span id="status">初始化中</span>
+</div>
+<script type="module">
+  import { CanvasStage } from 'liquid-in-canvas/canvas'
+  import { applyGlassQuery } from '../query'
+
+  applyGlassQuery(new URLSearchParams(location.search))
+  const canvas = document.querySelector('#stage')
+  const root = document.querySelector('#app')
+  const status = document.querySelector('#status')
+  const stage = new CanvasStage({
+    canvas,
+    onFault: (error) => { status.textContent = String(error) },
+  })
+  await stage.init()
+  stage.start(root)
+  status.textContent = '点击任意玻璃或“全部切换”观察形态变化'
+
+  let resizeOpen = false
+  const resizeGlass = document.querySelector('#resize-glass')
+  function renderResize() {
+    if (resizeOpen) {
+      resizeGlass.style.width = '210px'
+      resizeGlass.style.height = '216px'
+      resizeGlass.innerHTML = `
+        <div class="menu-list">
+          <div class="menu-item"><span class="glyph">◔</span><span>Recents</span></div>
+          <div class="menu-item"><span class="glyph">◉</span><span>Orders</span></div>
+          <div class="menu-item"><span class="glyph">♡</span><span>Wishlist</span></div>
+          <div class="menu-item"><span class="glyph">⬡</span><span>Tracking</span></div>
+        </div>`
+    }
+    else {
+      resizeGlass.style.width = '52px'
+      resizeGlass.style.height = '52px'
+      resizeGlass.innerHTML = '<button class="menu-toggle" type="button">☰</button>'
+    }
+  }
+  resizeGlass.addEventListener('click', () => {
+    resizeOpen = !resizeOpen
+    renderResize()
+  })
+
+  let barOpen = false
+  const barBox = document.querySelector('#scene-bar')
+  function renderBar() {
+    if (barOpen) {
+      barBox.innerHTML = `
+        <div class="bar-menu" data-liquid-glass data-glass-radius="28" data-glass-morph="bar-menu">
+          <div class="menu-item"><span class="glyph">○</span><span>One</span></div>
+          <div class="menu-item"><span class="glyph">△</span><span>Two</span></div>
+          <div class="menu-item"><span class="glyph">□</span><span>Three</span></div>
+          <div class="menu-item"><span class="glyph">⬡</span><span>Four</span></div>
+        </div>`
+    }
+    else {
+      barBox.innerHTML = `
+        <div class="bar-pill" data-liquid-glass data-glass-radius="999" data-glass-morph="bar-menu">
+          <span>‹</span><span>+</span><span>○</span><span>△</span>
+        </div>`
+    }
+  }
+  barBox.addEventListener('click', () => {
+    barOpen = !barOpen
+    renderBar()
+  })
+  renderBar()
+
+  let cardPill = false
+  const cardBox = document.querySelector('#scene-card')
+  function renderCard() {
+    if (cardPill) {
+      cardBox.innerHTML = `
+        <div class="shape-pill" data-liquid-glass data-glass-radius="999" data-glass-morph="card-pill">
+          <span>○</span><span>◇</span><span>+</span>
+        </div>`
+    }
+    else {
+      cardBox.innerHTML = `
+        <div class="shape-card" data-liquid-glass data-glass-radius="28" data-glass-morph="card-pill">
+          <div class="menu-item"><span class="glyph">○</span><span>One</span></div>
+          <div class="menu-item"><span class="glyph">△</span><span>Two</span></div>
+          <div class="menu-item"><span class="glyph">□</span><span>Three</span></div>
+        </div>`
+    }
+  }
+  cardBox.addEventListener('click', () => {
+    cardPill = !cardPill
+    renderCard()
+  })
+  renderCard()
+
+  let splitOpen = false
+  const splitBox = document.querySelector('#scene-split')
+  const splitLauncher = document.querySelector('#split-launcher')
+  function renderSplit() {
+    const existing = splitBox.querySelector('.split-panel')
+    if (splitOpen && !existing) {
+      const panel = document.createElement('div')
+      panel.className = 'split-panel'
+      panel.dataset.liquidGlass = ''
+      panel.dataset.glassRadius = '28'
+      panel.dataset.glassMorph = 'demo-panel'
+      panel.dataset.glassMorphFrom = 'demo-launcher'
+      panel.innerHTML = `
+        <h3>Liquid Morph</h3>
+        <p>展开时内容沿玻璃倒角折射，关闭时随收缩残影模糊并入按钮。</p>
+        <div class="menu-item"><span class="glyph">◉</span><span>点击面板收拢</span></div>`
+      panel.addEventListener('click', () => {
+        splitOpen = false
+        renderSplit()
+      })
+      splitBox.append(panel)
+    }
+    else if (!splitOpen && existing) {
+      existing.remove()
+    }
+  }
+  splitLauncher.addEventListener('click', () => {
+    splitOpen = !splitOpen
+    renderSplit()
+  })
+
+  document.querySelector('#toggle-all').addEventListener('click', () => {
+    resizeOpen = !resizeOpen
+    barOpen = !barOpen
+    cardPill = !cardPill
+    splitOpen = !splitOpen
+    renderResize()
+    renderBar()
+    renderCard()
+    renderSplit()
+  })
+
+  const speedInput = document.querySelector('#speed')
+  const speedVal = document.querySelector('#speed-val')
+  speedInput.addEventListener('input', () => {
+    const v = Number(speedInput.value)
+    root.dataset.glassMorphSpeed = String(v)
+    speedVal.textContent = `${v.toFixed(2)}×`
+  })
+
+  const modeSelect = document.querySelector('#mode')
+  modeSelect.addEventListener('change', () => {
+    root.dataset.glassMorphContent = modeSelect.value
+  })
+
+  window.addEventListener('pagehide', () => stage.dispose(), { once: true })
+</script>
+</body>
+</html>

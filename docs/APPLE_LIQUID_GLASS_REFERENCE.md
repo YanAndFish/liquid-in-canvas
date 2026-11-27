@@ -63,6 +63,17 @@ Thirteen provided screenshots cover a pill over a two-color backdrop, round cont
 
 The renderer uses these observations to choose a refraction profile, adjust saturation and brightness, vary shadow strength, render stacked glass, and animate glass entering and leaving the page. The press effect uses a slight deformation. The rim highlight follows the directional model described below. See the [rendering notes](LIQUID_GLASS_NOTES.md) and the [measurement methods and data](performance/2026-11-14-visual/README.md).
 
+## Morphing content comparison from November 27, 2026 (WWDC25 05:06–05:50)
+
+Frame-by-frame inspection of [Meet Liquid Glass, WWDC25](https://developer.apple.com/videos/play/wwdc2025/219/) from 05:06 to 05:50 (button-to-menu expand/collapse, capsule toolbar ↔ vertical menu, button ↔ sheet, and the showcase rounded card ↔ vertical pill and `+` pulse) shows how glass shape changes affect foreground content:
+
+- **Rounded silhouette clipping**: Throughout expansion, collapse, and cross-aspect morphing, foreground text and icons stay clipped to the live rounded glass outline rather than a sharp rectangle.
+- **Bevel-rim refraction during motion**: While the glass is actively reshaping, content near the moving curved bevel bends and softens along the contour normal, flattening back to crisp typography as the glass settles.
+- **Continuous outgoing content handoff**: Outgoing content does not vanish on frame 1; it blurs, compresses slightly with the contracting volume, bends along the shrinking rim, and fades out before the incoming content clarifies through the expanding glass.
+- **Symmetric expand and collapse**: Both growing and shrinking/cross-morphing transitions drive blur, edge refraction, subtle volume swell, and rounded clipping from live deformation rather than expand-only reveal.
+
+The renderer implements this in `content-shader.ts`, `content.hot.ts`, `LiquidGlassLayer.ts`, and `glass-frame.hot.ts` with rounded SDF clipping, bevel-normal edge warp, deformation-driven blur and swell, and `OutgoingContent` texture retention across handovers, `morph-to` merges, and significant same-element resizes. See `apps/demo/tests/visual/morph-content.html` for an interactive visual check page.
+
 ## Design and accessibility
 
 Apple's materials guidelines distinguish Regular and Clear. The WWDC design session discusses grouping controls, using concentric corner radii, and handling scroll edges. [Materials, Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/materials) · [Get to know the new design system, WWDC25](https://developer.apple.com/videos/play/wwdc2025/356/)

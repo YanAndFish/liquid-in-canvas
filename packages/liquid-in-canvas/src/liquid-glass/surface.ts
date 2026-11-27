@@ -46,9 +46,76 @@ export function createUnderContent(element: HTMLElement, content: ElementTexture
     contentClip: [0, 0, 0, 0],
     contentOpacity: 1,
     contentScale: 1,
+    contentStretchX: 1,
+    contentStretchY: 1,
     contentBlur: 0,
     contentOriginX: 0,
     contentOriginY: 0,
+    contentShiftX: 0,
+    contentShiftY: 0,
+    contentWarp: 0,
+    contentBevel: 0,
+    contentShapeClip: 0,
+    contentShape: null,
+    occluders: [],
+    occluderCount: 0,
+    backdropOccluders: [],
+    backdropOccluderCount: 0,
+  }
+}
+
+export interface OutgoingContent extends ContentSource {
+  content: ElementTexture | null
+  readonly startRect: Rect
+  progress: number
+  duration: number
+  active: boolean
+}
+
+export function createOutgoingContent(
+  content: ElementTexture,
+  startRect: Rect,
+  shape: VolumeSurface,
+  duration: number,
+): OutgoingContent {
+  return {
+    content,
+    startRect: {
+      left: startRect.left,
+      top: startRect.top,
+      width: startRect.width,
+      height: startRect.height,
+    },
+    progress: 0,
+    duration,
+    active: true,
+    rect: {
+      left: startRect.left,
+      top: startRect.top,
+      width: startRect.width,
+      height: startRect.height,
+    },
+    contentRect: {
+      left: startRect.left,
+      top: startRect.top,
+      width: startRect.width,
+      height: startRect.height,
+    },
+    padding: 0,
+    contentClip: [0, 0, 0, 0],
+    contentOpacity: 1,
+    contentScale: 1,
+    contentStretchX: 1,
+    contentStretchY: 1,
+    contentBlur: 0,
+    contentOriginX: 0,
+    contentOriginY: 0,
+    contentShiftX: 0,
+    contentShiftY: 0,
+    contentWarp: 0,
+    contentBevel: 0,
+    contentShapeClip: 1,
+    contentShape: shape,
     occluders: [],
     occluderCount: 0,
     backdropOccluders: [],
@@ -102,8 +169,10 @@ export interface GlassSurface extends ContentSource {
   reveal: number
   readonly revealClip: number[]
   revealGrowing: boolean
+  revealCross: boolean
   revealX: number
   revealY: number
+  outgoing: OutgoingContent | null
 
   readonly rect: Rect
   readonly layout: Rect
@@ -122,6 +191,7 @@ export interface GlassGhost {
   readonly partner: GlassSurface | null
   readonly flow: LiquidFlow
   readonly volume: VolumeSurface
+  outgoing: OutgoingContent | null
 }
 
 export interface SurfaceInit {
@@ -174,8 +244,10 @@ export function createSurface(init: SurfaceInit): GlassSurface {
     reveal: 1,
     revealClip: [0, 0, 0, 0],
     revealGrowing: false,
+    revealCross: false,
     revealX: 0,
     revealY: 0,
+    outgoing: null,
     rect: { left: 0, top: 0, width: 0, height: 0 },
     contentRect: { left: 0, top: 0, width: 0, height: 0 },
     layout: { left: 0, top: 0, width: 0, height: 0 },
@@ -235,14 +307,23 @@ export function createSurface(init: SurfaceInit): GlassSurface {
     contentClip: [0, 0, 0, 0],
     contentOpacity: 1,
     contentScale: 1,
+    contentStretchX: 1,
+    contentStretchY: 1,
     contentBlur: 0,
     contentOriginX: 0,
     contentOriginY: 0,
+    contentShiftX: 0,
+    contentShiftY: 0,
+    contentWarp: 0,
+    contentBevel: 0,
+    contentShapeClip: 0,
+    contentShape: null,
     occluders: [],
     occluderCount: 0,
     backdropOccluders: [],
     backdropOccluderCount: 0,
   }
+  surface.contentShape = surface.volume
   surface.tail.depthFrom = surface.volume
   return surface
 }

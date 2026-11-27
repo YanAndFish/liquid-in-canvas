@@ -22,9 +22,17 @@ export interface ContentSource {
   readonly contentClip: number[]
   contentOpacity: number
   contentScale: number
+  contentStretchX: number
+  contentStretchY: number
   contentBlur: number
   contentOriginX: number
   contentOriginY: number
+  contentShiftX: number
+  contentShiftY: number
+  contentWarp: number
+  contentBevel: number
+  contentShapeClip: number
+  contentShape: VolumeSurface | null
   readonly occluders: VolumeSurface[]
   occluderCount: number
   readonly backdropOccluders: VolumeSurface[]
@@ -80,10 +88,31 @@ export function writeContent(
   data[offset + 6] = rect.width + padding * 2
   data[offset + 7] = rect.height + padding * 2
   data[offset + 8] = source.contentOpacity
-  data[offset + 9] = source.contentScale
-  data[offset + 10] = source.contentBlur
+  data[offset + 9] = source.contentScale * source.contentStretchX
+  data[offset + 10] = source.contentScale * source.contentStretchY
+  data[offset + 11] = source.contentBlur
   data[offset + 12] = source.contentOriginX
   data[offset + 13] = source.contentOriginY
+  data[offset + 14] = source.contentShiftX
+  data[offset + 15] = source.contentShiftY
+  const shape = source.contentShape
+  if (shape !== null && (source.contentShapeClip > 0 || source.contentWarp > 0)) {
+    writePressedBox(data, offset + 16, shape)
+    const radius = shape.options.radius
+    data[offset + 20] = radius[0]
+    data[offset + 21] = radius[1]
+    data[offset + 22] = radius[2]
+    data[offset + 23] = radius[3]
+    data[offset + 24] = source.contentShapeClip
+    data[offset + 25] = source.contentWarp
+    data[offset + 26] = source.contentBevel
+  }
+  else {
+    data[offset + 24] = 0
+    data[offset + 25] = 0
+    data[offset + 26] = 0
+  }
+  data[offset + 27] = 0
   offset += CONTENT_FLOATS
   for (let i = 0; i < occluderCount; i++) {
     writeContentMask(data, offset, occluders[i]!)

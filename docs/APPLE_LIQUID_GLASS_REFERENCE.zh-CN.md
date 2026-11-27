@@ -63,6 +63,17 @@ Apple 公开资料没有提供完整的原生材质着色器。下面明确区�
 
 本项目据此重新取值折射剖面、加入饱和度与亮度、自适应阴影、多层玻璃、生效与移除过渡，见[液态玻璃渲染说明](LIQUID_GLASS_NOTES.md)。轮廓高光本轮没有调整；按压放大与手指处亮光试过后去掉，按压仍是原来的轻微形变。测量方法与数据见 `docs/performance/2026-11-14-visual/`。
 
+## 2026-11-27 形态变化与内容联动对照（WWDC25 05:06–05:50）
+
+逐帧拆解 [Meet Liquid Glass，WWDC25](https://developer.apple.com/videos/play/wwdc2025/219/) 05:06–05:50 的按钮展开/收拢菜单、底部胶囊栏 ↔ 垂直菜单、按钮 ↔ 整页表单以及 3D 展示台上的圆角卡片 ↔ 竖直胶囊与 `+` 按钮脉冲，观察到液态玻璃形态变化对玻璃上内容的五项一致影响：
+
+- **严格圆角轮廓裁剪**：展开、收拢与跨比例切换全过程中，内容始终贴合当前液态玻璃的圆角轮廓，不会越出四角。
+- **倒角边缘折射弯曲**：形态变化期间，靠近移动中玻璃倒角边缘的图标与文字会被曲面拉弯并略微柔焦（如菜单展开或收拢时首尾行图标沿圆角弯成弧形），中央平顶区域保持可读，到位后折射归零。
+- **旧内容糊化淡出与中段衔接**：切出或收拢时旧内容不会一帧蒸发，而是在收缩的玻璃内部立即模糊、轻微随比例收紧、沿边缘弯折并快速淡出；玻璃中段厚度与通透感略微抬升，随后新内容在膨胀中的玻璃内从模糊与边缘折射中浮现。
+- **收拢与展开双向对称**：无论是按钮展开成菜单，还是菜单收回按钮、卡片压成竖胶囊，均以形变程度驱动模糊、边缘折射与轮廓裁剪，而不是只在首次放大时触发。
+
+本项目据此扩展 `content-shader.ts`、`content.hot.ts`、`LiquidGlassLayer.ts` 与 `glass-frame.hot.ts`，加入圆角 SDF 裁剪、倒角法向折射与边缘柔焦、形变能量驱动的双向显露与微隆起，以及交接/合并/同元素变尺寸时的 `OutgoingContent` 旧内容纹理保留与自动释放；配套对照页见 `apps/demo/tests/visual/morph-content.html`。
+
 ## 设计与可访问性
 
 [Materials — Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/materials) 区分 Regular 与 Clear；[Get to know the new design system](https://developer.apple.com/videos/play/wwdc2025/356/) 说明控制分组、同心圆角和滚动边缘的设计。
