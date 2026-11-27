@@ -137,14 +137,14 @@ describe('调参面板', () => {
     tuner.open()
     setValue($('input[data-field="blur"]'), '40')
     expect(getGlassDefaults().materials.regular.dark.blur).toBe(40)
-    expect(getGlassDefaults().materials.regular.light.blur).toBe(18)
+    expect(getGlassDefaults().materials.regular.light.blur).toBe(14)
     expect(getGlassDefaults().materials.clear.dark.blur).toBe(0)
     expect($('input[data-field="blur"]').closest('label')!.querySelector('output')!.textContent).toBe('40px')
 
     click($('button[data-variant="clear"]'))
     setValue($('input[data-field="dispersion"]'), '0.8')
     expect(getGlassDefaults().materials.clear.dark.dispersion).toBe(0.8)
-    expect(getGlassDefaults().materials.regular.dark.dispersion).toBe(0.05)
+    expect(getGlassDefaults().materials.regular.dark.dispersion).toBe(0.14)
   })
 
   it('形体参数与染色写入全局默认值', () => {
@@ -167,8 +167,8 @@ describe('调参面板', () => {
     tuner.open()
     setValue($('input[data-field="blur"]'), '40')
     click($('button[data-action="reset"]'))
-    expect(getGlassDefaults().materials.regular.dark.blur).toBe(18)
-    expect($<HTMLInputElement>('input[data-field="blur"]').value).toBe('18')
+    expect(getGlassDefaults().materials.regular.dark.blur).toBe(14)
+    expect($<HTMLInputElement>('input[data-field="blur"]').value).toBe('14')
   })
 
   it('拖动后产生的点击不会打开面板', () => {
