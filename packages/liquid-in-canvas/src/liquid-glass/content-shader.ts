@@ -98,7 +98,7 @@ fn content_sample(at: vec2f, edge: f32) -> vec4f {
   if (u.params.w < 0.05 && u.morph.y < 0.005) {
     return textureSample(content, samp, at);
   }
-  let blur = u.params.w + u.morph.y * edge * edge * 4.0;
+  let blur = u.params.w + u.morph.y * edge * edge * 2.5;
   if (blur < 0.05) {
     return textureSampleLevel(content, samp, at, 0.0);
   }

@@ -78,9 +78,9 @@ const NECK_END = 0.92
 const MATERIALIZE_STIFFNESS = 120
 const MATERIALIZE_DAMPING = 12
 const MATERIALIZE_GONE = 0.01
-const REVEAL_BLUR = 6.5
-const CROSS_BLUR = 8
-const OUTGOING_BLUR = 9
+const REVEAL_BLUR = 6
+const CROSS_BLUR = 7
+const OUTGOING_BLUR = 7.5
 const REVEAL_ZOOM = 0.2
 const CROSS_ZOOM = 0.08
 const REVEAL_SWELL = 0.3
@@ -286,17 +286,21 @@ export class GlassFrame {
         : 0
       moving = advanceSpring(surface.press, press, seconds) || moving
       moving = this.advanceMaterialize(surface, surface.shown ? 1 : 0, seconds, reduced) || moving
+      const dt = Math.min(Math.max(seconds, 0), 1 / 30)
+      const morphPace = surface.flow !== null
+        ? surface.options.morphSpeed
+        : 1
       if (surface.reveal < 1) {
         surface.reveal = reduced
           ? 1
-          : Math.min(1, surface.reveal + Math.min(Math.max(seconds, 0), 1 / 30) / REVEAL_SECONDS)
+          : Math.min(1, surface.reveal + dt * morphPace / REVEAL_SECONDS)
         moving = true
       }
       const outgoing = surface.outgoing
       if (outgoing !== null && outgoing.active) {
         outgoing.progress = reduced
           ? 1
-          : Math.min(1, outgoing.progress + Math.min(Math.max(seconds, 0), 1 / 30) / outgoing.duration)
+          : Math.min(1, outgoing.progress + dt * morphPace / outgoing.duration)
         if (outgoing.progress >= 1) {
           this.host.releaseOutgoing(outgoing)
           surface.outgoing = null
@@ -320,9 +324,10 @@ export class GlassFrame {
       moving = ghost.flow.advance(seconds) || moving
       const outgoing = ghost.outgoing
       if (outgoing !== null && outgoing.active) {
+        const pace = (ghost.partner ?? ghost.target).options.morphSpeed
         outgoing.progress = reduced
           ? 1
-          : Math.min(1, outgoing.progress + Math.min(Math.max(seconds, 0), 1 / 30) / outgoing.duration)
+          : Math.min(1, outgoing.progress + Math.min(Math.max(seconds, 0), 1 / 30) * pace / outgoing.duration)
         if (outgoing.progress >= 1) {
           this.host.releaseOutgoing(outgoing)
           ghost.outgoing = null
