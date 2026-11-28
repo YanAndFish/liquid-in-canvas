@@ -199,7 +199,7 @@ describe('混合光路', () => {
     expect(frame(surfaces).map(item => item.label).sort()).toEqual(['volume-hybrid:0:2', 'volume-profile:0:1'])
   })
 
-  it('混合光路预热只有一名成员时的两条管线，以及更多成员的混合管线', () => {
+  it('混合光路预热轻量的剖面管线，关闭缓存时混合管线按需异步编译并在就绪前以剖面兜底', async () => {
     const { gpu, groups } = setup()
     const warmed: string[] = []
     gpu.compileAsync = (label: string) => {
@@ -209,13 +209,54 @@ describe('混合光路', () => {
     groups.setOptics('hybrid')
     groups.warm([1, 2])
     expect(warmed.sort()).toEqual([
-      'volume-hybrid:0:1',
-      'volume-hybrid:0:2',
-      'volume-hybrid:1:1',
-      'volume-hybrid:1:2',
       'volume-profile:0:1',
+      'volume-profile:0:2',
       'volume-profile:1:1',
+      'volume-profile:1:2',
     ])
+
+    const fake = createFakeGpu()
+    const pending: { label: string, resolve: (pipeline: GPURenderPipeline) => void }[] = []
+    const createRenderPipelineAsync = (descriptor: GPURenderPipelineDescriptor) => new Promise<GPURenderPipeline>((resolve) => {
+      pending.push({
+        label: String(descriptor.label),
+        resolve,
+      })
+    })
+    ;(fake.device as unknown as { createRenderPipelineAsync: typeof createRenderPipelineAsync }).createRenderPipelineAsync = createRenderPipelineAsync
+    const blur = {
+      views: [{}, {}, {}, {}, {}],
+      generation: 0,
+    } as unknown as BackdropBlur
+    let invalidated = 0
+    const asyncGroups = new VolumeGroups(fake.gpu, [blur], () => {
+      invalidated++
+    })
+    asyncGroups.setFieldCache(false)
+    asyncGroups.setOptics('hybrid')
+    const list = new DrawList()
+    const draw = () => {
+      fake.gpu.frame.begin()
+      list.reset()
+      const items = [
+        surface(1, 0),
+        surface(2, 210),
+      ]
+      asyncGroups.plan(items, items.length, {} as GPUTextureView, SHADING, list)
+      return list.items.slice(0, list.count).map(item => String((item.pipeline as unknown as { label: string }).label))
+    }
+
+    expect(draw()).toEqual(['volume-profile:0:2'])
+    expect(pending.map(job => job.label)).toEqual(['volume-hybrid:0:2'])
+    expect(fake.pipelines.map(pipeline => pipeline.label)).not.toContain('volume-hybrid:0:2')
+
+    const job = pending.shift()!
+    job.resolve({ label: job.label } as unknown as GPURenderPipeline)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(invalidated).toBe(1)
+    expect(draw()).toEqual(['volume-hybrid:0:2'])
+    expect(fake.pipelines.map(pipeline => pipeline.label)).not.toContain('volume-hybrid:0:2')
   })
 
   it('writeVolumeGroup 报告裁剪是否切进玻璃；没有查找表时不判断', () => {

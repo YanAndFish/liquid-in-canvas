@@ -172,9 +172,21 @@ interface TextureLayout {
   pipeline: GPUPipelineLayout
 }
 
+interface AsyncCompileJob {
+  label: string
+  spec: PipelineSpec
+  urgent: boolean
+  resolve: (pipeline: GPURenderPipeline) => void
+  reject: (cause: unknown) => void
+}
+
+const CANCELLED = Symbol('cancelled')
+
 export class PipelineTable {
   private readonly pipelines: (GPURenderPipeline | undefined)[] = []
   private readonly warming = new Set<number>()
+  private readonly failed = new Set<number>()
+  private readonly listeners = new Map<number, Set<() => void>>()
   private readonly gpu: StageGpu
   private readonly label: string
   private readonly spec: (index: number) => PipelineSpec
@@ -189,24 +201,72 @@ export class PipelineTable {
     return this.pipelines[index] ?? this.create(index)
   }
 
+  request(index: number, onReady?: () => void): GPURenderPipeline | null {
+    const ready = this.pipelines[index]
+    if (ready)
+      return ready
+    if (this.failed.has(index))
+      return null
+    if (!this.gpu.canCompileAsync)
+      return this.create(index)
+    this.enqueue(index, true, onReady)
+    return null
+  }
+
   warm(index: number): void {
-    if (this.pipelines[index] || this.warming.has(index))
+    this.enqueue(index, false)
+  }
+
+  private enqueue(index: number, urgent: boolean, onReady?: () => void): void {
+    if (this.pipelines[index] || this.failed.has(index))
       return
-    const pending = this.gpu.compileAsync(`${this.label}:${index}`, this.spec(index))
-    if (!pending)
+    if (onReady) {
+      let set = this.listeners.get(index)
+      if (!set) {
+        set = new Set()
+        this.listeners.set(index, set)
+      }
+      set.add(onReady)
+    }
+    const label = `${this.label}:${index}`
+    if (this.warming.has(index)) {
+      if (urgent)
+        this.gpu.promoteAsync(label)
       return
+    }
+    const pending = this.gpu.compileAsync(label, this.spec(index), urgent)
+    if (!pending) {
+      this.listeners.delete(index)
+      return
+    }
     this.warming.add(index)
     void pending.then((pipeline) => {
-      if (!this.gpu.disposed)
-        this.pipelines[index] ??= pipeline
-    }).catch(() => {}).finally(() => {
+      if (this.gpu.disposed) {
+        this.listeners.delete(index)
+        return
+      }
+      this.pipelines[index] ??= pipeline
+      const listeners = this.listeners.get(index)
+      this.listeners.delete(index)
+      if (listeners) {
+        for (const listener of listeners)
+          listener()
+      }
+    }).catch((cause) => {
+      this.listeners.delete(index)
+      if (cause !== CANCELLED && !this.gpu.disposed && !this.pipelines[index])
+        this.failed.add(index)
+    }).finally(() => {
       this.warming.delete(index)
     })
   }
 
   private create(index: number): GPURenderPipeline {
+    this.gpu.cancelAsync(`${this.label}:${index}`)
     const pipeline = this.gpu.compile(`${this.label}:${index}`, this.spec(index))
     this.pipelines[index] = pipeline
+    this.failed.delete(index)
+    this.listeners.delete(index)
     return pipeline
   }
 }
@@ -251,6 +311,8 @@ export class StageGpu {
   private readonly textureLayouts = new Map<number, TextureLayout>()
   private readonly modules = new Map<string, GPUShaderModule>()
   private readonly textureGroups = new WeakMap<GPUTextureView, GPUBindGroup>()
+  private readonly asyncQueue: AsyncCompileJob[] = []
+  private asyncBusy = false
 
   constructor(device: GPUDevice, canvasFormat: GPUTextureFormat) {
     this.device = device
@@ -297,14 +359,76 @@ export class StageGpu {
       : TARGET_FORMAT
   }
 
+  get canCompileAsync(): boolean {
+    return !this.disposed && typeof this.device.createRenderPipelineAsync === 'function'
+  }
+
   compile(label: string, spec: PipelineSpec): GPURenderPipeline {
     return this.device.createRenderPipeline(this.descriptor(label, spec))
   }
 
-  compileAsync(label: string, spec: PipelineSpec): Promise<GPURenderPipeline> | null {
-    if (this.disposed || typeof this.device.createRenderPipelineAsync !== 'function')
+  compileAsync(label: string, spec: PipelineSpec, urgent = false): Promise<GPURenderPipeline> | null {
+    if (!this.canCompileAsync)
       return null
-    return this.device.createRenderPipelineAsync(this.descriptor(label, spec))
+    return new Promise<GPURenderPipeline>((resolve, reject) => {
+      const job: AsyncCompileJob = { label, spec, urgent, resolve, reject }
+      if (urgent) {
+        let insert = 0
+        while (insert < this.asyncQueue.length && this.asyncQueue[insert]!.urgent)
+          insert++
+        this.asyncQueue.splice(insert, 0, job)
+      }
+      else {
+        this.asyncQueue.push(job)
+      }
+      this.drainAsync()
+    })
+  }
+
+  promoteAsync(label: string): void {
+    const index = this.asyncQueue.findIndex(job => job.label === label)
+    if (index <= 0)
+      return
+    const job = this.asyncQueue[index]!
+    if (job.urgent)
+      return
+    job.urgent = true
+    this.asyncQueue.splice(index, 1)
+    let insert = 0
+    while (insert < this.asyncQueue.length && this.asyncQueue[insert]!.urgent)
+      insert++
+    this.asyncQueue.splice(insert, 0, job)
+  }
+
+  cancelAsync(label: string): void {
+    const index = this.asyncQueue.findIndex(job => job.label === label)
+    if (index < 0)
+      return
+    const [job] = this.asyncQueue.splice(index, 1)
+    job!.reject(CANCELLED)
+  }
+
+  private drainAsync(): void {
+    if (this.asyncBusy || this.disposed)
+      return
+    const job = this.asyncQueue.shift()
+    if (!job)
+      return
+    this.asyncBusy = true
+    let pending: Promise<GPURenderPipeline>
+    try {
+      pending = this.device.createRenderPipelineAsync(this.descriptor(job.label, job.spec))
+    }
+    catch (cause) {
+      job.reject(cause)
+      this.asyncBusy = false
+      this.drainAsync()
+      return
+    }
+    void pending.then(job.resolve, job.reject).finally(() => {
+      this.asyncBusy = false
+      this.drainAsync()
+    })
   }
 
   textureGroup(view: GPUTextureView): GPUBindGroup {
@@ -325,6 +449,9 @@ export class StageGpu {
 
   dispose(): void {
     this.disposed = true
+    for (const job of this.asyncQueue)
+      job.reject(CANCELLED)
+    this.asyncQueue.length = 0
     this.frame.dispose()
     this.timing.dispose()
     this.span.dispose()
