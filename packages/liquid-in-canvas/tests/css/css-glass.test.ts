@@ -34,8 +34,8 @@ afterEach(() => {
 describe('cssGlassProperties', () => {
   it('把玻璃参数换算成自定义属性', () => {
     const properties = cssGlassProperties(parseGlassOptions(glass({ 'data-glass-radius': '10 20' }), 'dark'))
-    expect(properties['--lg-blur']).toBe('18px')
-    expect(properties['--lg-tint']).toBe('rgba(23, 27, 32, 0.28)')
+    expect(properties['--lg-blur']).toBe('14px')
+    expect(properties['--lg-tint']).toBe('rgba(23, 27, 32, 0.24)')
     expect(properties['--lg-radius']).toBe('10px 20px 10px 20px')
     expect(properties['--lg-shadow']).toContain('0 4px 24px rgba(0, 0, 0, 0.096)')
     expect(properties['--lg-shadow']).toContain('inset 0 0 0 1px')
@@ -84,7 +84,7 @@ describe('cssGlassStage', () => {
     stage = new CssGlassStage({ root })
     stage.start()
     expect(element.hasAttribute(GLASS_CSS_ATTR)).toBe(true)
-    expect(element.style.getPropertyValue('--lg-blur')).toBe('18px')
+    expect(element.style.getPropertyValue('--lg-blur')).toBe('14px')
     expect(document.getElementById('liquid-in-canvas-css')?.textContent).toContain('backdrop-filter')
   })
 
@@ -137,13 +137,13 @@ describe('cssGlassStage', () => {
   it('作用域上的参数变化时更新其中的玻璃', async () => {
     const scope = document.createElement('div')
     scope.setAttribute('data-glass-scope', '')
-    scope.setAttribute('data-glass-blur', '14')
+    scope.setAttribute('data-glass-blur', '12')
     const element = glass()
     scope.append(element)
     root.append(scope)
     stage = new CssGlassStage({ root })
     stage.start()
-    expect(element.style.getPropertyValue('--lg-blur')).toBe('14px')
+    expect(element.style.getPropertyValue('--lg-blur')).toBe('12px')
 
     scope.setAttribute('data-glass-blur', '30')
     await flush()
@@ -151,7 +151,7 @@ describe('cssGlassStage', () => {
 
     scope.setAttribute('data-glass-scope', 'false')
     await flush()
-    expect(element.style.getPropertyValue('--lg-blur')).toBe('18px')
+    expect(element.style.getPropertyValue('--lg-blur')).toBe('14px')
   })
 
   it('全局默认参数变化时更新未单独声明的属性', () => {
@@ -177,12 +177,12 @@ describe('cssGlassStage', () => {
     root.append(element)
     stage = new CssGlassStage({ root })
     stage.start()
-    expect(element.style.getPropertyValue('--lg-tint')).toBe('rgba(23, 27, 32, 0.28)')
+    expect(element.style.getPropertyValue('--lg-tint')).toBe('rgba(23, 27, 32, 0.24)')
     document.documentElement.dataset.theme = 'light'
     await flush()
-    expect(element.style.getPropertyValue('--lg-tint')).toBe('rgba(246, 246, 248, 0.32)')
+    expect(element.style.getPropertyValue('--lg-tint')).toBe('rgba(246, 246, 248, 0.26)')
     stage.setTheme('dark')
-    expect(element.style.getPropertyValue('--lg-tint')).toBe('rgba(23, 27, 32, 0.28)')
+    expect(element.style.getPropertyValue('--lg-tint')).toBe('rgba(23, 27, 32, 0.24)')
   })
 
   it('销毁后页面恢复原状，不再响应默认参数', () => {

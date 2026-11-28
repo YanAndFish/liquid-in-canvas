@@ -63,6 +63,16 @@ Thirteen provided screenshots cover a pill over a two-color backdrop, round cont
 
 The renderer uses these observations to choose a refraction profile, adjust saturation and brightness, vary shadow strength, render stacked glass, and animate glass entering and leaving the page. The press effect uses a slight deformation. The rim highlight follows the directional model described below. See the [rendering notes](LIQUID_GLASS_NOTES.md) and the [measurement methods and data](performance/2026-11-14-visual/README.md).
 
+## Real-device recording observations from November 27, 2026
+
+A real-device iOS 26 screen recording (pulling the Lock Screen glass sheet over Safari on apple.com, showing the Safari bottom pill bar, Lock Screen flashlight/camera circular buttons, and the curved glass bevel sweeping across high-contrast text and buttons) revealed three concrete details:
+
+- **Dual-axis rim specular and light-backdrop side contour**: Both round buttons and the Safari bottom bar show a crisp, narrow specular rim peaking along the top and bottom arcs (slightly tilted top-left / bottom-right) and fading along the sides. On dark backdrops, the rim lifts both white specular and the underlying refracted hue; on light backdrops, top and bottom stay pure white while the left and right arcs carry a delicate cool-gray grazing contour so glass edges stay crisp against white pages.
+- **Chromatic dispersion inside the steep bevel**: High-contrast text, buttons, and color boundaries crossing the bevel show visible prismatic RGB separation (2–6 px), while quiet areas remain clean. Unifying the grazing-exit fallback across RGB channels eliminates the 1 px cyan artifact that previously forced default dispersion down to 0.05.
+- **Luminous Regular material**: The Safari pill and circular buttons soften the backdrop while preserving color shapes and vibrancy rather than turning opaque.
+
+The shared `glass_finish()` shader helper now implements the dual-axis rim specular, capped grazing Fresnel reflection, and light-backdrop side contour; unified RGB grazing fallback allows default dispersion to return to `0.14` (Regular) / `0.2` (Clear), and Regular defaults shift to `blur: 14`, `tintAlpha: 0.24 / 0.26`, and `saturation: 1.35`.
+
 ## Morphing content comparison from November 27, 2026 (WWDC25 05:06–05:50)
 
 Frame-by-frame inspection of [Meet Liquid Glass, WWDC25](https://developer.apple.com/videos/play/wwdc2025/219/) from 05:06 to 05:50 (button-to-menu expand/collapse, capsule toolbar ↔ vertical menu, button ↔ sheet, and the showcase rounded card ↔ vertical pill and `+` pulse) shows how glass shape changes affect foreground content:

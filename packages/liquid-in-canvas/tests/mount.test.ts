@@ -62,9 +62,9 @@ describe('mountLiquidGlass', () => {
   it('可以在回退模式下固定主题', async () => {
     document.documentElement.dataset.theme = 'dark'
     const mount = await mountLiquidGlass({ root, mode: 'css' })
-    expect(element.style.getPropertyValue('--lg-tint')).toBe('rgba(23, 27, 32, 0.28)')
+    expect(element.style.getPropertyValue('--lg-tint')).toBe('rgba(23, 27, 32, 0.24)')
     mount.setTheme('light')
-    expect(element.style.getPropertyValue('--lg-tint')).toBe('rgba(246, 246, 248, 0.32)')
+    expect(element.style.getPropertyValue('--lg-tint')).toBe('rgba(246, 246, 248, 0.26)')
     mount.dispose()
     delete document.documentElement.dataset.theme
   })

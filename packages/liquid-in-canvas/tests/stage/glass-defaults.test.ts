@@ -38,7 +38,7 @@ describe('全局默认参数', () => {
     expect(defaults.elevation).toBe(16)
     expect(defaults.materials.regular.dark.blur).toBe(30)
     expect(defaults.materials.regular.dark.refraction).toBe(80)
-    expect(defaults.materials.regular.light.blur).toBe(18)
+    expect(defaults.materials.regular.light.blur).toBe(14)
     expect(defaults.materials.clear.dark).toEqual(BUILTIN_GLASS_DEFAULTS.materials.clear.dark)
   })
 

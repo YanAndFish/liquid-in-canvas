@@ -84,4 +84,15 @@ describe('体积着色器', () => {
     expect(code).toContain('outline = max(glass_section(b.planar, 0.0, b), b.clip);')
     expect(code).toContain('return max(glass_section(b.planar, 0.0, b), b.clip);')
   })
+
+  it('求交与剖面光路共用轮廓反光着色，并在掠射回退时按三通道最小有效度同步混合', () => {
+    const raymarch = createVolumeShader(1)
+    const profile = createProfileVolumeShader(1)
+    expect(raymarch).toContain('fn glass_finish(')
+    expect(profile).toContain('fn glass_finish(')
+    expect(raymarch).toContain('let valid_all = min(paths.red.z, min(paths.green.z, paths.blue.z));')
+    expect(profile).toContain('let valid_all = min(validity.x, min(validity.y, validity.z));')
+    expect(raymarch).toContain('glass_finish(screen_uv, normal, refracted, material.optics.x, material.optics.w, u.params.z)')
+    expect(profile).toContain('glass_finish(screen_uv, normal, refracted, field.optics.x, field.optics.w, u.params.z)')
+  })
 })

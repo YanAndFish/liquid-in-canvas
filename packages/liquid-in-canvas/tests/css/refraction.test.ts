@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CssGlassStage, GLASS_CSS_ATTR } from '../../src/css/CssGlassStage'
+import { CssGlassStage, FALLBACK_MIN_BLUR, FALLBACK_MIN_VEIL, GLASS_CSS_ATTR } from '../../src/css/CssGlassStage'
 import {
   createRefractionFilter,
   RefractionFilters,
@@ -218,6 +218,7 @@ describe('折射滤镜', () => {
     stubCanvas()
     const filter = createRefractionFilter('f', refractionShape(options({ 'data-glass-dispersion': '0' }), 200, 60)!)!
     expect(filter.querySelectorAll('feDisplacementMap')).toHaveLength(1)
+    expect(filter.querySelector('feGaussianBlur')).toBeNull()
   })
 
   it('相同形状共用一个滤镜，没有使用者后移除', () => {
@@ -257,6 +258,27 @@ describe('带折射的回退', () => {
     expect(element.hasAttribute(GLASS_CSS_ATTR)).toBe(false)
     expect(element.style.getPropertyValue('--lg-filter')).toBe('')
     expect(document.querySelector('filter')).toBeNull()
+  })
+
+  it('带折射滤镜的通透玻璃保留自身模糊与染色，不抬高到纯 CSS 回退下限', () => {
+    stubChromium()
+    stubCanvas()
+    const root = document.createElement('div')
+    const clear = sized(200, 60)
+    clear.setAttribute('data-glass-variant', 'clear')
+    const plain = sized(0, 0)
+    plain.setAttribute('data-glass-variant', 'clear')
+    root.append(clear, plain)
+    document.body.append(root)
+    const stage = new CssGlassStage({ root })
+    stage.start()
+    expect(clear.getAttribute(GLASS_CSS_ATTR)).toBe('svg')
+    expect(clear.style.getPropertyValue('--lg-blur')).toBe('0px')
+    expect(clear.style.getPropertyValue('--lg-tint')).toBe('rgba(255, 255, 255, 0.01)')
+    expect(plain.getAttribute(GLASS_CSS_ATTR)).toBe('')
+    expect(plain.style.getPropertyValue('--lg-blur')).toBe(`${FALLBACK_MIN_BLUR}px`)
+    expect(plain.style.getPropertyValue('--lg-tint')).toContain(String(FALLBACK_MIN_VEIL))
+    stage.dispose()
   })
 
   it('没有布局尺寸的玻璃只用模糊，高光由内阴影绘制', () => {
