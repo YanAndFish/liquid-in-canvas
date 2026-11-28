@@ -5,7 +5,7 @@ import type { ContentPipelines } from './content-shader'
 import type { ContentSource } from './content.hot'
 import type { FlowRect } from './flow.hot'
 import type { VolumeSurface } from './fusion.hot'
-import type { ElementBox, GlassGhost, GlassSurface, Rect, UnderContent } from './surface'
+import type { ElementBox, GlassGhost, GlassSurface, OutgoingContent, Rect, UnderContent } from './surface'
 import type { VolumeGroupPlan, VolumeShading } from './VolumeGroups.hot'
 import { attr, GLASS_CLIP_ATTR, GLASS_FADE_ATTR, GLASS_MODAL_ATTR } from '../contract'
 import { glassContentRenderOrder, glassUnderRenderOrder } from '../render-order'
@@ -17,11 +17,12 @@ import { writeContent } from './content.hot'
 import { ContentBackdrop } from './ContentBackdrop.hot'
 import { rampedFusion } from './flow.hot'
 import { growFloat64 } from './pools'
+import { profileBevelWidth } from './profile'
 import { MAX_STACK_LEVELS, stackSees } from './stack.hot'
 import { StackBackdrops } from './StackBackdrops.hot'
 import { createElementBox, legacyShown, modalFactor } from './surface'
 import { REFLECTION_VARIANCE } from './volume-shader'
-import { VolumeGroups } from './VolumeGroups.hot'
+import { VolumeGroups, volumeHalfDepth } from './VolumeGroups.hot'
 
 export interface GlassFrameHost {
   readonly surfaces: readonly GlassSurface[]
@@ -30,6 +31,7 @@ export interface GlassFrameHost {
   readonly morphPending: boolean
   resolveMorphs: () => void
   release: (surface: GlassSurface) => void
+  releaseOutgoing: (outgoing: OutgoingContent) => void
   backdrop: () => SampledTexture | null
   prune: () => void
   refreshTextureSize: (surface: GlassSurface) => void
@@ -77,13 +79,34 @@ const MATERIALIZE_STIFFNESS = 120
 const MATERIALIZE_DAMPING = 12
 const MATERIALIZE_GONE = 0.01
 const REVEAL_BLUR = 6
+const CROSS_BLUR = 7
+const OUTGOING_BLUR = 7.5
 const REVEAL_ZOOM = 0.2
+const CROSS_ZOOM = 0.08
 const REVEAL_SWELL = 0.3
 const REVEAL_SECONDS = 0.45
 const GROW_RATIO = 1.2
+const RESIZE_RATIO = 1.2
+const OUTGOING_FOLLOW = 0.38
 const REVEAL_NONE = 0
 const REVEAL_APPEAR = 1
 const REVEAL_GROW = 2
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)))
+  return t * t * (3 - 2 * t)
+}
+
+function shapeDeformation(volume: Rect, target: Rect): number {
+  const ratioW = volume.width / Math.max(target.width, 1)
+  const ratioH = volume.height / Math.max(target.height, 1)
+  const strain = Math.max(Math.abs(Math.log(Math.max(ratioW, 0.05))), Math.abs(Math.log(Math.max(ratioH, 0.05))))
+  return smoothstep(0.04, 0.72, strain)
+}
+
+function bevelWidthOf(volume: VolumeSurface): number {
+  return profileBevelWidth(volumeHalfDepth(volume), volume.options.bevelWidth)
+}
 
 function centerDistance(a: Rect, b: Rect): number {
   return Math.hypot(a.left + a.width / 2 - b.left - b.width / 2, a.top + a.height / 2 - b.top - b.height / 2)
@@ -218,7 +241,7 @@ export class GlassFrame {
       f++
     }
     this.visibleCount = visibleCount
-    this.updateGhosts()
+    this.updateGhosts(viewWidth, viewHeight)
 
     const page = host.backdrop()
     if (!page)
@@ -263,11 +286,28 @@ export class GlassFrame {
         : 0
       moving = advanceSpring(surface.press, press, seconds) || moving
       moving = this.advanceMaterialize(surface, surface.shown ? 1 : 0, seconds, reduced) || moving
+      const dt = Math.min(Math.max(seconds, 0), 1 / 30)
+      const morphPace = surface.flow !== null
+        ? surface.options.morphSpeed
+        : 1
       if (surface.reveal < 1) {
         surface.reveal = reduced
           ? 1
-          : Math.min(1, surface.reveal + Math.min(Math.max(seconds, 0), 1 / 30) / REVEAL_SECONDS)
+          : Math.min(1, surface.reveal + dt * morphPace / REVEAL_SECONDS)
         moving = true
+      }
+      const outgoing = surface.outgoing
+      if (outgoing !== null && outgoing.active) {
+        outgoing.progress = reduced
+          ? 1
+          : Math.min(1, outgoing.progress + dt * morphPace / outgoing.duration)
+        if (outgoing.progress >= 1) {
+          this.host.releaseOutgoing(outgoing)
+          surface.outgoing = null
+        }
+        else {
+          moving = true
+        }
       }
       if (surface.flow)
         moving = surface.flow.advance(seconds) || moving
@@ -279,8 +319,24 @@ export class GlassFrame {
       moving = this.advanceMaterialize(surface, 0, seconds, reduced) || moving
     }
     const ghosts = this.host.ghosts
-    for (let i = 0; i < ghosts.length; i++)
-      moving = ghosts[i]!.flow.advance(seconds) || moving
+    for (let i = 0; i < ghosts.length; i++) {
+      const ghost = ghosts[i]!
+      moving = ghost.flow.advance(seconds) || moving
+      const outgoing = ghost.outgoing
+      if (outgoing !== null && outgoing.active) {
+        const pace = (ghost.partner ?? ghost.target).options.morphSpeed
+        outgoing.progress = reduced
+          ? 1
+          : Math.min(1, outgoing.progress + Math.min(Math.max(seconds, 0), 1 / 30) * pace / outgoing.duration)
+        if (outgoing.progress >= 1) {
+          this.host.releaseOutgoing(outgoing)
+          ghost.outgoing = null
+        }
+        else {
+          moving = true
+        }
+      }
+    }
     return moving
   }
 
@@ -294,9 +350,10 @@ export class GlassFrame {
     return advanceSpring(spring, target, seconds, MATERIALIZE_STIFFNESS, MATERIALIZE_DAMPING)
   }
 
-  private startReveal(surface: GlassSurface, growing: boolean): void {
+  private startReveal(surface: GlassSurface, growing: boolean, cross: boolean): void {
     surface.reveal = 0
     surface.revealGrowing = growing
+    surface.revealCross = cross
     const volume = surface.volume
     surface.revealX = volume.left + volume.width / 2
     surface.revealY = volume.top + volume.height / 2
@@ -315,36 +372,147 @@ export class GlassFrame {
     if (surface.hasTail)
       surface.tail.materialize = amount
     const base = volume.opacity * volume.brightness
+    surface.contentShape = volume
+    surface.contentBevel = bevelWidthOf(volume)
+    surface.contentStretchX = 1
+    surface.contentStretchY = 1
+    surface.contentShiftX = 0
+    surface.contentShiftY = 0
     if (surface.hiding || surface.fading) {
       const settled = Math.min(1, Math.max(0, amount))
-      const fade = Math.min(1, Math.max(0, (settled - 0.3) / 0.6))
-      surface.contentOpacity = base * fade * fade * (3 - 2 * fade)
+      const fade = smoothstep(0.3, 0.9, settled)
+      surface.contentOpacity = base * fade
       surface.contentBlur = (1 - settled) * REVEAL_BLUR
       surface.contentScale = 1
       surface.contentOriginX = 0
       surface.contentOriginY = 0
+      surface.contentWarp = (1 - settled) * 0.65
+      surface.contentShapeClip = 1
+      surface.padding = Math.max(surface.options.shadowSize, surface.contentBlur > 0
+        ? Math.ceil(surface.contentBlur)
+        : 0) + 2
       return
     }
     const progress = surface.reveal
     const eased = 1 - (1 - progress) * (1 - progress) * (1 - progress)
-    const fade = Math.min(1, progress * 2)
-    surface.contentOpacity = base * fade * fade * (3 - 2 * fade)
-    surface.contentBlur = (1 - eased) * REVEAL_BLUR
-    surface.contentScale = 1 + REVEAL_ZOOM * (1 - eased)
+    const flowing = surface.flow !== null && surface.flow.active
+    const resizing = surface.flow !== null && surface.flow.resizing
+    const morphContent = surface.options.morphContent
+    const hasOutgoing = surface.outgoing !== null && surface.outgoing.active
+    const activeMorph = flowing && (resizing || morphContent !== 'static' || progress < 1 || hasOutgoing)
+    const energy = activeMorph
+      ? shapeDeformation(volume, surface.rect)
+      : 0
+    const remain = 1 - eased
+    const cross = surface.revealCross && progress < 1
+    const fade = cross
+      ? smoothstep(0.18, 0.62, progress)
+      : smoothstep(0, 0.5, progress)
+    surface.contentOpacity = base * fade
+    const revealBlur = remain * (cross ? CROSS_BLUR : REVEAL_BLUR)
+    const morphBlur = energy * (morphContent === 'follow'
+      ? 3.5
+      : 5.5)
+    surface.contentBlur = Math.max(revealBlur, morphBlur)
+    const zoom = surface.revealGrowing
+      ? REVEAL_ZOOM
+      : cross
+        ? CROSS_ZOOM
+        : REVEAL_ZOOM
+    surface.contentScale = 1 + zoom * remain
     const rect = surface.contentRect
     if (surface.revealGrowing && progress < 1) {
       const originX = Math.min(Math.max(surface.revealX, rect.left), rect.left + rect.width)
       const originY = Math.min(Math.max(surface.revealY, rect.top), rect.top + rect.height)
       surface.contentOriginX = originX - rect.left - rect.width / 2
       surface.contentOriginY = originY - rect.top - rect.height / 2
-      volume.materialize = amount * (1 + REVEAL_SWELL * (1 - eased))
-      if (surface.hasTail)
-        surface.tail.materialize = volume.materialize
     }
     else {
       surface.contentOriginX = 0
       surface.contentOriginY = 0
     }
+    if (activeMorph && morphContent !== 'follow') {
+      const volCenterX = volume.left + volume.width / 2
+      const volCenterY = volume.top + volume.height / 2
+      const rectCenterX = rect.left + rect.width / 2
+      const rectCenterY = rect.top + rect.height / 2
+      const pull = Math.min(0.35, energy * 0.35)
+      surface.contentShiftX = (volCenterX - rectCenterX) * pull
+      surface.contentShiftY = (volCenterY - rectCenterY) * pull
+    }
+    const swell = Math.max(
+      (surface.revealGrowing || cross) && progress < 1
+        ? remain
+        : 0,
+      energy * 0.85,
+    )
+    if (swell > 0) {
+      volume.materialize = amount * (1 + REVEAL_SWELL * swell)
+      if (surface.hasTail)
+        surface.tail.materialize = volume.materialize
+      surface.contentBevel = bevelWidthOf(volume)
+    }
+    const revealWarp = progress < 1
+      ? remain * (surface.revealGrowing || cross
+        ? 0.95
+        : 0.55)
+      : 0
+    const morphWarp = activeMorph
+      ? energy * (morphContent === 'follow'
+        ? 0.55
+        : 1)
+      : 0
+    surface.contentWarp = Math.min(1.15, Math.max(revealWarp, morphWarp))
+    surface.contentShapeClip = (progress < 1 || activeMorph || hasOutgoing)
+      ? 1
+      : 0
+    const shiftPad = Math.ceil(Math.max(Math.abs(surface.contentShiftX), Math.abs(surface.contentShiftY)))
+    const blurPad = surface.contentBlur > 0
+      ? Math.ceil(surface.contentBlur)
+      : 0
+    surface.padding = Math.max(surface.options.shadowSize, blurPad) + shiftPad + 2
+  }
+
+  private syncOutgoing(
+    out: OutgoingContent,
+    volume: VolumeSurface,
+    clip: readonly number[],
+    viewWidth: number,
+    viewHeight: number,
+  ): void {
+    const t = out.progress
+    const fade = 1 - smoothstep(0.05, 0.92, t)
+    const start = out.startRect
+    const ratioX = volume.width / Math.max(start.width, 1)
+    const ratioY = volume.height / Math.max(start.height, 1)
+    const stretchX = Math.min(1.35, Math.max(0.55, 1 + (ratioX - 1) * OUTGOING_FOLLOW))
+    const stretchY = Math.min(1.35, Math.max(0.55, 1 + (ratioY - 1) * OUTGOING_FOLLOW))
+    const centerX = volume.left + volume.width / 2
+    const centerY = volume.top + volume.height / 2
+    const drawW = start.width * stretchX
+    const drawH = start.height * stretchY
+    out.contentRect.left = centerX - start.width / 2
+    out.contentRect.top = centerY - start.height / 2
+    out.contentRect.width = start.width
+    out.contentRect.height = start.height
+    out.padding = Math.max(0, Math.ceil(Math.max(drawW - start.width, drawH - start.height) / 2)) + Math.ceil(OUTGOING_BLUR) + 2
+    out.contentClip[0] = Math.max(0, clip[0]!)
+    out.contentClip[1] = Math.max(0, clip[1]!)
+    out.contentClip[2] = Math.min(viewWidth, clip[2]!)
+    out.contentClip[3] = Math.min(viewHeight, clip[3]!)
+    out.contentOpacity = volume.opacity * volume.brightness * fade
+    out.contentScale = 1
+    out.contentStretchX = stretchX
+    out.contentStretchY = stretchY
+    out.contentBlur = t ** 0.75 * OUTGOING_BLUR
+    out.contentOriginX = 0
+    out.contentOriginY = 0
+    out.contentShiftX = 0
+    out.contentShiftY = 0
+    out.contentShape = volume
+    out.contentShapeClip = 1
+    out.contentWarp = Math.min(1, 0.35 + 0.85 * t ** 0.6)
+    out.contentBevel = bevelWidthOf(volume)
   }
 
   dispose(): void {
@@ -408,6 +576,10 @@ export class GlassFrame {
         }
       }
       else if (animate && surface.visible && surface.materialize.value > MATERIALIZE_GONE) {
+        if (surface.outgoing !== null) {
+          host.releaseOutgoing(surface.outgoing)
+          surface.outgoing = null
+        }
         surface.hiding = true
         host.startAnimation()
       }
@@ -438,7 +610,10 @@ export class GlassFrame {
       && rect.left + rect.width <= Math.min(viewWidth, clip ? clip.right : viewWidth) + 0.5
       && rect.top + rect.height <= Math.min(viewHeight, clip ? clip.bottom : viewHeight) + 0.5
     if (!nested) {
-      if (visible && surface.sizeDirty)
+      const resized = surface.placed
+        && (Math.abs(rect.width - surface.placedWidth) >= GEOMETRY_EPSILON
+          || Math.abs(rect.height - surface.placedHeight) >= GEOMETRY_EPSILON)
+      if (visible && (surface.sizeDirty || resized))
         host.refreshTextureSize(surface)
       if (visible && (!surface.visible || (fullyVisible && !surface.fullyVisible))) {
         host.kickPaint(surface)
@@ -469,8 +644,11 @@ export class GlassFrame {
       this.flow(surface)
     else
       surface.hasTail = false
-    if (reveal !== REVEAL_NONE)
-      this.startReveal(surface, reveal === REVEAL_GROW)
+    if (reveal !== REVEAL_NONE) {
+      const growing = reveal === REVEAL_GROW
+        && (surface.partner !== null || surface.rect.width * surface.rect.height >= surface.volume.width * surface.volume.height)
+      this.startReveal(surface, growing, surface.outgoing !== null)
+    }
     surface.hasVolume = visible
     if (visible) {
       const volume = surface.volume
@@ -521,30 +699,10 @@ export class GlassFrame {
         surface.contentClip[2] = Math.min(surface.contentClip[2]!, volume.left + volume.width)
         surface.contentClip[3] = Math.min(surface.contentClip[3]!, volume.top + volume.height)
       }
-      else if (morphContent === 'static' && surface.flow !== null && surface.flow.resizing) {
-        const reveal = surface.revealClip
-        let left = volume.left
-        let top = volume.top
-        let right = volume.left + volume.width
-        let bottom = volume.top + volume.height
-        if (surface.revealGrowing && rect.width * rect.height < (reveal[2]! - reveal[0]!) * (reveal[3]! - reveal[1]!))
-          surface.revealGrowing = false
-        if (surface.revealGrowing) {
-          reveal[0] = Math.min(reveal[0]!, left)
-          reveal[1] = Math.min(reveal[1]!, top)
-          reveal[2] = Math.max(reveal[2]!, right)
-          reveal[3] = Math.max(reveal[3]!, bottom)
-          left = reveal[0]!
-          top = reveal[1]!
-          right = reveal[2]!
-          bottom = reveal[3]!
-        }
-        surface.contentClip[0] = Math.max(surface.contentClip[0]!, left)
-        surface.contentClip[1] = Math.max(surface.contentClip[1]!, top)
-        surface.contentClip[2] = Math.min(surface.contentClip[2]!, right)
-        surface.contentClip[3] = Math.min(surface.contentClip[3]!, bottom)
-      }
       this.applyMaterialize(surface)
+      const outgoing = surface.outgoing
+      if (outgoing !== null && outgoing.active)
+        this.syncOutgoing(outgoing, volume, volume.clip, viewWidth, viewHeight)
     }
 
     const canUpload = !nested && visible && (fullyVisible || !surface.contentComplete || contentChanged)
@@ -586,7 +744,7 @@ export class GlassFrame {
     return Math.min(fusion * fade, rampedFusion(fusion, centerDistance(surface.volume, partner.volume)))
   }
 
-  private updateGhosts(): void {
+  private updateGhosts(viewWidth: number, viewHeight: number): void {
     const ghosts = this.host.ghosts
     let i = 0
     while (i < ghosts.length) {
@@ -614,6 +772,10 @@ export class GlassFrame {
         alive = ghost.flow.active && volume.width * volume.height > GHOST_END * GHOST_END * 2
       }
       if (!alive) {
+        if (ghost.outgoing !== null) {
+          this.host.releaseOutgoing(ghost.outgoing)
+          ghost.outgoing = null
+        }
         ghosts[i] = ghosts[ghosts.length - 1]!
         ghosts.pop()
         continue
@@ -632,6 +794,15 @@ export class GlassFrame {
       volume.linkFusion = partner === null
         ? rampedFusion(morphFusion(volume.options.fusion, target.options.fusion), centerDistance(volume, goal))
         : this.neck(partner, target)
+      const outgoing = ghost.outgoing
+      if (outgoing !== null && outgoing.active) {
+        const swell = 1 + REVEAL_SWELL * Math.sin(Math.min(1, outgoing.progress) * Math.PI)
+        volume.materialize = swell
+        this.syncOutgoing(outgoing, volume, volume.clip, viewWidth, viewHeight)
+      }
+      else {
+        volume.materialize = 1
+      }
       i++
     }
   }
@@ -715,10 +886,52 @@ export class GlassFrame {
         if (item.visible && item.content)
           occludedCount = this.planUnder(surface, item, plan, i, list, occludedCount, viewWidth, viewHeight)
       }
+      const outgoing = surface.outgoing
+      if (outgoing !== null && outgoing.active && outgoing.content !== null && outgoing.contentOpacity > 0.001) {
+        outgoing.occluderCount = 0
+        outgoing.backdropOccluderCount = 0
+        for (let j = i + 1; j < count; j++) {
+          const other = visible[j]!.volume
+          if (other.host === surface.id || !covers(outgoing.contentRect, other))
+            continue
+          outgoing.occluders[outgoing.occluderCount++] = other
+          const above = groups.planOf(other)
+          if (plan === null || above === null || above.level <= plan.level || !stackSees(plan, above))
+            outgoing.backdropOccluders[outgoing.backdropOccluderCount++] = other
+        }
+        const outUniform = writeContent(this.frame, outgoing, outgoing.occluders, outgoing.occluderCount, viewWidth, viewHeight, canvasWidth, canvasHeight)
+        list.push(order, clear.get(outgoing.occluderCount), outUniform, outgoing.content.group)
+        if (outgoing.backdropOccluderCount > 0)
+          this.occluded[occludedCount++] = outgoing
+      }
       const uniform = writeContent(this.frame, surface, surface.occluders, surface.occluderCount, viewWidth, viewHeight, canvasWidth, canvasHeight)
       list.push(order, clear.get(surface.occluderCount), uniform, content.group)
       if (surface.backdropOccluderCount > 0)
         this.occluded[occludedCount++] = surface
+    }
+    const ghosts = this.host.ghosts
+    for (let i = 0; i < ghosts.length; i++) {
+      const ghost = ghosts[i]!
+      const outgoing = ghost.outgoing
+      if (outgoing === null || !outgoing.active || outgoing.content === null || outgoing.contentOpacity <= 0.001)
+        continue
+      outgoing.occluderCount = 0
+      outgoing.backdropOccluderCount = 0
+      const ghostPlan = groups.planOf(ghost.volume)
+      for (let j = 0; j < count; j++) {
+        const other = visible[j]!.volume
+        if (other.layer <= ghost.volume.layer || !covers(outgoing.contentRect, other))
+          continue
+        outgoing.occluders[outgoing.occluderCount++] = other
+        const above = groups.planOf(other)
+        if (ghostPlan === null || above === null || above.level <= ghostPlan.level || !stackSees(ghostPlan, above))
+          outgoing.backdropOccluders[outgoing.backdropOccluderCount++] = other
+      }
+      const order = glassContentRenderOrder(ghost.volume.layer, ghost.volume.paintOrder)
+      const outUniform = writeContent(this.frame, outgoing, outgoing.occluders, outgoing.occluderCount, viewWidth, viewHeight, canvasWidth, canvasHeight)
+      list.push(order, clear.get(outgoing.occluderCount), outUniform, outgoing.content.group)
+      if (outgoing.backdropOccluderCount > 0)
+        this.occluded[occludedCount++] = outgoing
     }
     return occludedCount
   }
@@ -945,8 +1158,18 @@ export class GlassFrame {
     flow.configure(options.morphStretch, options.morphBounce, options.morphWobble, Math.max(radius[0], radius[1], radius[2], radius[3]), options.morphSpeed)
     if (flow.retarget(surface.layout)) {
       const layout = surface.layout
-      if (resting && surface.reveal >= 1 && options.materialize && layout.width * layout.height > volume.width * volume.height * GROW_RATIO)
-        this.startReveal(surface, true)
+      const oldWidth = Math.max(volume.width, 1)
+      const oldHeight = Math.max(volume.height, 1)
+      const growing = layout.width * layout.height > oldWidth * oldHeight * GROW_RATIO
+      const reshaped = Math.max(
+        layout.width / oldWidth,
+        oldWidth / Math.max(layout.width, 1),
+        layout.height / oldHeight,
+        oldHeight / Math.max(layout.height, 1),
+      ) >= RESIZE_RATIO
+      const hasOutgoing = surface.outgoing !== null && surface.outgoing.active
+      if (options.materialize && !this.host.reducedMotion() && (growing || reshaped) && ((resting && surface.reveal >= 1) || hasOutgoing))
+        this.startReveal(surface, growing, hasOutgoing)
       this.host.startAnimation()
     }
     if (!flow.active) {

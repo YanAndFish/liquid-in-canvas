@@ -4,7 +4,7 @@ import type { GlassOptics } from '../types'
 import type { GlassTheme } from './defaults'
 import type { GlassFrameHost } from './glass-frame.hot'
 import type { GlassOptions } from './options'
-import type { GlassGhost, GlassSurface, Rect, UnderContent } from './surface'
+import type { GlassGhost, GlassSurface, OutgoingContent, Rect, UnderContent } from './surface'
 import { attr, GLASS_ATTR, GLASS_PLACE_ATTR, hasAttr } from '../contract'
 import { createElementTexture, disposeElementTexture } from '../gpu'
 import { reducedMotionQuery } from '../shared/motion'
@@ -12,7 +12,7 @@ import { onGlassDefaultsChange } from './defaults'
 import { LiquidFlow } from './flow.hot'
 import { GlassFrame } from './glass-frame.hot'
 import { glassOptionsSignature, glassScopes, parseGlassOptions } from './options'
-import { createSurface, createUnderContent } from './surface'
+import { createOutgoingContent, createSurface, createUnderContent } from './surface'
 import { GlassThemeSource } from './theme'
 
 export interface LiquidGlassLayerOptions {
@@ -53,6 +53,8 @@ interface Leaving {
 }
 
 const HANDOVER_WINDOW = 400
+const OUTGOING_SECONDS = 0.24
+const MORPH_RESIZE_RATIO = 1.2
 const EMIT_SCALE = 0.6
 const EMIT_DEPTH = 0.2
 const RESOURCE_SETTLE = 300
@@ -261,6 +263,8 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.departed = []
     this.entering.length = 0
     this.leaving.length = 0
+    for (const ghost of this.ghosts)
+      this.dropOutgoing(ghost)
     this.ghosts.length = 0
     this.frame?.dispose()
     this.frame = null
@@ -303,8 +307,15 @@ export class LiquidGlassLayer implements GlassFrameHost {
     const index = this.fading.indexOf(surface)
     if (index >= 0)
       this.fading.splice(index, 1)
+    this.dropOutgoing(surface)
     disposeElementTexture(surface.content)
     surface.content = null
+  }
+
+  releaseOutgoing(outgoing: OutgoingContent): void {
+    disposeElementTexture(outgoing.content)
+    outgoing.content = null
+    outgoing.active = false
   }
 
   reducedMotion(): boolean {
@@ -570,8 +581,10 @@ export class LiquidGlassLayer implements GlassFrameHost {
         other.partner = null
     }
     for (let i = this.ghosts.length - 1; i >= 0; i--) {
-      if (this.ghosts[i]!.target === surface || this.ghosts[i]!.partner === surface)
+      if (this.ghosts[i]!.target === surface || this.ghosts[i]!.partner === surface) {
+        this.dropOutgoing(this.ghosts[i]!)
         this.ghosts.splice(i, 1)
+      }
     }
     if (surface.pending) {
       surface.pending = false
@@ -657,7 +670,21 @@ export class LiquidGlassLayer implements GlassFrameHost {
     this.startAnimation()
   }
 
+  private dropOutgoing(owner: { outgoing: OutgoingContent | null }): void {
+    if (owner.outgoing) {
+      this.releaseOutgoing(owner.outgoing)
+      owner.outgoing = null
+    }
+  }
+
+  private takeTexture(surface: GlassSurface): ElementTexture | null {
+    const content = surface.content
+    surface.content = null
+    return content
+  }
+
   private dropContent(surface: GlassSurface): void {
+    this.dropOutgoing(surface)
     disposeElementTexture(surface.content)
     surface.content = null
   }
@@ -673,7 +700,11 @@ export class LiquidGlassLayer implements GlassFrameHost {
       ? this.takeDeparted(name, surface, now)
       : null
     if (inherited) {
-      this.startFlow(surface, inherited, null)
+      this.startFlow(surface, inherited.rect, null)
+      if (inherited.content && !surface.host) {
+        this.dropOutgoing(surface)
+        surface.outgoing = createOutgoingContent(inherited.content, inherited.rect, surface.volume, OUTGOING_SECONDS)
+      }
       return
     }
     for (const from of surface.options.morphFrom) {
@@ -715,9 +746,16 @@ export class LiquidGlassLayer implements GlassFrameHost {
     let ghost: GlassGhost | null = null
     let fading: GlassSurface | null = null
     if (target) {
+      this.dropOutgoing(surface)
+      const texture = surface.host === null
+        ? this.takeTexture(surface)
+        : null
+      if (texture === null)
+        this.dropContent(surface)
       ghost = this.createGhost(surface.options, rect, target, null)
+      if (texture !== null)
+        ghost.outgoing = createOutgoingContent(texture, rect, ghost.volume, OUTGOING_SECONDS)
       this.ghosts.push(ghost)
-      this.dropContent(surface)
       this.startAnimation()
     }
     else if (this.fades(surface)) {
@@ -739,13 +777,21 @@ export class LiquidGlassLayer implements GlassFrameHost {
     }
   }
 
-  private takeDeparted(name: string, surface: GlassSurface, now: number): Rect | null {
+  private takeDeparted(name: string, surface: GlassSurface, now: number): { rect: Rect, content: ElementTexture | null } | null {
     const leaving = this.leaving.filter(entry => !entry.consumed && entry.surface.options.morph === name)
     const chosen = pickByScope(leaving, entry => entry.surface.scopes, surface.scopes)
     if (chosen) {
       chosen.consumed = true
-      this.dropContent(chosen.surface)
-      return copyRect(chosen.surface.volume)
+      this.dropOutgoing(chosen.surface)
+      const content = surface.host === null
+        ? this.takeTexture(chosen.surface)
+        : null
+      if (content === null)
+        this.dropContent(chosen.surface)
+      return {
+        rect: copyRect(chosen.surface.volume),
+        content,
+      }
     }
     const departed = pickByScope(
       this.departed.filter(entry => entry.name === name && now - entry.time < HANDOVER_WINDOW),
@@ -760,16 +806,36 @@ export class LiquidGlassLayer implements GlassFrameHost {
       const index = this.ghosts.indexOf(ghost)
       if (index >= 0) {
         this.ghosts.splice(index, 1)
-        return copyRect(ghost.volume)
+        let content: ElementTexture | null = null
+        if (ghost.outgoing) {
+          if (surface.host === null && ghost.outgoing.active && ghost.outgoing.content) {
+            content = ghost.outgoing.content
+            ghost.outgoing.content = null
+            ghost.outgoing.active = false
+          }
+          else {
+            this.dropOutgoing(ghost)
+          }
+        }
+        return {
+          rect: copyRect(ghost.volume),
+          content,
+        }
       }
     }
     const fading = departed.fading
     if (fading && this.fading.includes(fading)) {
       const rect = copyRect(fading.volume)
+      const content = surface.host === null
+        ? this.takeTexture(fading)
+        : null
       this.release(fading)
-      return rect
+      return { rect, content }
     }
-    return departed.rect
+    return {
+      rect: departed.rect,
+      content: null,
+    }
   }
 
   private findPresent(name: string, requester: GlassSurface): GlassSurface | null {
@@ -822,6 +888,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
         link: null,
         linkFusion: 0,
       },
+      outgoing: null,
     }
   }
 
@@ -1047,7 +1114,31 @@ export class LiquidGlassLayer implements GlassFrameHost {
     const content = this.createContentTexture(width, height)
     if (!content)
       return
-    disposeElementTexture(surface.content)
+    const previous = surface.content
+    const preserve = previous !== null
+      && surface.flow !== null
+      && surface.options.materialize
+      && !this.reducedMotion()
+      && surface.visible
+      && surface.placed
+      && !surface.snapFlow
+      && !this.layoutSettling()
+      && surface.volume.width > 0
+      && surface.volume.height > 0
+      && Math.max(
+        surface.rect.width / Math.max(surface.volume.width, 1),
+        surface.volume.width / Math.max(surface.rect.width, 1),
+        surface.rect.height / Math.max(surface.volume.height, 1),
+        surface.volume.height / Math.max(surface.rect.height, 1),
+      ) >= MORPH_RESIZE_RATIO
+    if (preserve) {
+      this.dropOutgoing(surface)
+      surface.outgoing = createOutgoingContent(previous, surface.volume, surface.volume, OUTGOING_SECONDS)
+      this.startAnimation()
+    }
+    else {
+      disposeElementTexture(previous)
+    }
     surface.content = content
     surface.textureWidth = width
     surface.textureHeight = height

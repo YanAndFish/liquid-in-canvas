@@ -360,6 +360,35 @@ describe('液体迁移', () => {
       fast.advance(1 / 120)
     expect(Math.abs(rectOf(slow).left - rectOf(fast).left)).toBeLessThan(2)
   })
+
+  it('同心原地跨比例变形（卡片到竖胶囊）在收敛阶段不会因方向为零把高度压扁成圆', () => {
+    const flow = new LiquidFlow({
+      left: -98,
+      top: -80,
+      width: 196,
+      height: 160,
+    })
+    flow.configure(1, 0.4, 0.1, 999, 0.6)
+    flow.retarget({
+      left: -34,
+      top: -99,
+      width: 68,
+      height: 198,
+    })
+    let minHeight = Infinity
+    for (let frame = 0; frame < 300 && flow.active; frame++) {
+      flow.advance(1 / 60)
+      const body = rectOf(flow)
+      minHeight = Math.min(minHeight, body.height)
+    }
+    expect(minHeight).toBeGreaterThanOrEqual(159)
+    expect(rectOf(flow)).toEqual({
+      left: -34,
+      top: -99,
+      width: 68,
+      height: 198,
+    })
+  })
 })
 
 describe('颜色换算', () => {

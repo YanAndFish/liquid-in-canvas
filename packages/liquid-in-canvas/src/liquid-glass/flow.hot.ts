@@ -406,24 +406,26 @@ export class LiquidFlow {
     let bodyHeight = height * Math.min(1, 1 - SQUASH * (1 - 1 / Math.sqrt(Math.max(width / restWidth, 0.25)))) * wobbleScale(this.strain, alongY, alongX)
     const acrossX = Math.abs(this.directionY)
     const acrossY = Math.abs(this.directionX)
-    const limit = this.across(restWidth, restHeight, acrossX, acrossY)
-    for (let pass = 0; pass < 3; pass++) {
-      const excess = this.across(bodyWidth, bodyHeight, acrossX, acrossY) - limit
-      if (excess <= 1e-6)
-        break
-      if (acrossY >= acrossX) {
-        const thinned = Math.max(height * THINNEST, bodyHeight - excess / acrossY)
-        const left = excess - (bodyHeight - thinned) * acrossY
-        bodyHeight = Math.min(bodyHeight, thinned)
-        if (left > 0 && acrossX > 0)
-          bodyWidth = Math.max(1, bodyWidth - left / acrossX)
-      }
-      else {
-        const thinned = Math.max(width * THINNEST, bodyWidth - excess / acrossX)
-        const left = excess - (bodyWidth - thinned) * acrossX
-        bodyWidth = Math.min(bodyWidth, thinned)
-        if (left > 0 && acrossY > 0)
-          bodyHeight = Math.max(1, bodyHeight - left / acrossY)
+    if (acrossX > 0 || acrossY > 0) {
+      const limit = this.across(restWidth, restHeight, acrossX, acrossY)
+      for (let pass = 0; pass < 3; pass++) {
+        const excess = this.across(bodyWidth, bodyHeight, acrossX, acrossY) - limit
+        if (excess <= 1e-6)
+          break
+        if (acrossY >= acrossX) {
+          const thinned = Math.max(height * THINNEST, bodyHeight - excess / acrossY)
+          const left = excess - (bodyHeight - thinned) * acrossY
+          bodyHeight = Math.min(bodyHeight, thinned)
+          if (left > 0 && acrossX > 0)
+            bodyWidth = Math.max(1, bodyWidth - left / acrossX)
+        }
+        else {
+          const thinned = Math.max(width * THINNEST, bodyWidth - excess / acrossX)
+          const left = excess - (bodyWidth - thinned) * acrossX
+          bodyWidth = Math.min(bodyWidth, thinned)
+          if (left > 0 && acrossY > 0)
+            bodyHeight = Math.max(1, bodyHeight - left / acrossY)
+        }
       }
     }
     this.bodyWidth = bodyWidth
