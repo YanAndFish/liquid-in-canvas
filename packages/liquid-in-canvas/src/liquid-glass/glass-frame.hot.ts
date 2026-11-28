@@ -169,7 +169,7 @@ export class GlassFrame {
     this.host = host
     for (let i = 0; i < MAX_STACK_LEVELS; i++)
       this.blurs.push(new BackdropBlur(gpu))
-    this.volumes = new VolumeGroups(gpu, this.blurs)
+    this.volumes = new VolumeGroups(gpu, this.blurs, host.invalidate)
     this.content = createContentPipelines(gpu)
     this.backdrop = new ContentBackdrop(gpu, this.content.occluded)
     this.stack = new StackBackdrops(gpu, this.blurs, this.content.stacked)
@@ -178,9 +178,9 @@ export class GlassFrame {
   }
 
   warm(volumeCounts: readonly number[], occluderCounts: readonly number[]): void {
-    this.volumes.warm(volumeCounts)
     for (let i = 0; i < occluderCounts.length; i++)
       this.content.clear.warm(occluderCounts[i]!)
+    this.volumes.warm(volumeCounts)
   }
 
   setOptics(optics: GlassOptics): void {

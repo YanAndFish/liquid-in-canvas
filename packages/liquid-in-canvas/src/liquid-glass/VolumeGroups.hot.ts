@@ -13,7 +13,7 @@ import { CLEAR_TRANSPARENT, HEADER_FLOATS } from '../frame'
 import { SLOT_CANVAS, SLOT_TARGET } from '../gpu'
 import { glassVolumeRenderOrder } from '../render-order'
 import { linearTint, srgbToLinear } from './color'
-import { bindFieldTextures } from './field-cache'
+import { bindFieldTextures, FIELD_MAX_MEMBERS } from './field-cache'
 import { GlassGroups, surfaceScale, writePressedBox } from './fusion.hot'
 import { createFieldCache, createProfileTable, createStackLevels, createVolumeBands, createVolumePlan, growInt32 } from './pools'
 import { profileBevelHeight, profileBevelWidth, profileHalfDepth } from './profile'
@@ -290,13 +290,15 @@ export class VolumeGroups {
   private fieldCache = true
   private optics: GlassOptics = 'raymarch'
   private readonly bands: VolumeBand[]
+  private readonly onReady: (() => void) | undefined
   private readonly textures = new WeakMap<GPUTextureView, VolumeTextures>()
   private readonly profileTextures = new WeakMap<GPUTextureView, VolumeTextures>()
 
-  constructor(gpu: StageGpu, blurs: readonly BackdropBlur[]) {
+  constructor(gpu: StageGpu, blurs: readonly BackdropBlur[], onReady?: () => void) {
     this.gpu = gpu
     this.frame = gpu.frame
     this.blurs = blurs
+    this.onReady = onReady
     for (let i = 0; i < MAX_STACK_LEVELS; i++)
       this.sources.push(null)
     this.pipelines = createVolumePipelines(gpu)
@@ -316,24 +318,13 @@ export class VolumeGroups {
   }
 
   warm(counts: readonly number[]): void {
-    const optics = this.optics
-    for (let i = 0; i < counts.length; i++) {
-      const count = counts[i]!
-      if (optics === 'hybrid' && count === 1) {
-        this.profilePipelines[SLOT_CANVAS]!.warm(count)
-        this.profilePipelines[SLOT_TARGET]!.warm(count)
-      }
-      const pipelines = this.table(true)
-      pipelines[SLOT_CANVAS]!.warm(count)
-      pipelines[SLOT_TARGET]!.warm(count)
-      if (optics === 'hybrid' && this.fieldCache) {
-        this.profilePipelines[SLOT_CANVAS]!.warm(count)
-        this.profilePipelines[SLOT_TARGET]!.warm(count)
-        this.fieldPipelines[SLOT_CANVAS]!.warm(count)
-        this.fieldPipelines[SLOT_TARGET]!.warm(count)
-        this.bakePipelines.warm(count)
-      }
-    }
+    const tables = this.optics === 'raymarch'
+      ? this.pipelines
+      : this.profilePipelines
+    for (let i = 0; i < counts.length; i++)
+      tables[SLOT_CANVAS]!.warm(counts[i]!)
+    for (let i = 0; i < counts.length; i++)
+      tables[SLOT_TARGET]!.warm(counts[i]!)
   }
 
   setOptics(optics: GlassOptics): void {
@@ -480,6 +471,14 @@ export class VolumeGroups {
       : this.profilePipelines
   }
 
+  private fieldReady(slot: number, count: number): boolean {
+    if (!this.gpu.canCompileAsync)
+      return true
+    const bake = this.bakePipelines.request(count, this.onReady)
+    const field = this.fieldPipelines[slot]!.request(count, this.onReady)
+    return bake !== null && field !== null
+  }
+
   private push(
     list: DrawList,
     slot: number,
@@ -513,24 +512,37 @@ export class VolumeGroups {
     let pipelines = this.table(traced)
     let textures: GPUBindGroup | null = null
     const fields = this.fields
-    if (fields !== null && profiles !== null && traced) {
-      const entry = fields.track(plan, this.frame.data, group, profiles)
-      if (entry !== null) {
-        if (primary && fields.prepare(entry, this.frame.data, group, plan.count, profiles, targetWidth / cssWidth))
-          this.bake(fields, entry, plan, start, targetWidth, targetHeight, cssWidth, cssHeight)
-        if (entry.live || entry.fade > 0) {
-          const data = this.frame.data
-          data[group + 12] = Math.round((entry.anchorX + entry.originX) * entry.ratio)
-          data[group + 13] = Math.round((entry.anchorY + entry.originY) * entry.ratio)
-          data[group + 14] = entry.ratio * cssWidth / targetWidth
-          data[group + 15] = entry.fade
-          pipelines = this.fieldPipelines
-          textures = this.fieldGroup(fields, entry, plan.level)
-        }
-        else {
-          pipelines = this.profilePipelines
+    if (fields !== null && profiles !== null && traced && plan.count <= FIELD_MAX_MEMBERS) {
+      if (this.fieldReady(slot, plan.count)) {
+        const entry = fields.track(plan, this.frame.data, group, profiles)
+        if (entry !== null) {
+          if (primary && fields.prepare(entry, this.frame.data, group, plan.count, profiles, targetWidth / cssWidth))
+            this.bake(fields, entry, plan, start, targetWidth, targetHeight, cssWidth, cssHeight)
+          if (entry.live || entry.fade > 0) {
+            const data = this.frame.data
+            data[group + 12] = Math.round((entry.anchorX + entry.originX) * entry.ratio)
+            data[group + 13] = Math.round((entry.anchorY + entry.originY) * entry.ratio)
+            data[group + 14] = entry.ratio * cssWidth / targetWidth
+            data[group + 15] = entry.fade
+            pipelines = this.fieldPipelines
+            textures = this.fieldGroup(fields, entry, plan.level)
+          }
+          else {
+            pipelines = this.profilePipelines
+          }
         }
       }
+      else {
+        pipelines = this.profilePipelines
+      }
+    }
+    if (pipelines === this.hybridPipelines) {
+      const ready = pipelines[slot]!.request(plan.count, this.onReady)
+      if (ready !== null) {
+        list.push(plan.order, ready, start * 4, textures ?? this.textureGroup(plan.level))
+        return
+      }
+      pipelines = this.profilePipelines
     }
     list.push(plan.order, pipelines[slot]!.get(plan.count), start * 4, textures ?? this.textureGroup(plan.level))
   }

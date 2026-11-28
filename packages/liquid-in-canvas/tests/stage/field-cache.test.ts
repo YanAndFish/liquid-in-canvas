@@ -759,7 +759,7 @@ describe('折射场缓存', () => {
     expect(frame(scene()).map(item => item.label).sort()).toEqual(['volume:0:1', 'volume:0:2'])
   })
 
-  it('预热混合光路时一并编译读写缓存的管线', () => {
+  it('预热混合光路只先编译轻量的剖面管线，读写缓存的重管线按需异步编译', () => {
     const { gpu, groups } = setup()
     const warmed: string[] = []
     gpu.compileAsync = (label: string) => {
@@ -768,14 +768,81 @@ describe('折射场缓存', () => {
     }
     groups.warm([2])
     expect(warmed.sort()).toEqual([
-      'volume-bake:2',
-      'volume-field:0:2',
-      'volume-field:1:2',
-      'volume-hybrid:0:2',
-      'volume-hybrid:1:2',
       'volume-profile:0:2',
       'volume-profile:1:2',
     ])
+  })
+
+  it('异步编译重管线期间先用剖面绘制且不空转重绘，编译串行完成后再写入缓存', async () => {
+    const fake = createFakeGpu()
+    const pending: { label: string, resolve: (pipeline: GPURenderPipeline) => void }[] = []
+    const createRenderPipelineAsync = (descriptor: GPURenderPipelineDescriptor) => new Promise<GPURenderPipeline>((resolve) => {
+      pending.push({
+        label: String(descriptor.label),
+        resolve,
+      })
+    })
+    ;(fake.device as unknown as { createRenderPipelineAsync: typeof createRenderPipelineAsync }).createRenderPipelineAsync = createRenderPipelineAsync
+
+    const blur = {
+      views: [{}, {}, {}, {}, {}],
+      generation: 0,
+    } as unknown as BackdropBlur
+    let invalidated = 0
+    const groups = new VolumeGroups(fake.gpu, [blur], () => {
+      invalidated++
+    })
+    groups.setOptics('hybrid')
+    const list = new DrawList()
+    let now = 1000
+    const draw = (time: number) => {
+      now = time
+      fake.gpu.frame.begin()
+      list.reset()
+      const items = scene()
+      groups.plan(items, items.length, {} as GPUTextureView, SHADING, list, now)
+      return list.items.slice(0, list.count).map(item => String((item.pipeline as unknown as { label: string }).label))
+    }
+
+    groups.warm([1, 2])
+    expect(pending.map(job => job.label)).toEqual(['volume-profile:0:1'])
+
+    expect(draw(now).sort()).toEqual(['volume-profile:0:1', 'volume-profile:0:2'])
+    expect(groups.settling).toBe(false)
+    expect(fake.pipelines.map(pipeline => pipeline.label)).not.toContain('volume-bake:2')
+    expect(fake.pipelines.map(pipeline => pipeline.label)).not.toContain('volume-field:0:2')
+    expect(pending).toHaveLength(1)
+
+    const flush = async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+
+    const first = pending.shift()!
+    first.resolve({ label: first.label } as unknown as GPURenderPipeline)
+    await flush()
+    expect(pending.map(job => job.label)).toEqual(['volume-bake:2'])
+
+    const bakeJob = pending.shift()!
+    bakeJob.resolve({ label: bakeJob.label } as unknown as GPURenderPipeline)
+    await flush()
+    expect(invalidated).toBe(1)
+    expect(pending.map(job => job.label)).toEqual(['volume-field:0:2'])
+    expect(draw(now + 16).sort()).toEqual(['volume-profile:0:1', 'volume-profile:0:2'])
+    expect(groups.settling).toBe(false)
+
+    const fieldJob = pending.shift()!
+    fieldJob.resolve({ label: fieldJob.label } as unknown as GPURenderPipeline)
+    await flush()
+    expect(invalidated).toBe(2)
+
+    expect(draw(now + 16).sort()).toEqual(['volume-profile:0:1', 'volume-profile:0:2'])
+    expect(groups.settling).toBe(true)
+    const settled = draw(now + FIELD_SETTLE_MS + 16)
+    expect(settled.sort()).toEqual(['volume-field:0:2', 'volume-profile:0:1'])
+    expect(fake.pipelines.map(pipeline => pipeline.label)).not.toContain('volume-bake:2')
+    expect(fake.pipelines.map(pipeline => pipeline.label)).not.toContain('volume-field:0:2')
   })
 })
 

@@ -94,5 +94,7 @@ describe('体积着色器', () => {
     expect(profile).toContain('let valid_all = min(validity.x, min(validity.y, validity.z));')
     expect(raymarch).toContain('glass_finish(screen_uv, normal, refracted, material.optics.x, material.optics.w, u.params.z)')
     expect(profile).toContain('glass_finish(screen_uv, normal, refracted, field.optics.x, field.optics.w, u.params.z)')
+    const paths = /fn glass_paths\([^)]*\) -> Paths \{([\s\S]*?)\n\}/.exec(raymarch)?.[1] ?? ''
+    expect(paths.match(/glass_exit\(/g)).toHaveLength(1)
   })
 })

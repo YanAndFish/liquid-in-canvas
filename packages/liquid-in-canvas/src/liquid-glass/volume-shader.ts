@@ -436,7 +436,8 @@ fn glass_normal(p: vec3f) -> vec3f {
   let e = 0.08;
   let x = glass_distance(p + vec3f(e, 0.0, 0.0)) - glass_distance(p - vec3f(e, 0.0, 0.0));
   let y = glass_distance(p + vec3f(0.0, e, 0.0)) - glass_distance(p - vec3f(0.0, e, 0.0));
-  let z = glass_distance(p + vec3f(0.0, 0.0, e)) - glass_distance(p - vec3f(0.0, 0.0, e));
+  let b = glass_body(p.xy);
+  let z = max(glass_section(b.planar, p.z + e - b.middle, b), b.clip) - max(glass_section(b.planar, p.z - e - b.middle, b), b.clip);
   return normalize(vec3f(x, y, z) + vec3f(0.0, 0.0, 0.00001));
 }
 
@@ -526,12 +527,22 @@ fn glass_paths(entry: vec3f, ior: f32, spread: f32) -> Paths {
   var paths: Paths;
   paths.height = entry.z;
   paths.normal = glass_normal(entry);
-  let green = glass_exit(entry, paths.normal, ior);
-  var red = green;
-  var blue = green;
-  if (spread > 0.00001) {
-    red = glass_exit(entry, paths.normal, ior - spread);
-    blue = glass_exit(entry, paths.normal, ior + spread);
+  var red = vec4f(0.0);
+  var green = vec4f(0.0);
+  var blue = vec4f(0.0);
+  let channels = select(1, 3, spread > 0.00001);
+  for (var c = 0; c < channels; c++) {
+    let shift = select(select(-spread, spread, c == 2), 0.0, c == 0);
+    let traced = glass_exit(entry, paths.normal, ior + shift);
+    if (c == 0) {
+      green = traced;
+      red = traced;
+      blue = traced;
+    } else if (c == 1) {
+      red = traced;
+    } else {
+      blue = traced;
+    }
   }
   paths.red = red.xyw;
   paths.green = green.xyw;

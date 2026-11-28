@@ -299,7 +299,7 @@ export class LiquidGlassLayer implements GlassFrameHost {
     return this.getBackdrop()
   }
 
-  invalidate(): void {
+  readonly invalidate = (): void => {
     this.onInvalidate()
   }
 
