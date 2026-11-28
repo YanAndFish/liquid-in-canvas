@@ -806,7 +806,6 @@ describe('玻璃内容纹理', () => {
 
       width = 260
       height = 240
-      surface.sizeDirty = true
       const openOldTexture = surface.content!.texture
       sync()
       expect(surface.revealGrowing).toBe(true)
@@ -825,7 +824,6 @@ describe('玻璃内容纹理', () => {
 
       width = 52
       height = 52
-      surface.sizeDirty = true
       const closeOldTexture = surface.content!.texture
       sync()
       expect(surface.revealGrowing).toBe(false)
@@ -849,6 +847,7 @@ describe('玻璃内容纹理', () => {
 
   it('非嵌套同名玻璃交接时保留旧内容纹理随形态变化模糊弯曲淡出，结束后释放', async () => {
     const { layer, sync, root, anchor } = setup()
+    anchor.getBoundingClientRect = () => new DOMRect(100, 100, 600, 200)
     const frame = (layer as unknown as { frame: { advanceMotion: (seconds: number, pressed: HTMLElement | null, reduced: boolean) => boolean } }).frame
     const makePanel = (left: number, width: number, height: number) => {
       const panel = document.createElement('div')
@@ -908,6 +907,7 @@ describe('玻璃内容纹理', () => {
 
   it('非嵌套玻璃按 data-glass-morph-to 并入目标时，残影保留旧内容纹理随收缩淡出并最终释放', async () => {
     const { layer, sync, root, anchor } = setup()
+    anchor.getBoundingClientRect = () => new DOMRect(100, 100, 600, 200)
     const frame = (layer as unknown as { frame: { advanceMotion: (seconds: number, pressed: HTMLElement | null, reduced: boolean) => boolean } }).frame
     const makeBox = (left: number, width: number, height: number) => {
       const box = document.createElement('div')
@@ -956,6 +956,54 @@ describe('玻璃内容纹理', () => {
       sync()
       expect(layer.ghosts).toHaveLength(0)
       expect(sheetTexture.destroy).toHaveBeenCalledTimes(1)
+    }
+    finally { layer.dispose() }
+  })
+
+  it('同名交接期间旧内容按自身矩形独立计算遮挡，不误用新位置的遮挡列表', async () => {
+    const { layer, sync, root, anchor } = setup()
+    anchor.getBoundingClientRect = () => new DOMRect(100, 100, 600, 200)
+    const frame = (layer as unknown as { frame: { advanceMotion: (seconds: number, pressed: HTMLElement | null, reduced: boolean) => boolean } }).frame
+    const makeBox = (left: number, width: number, height: number, glassLayer = 0) => {
+      const box = document.createElement('div')
+      box.dataset.liquidGlass = ''
+      if (glassLayer > 0)
+        box.dataset.glassLayer = String(glassLayer)
+      Object.defineProperties(box, {
+        offsetParent: {
+          get: () => anchor,
+        },
+        offsetLeft: { value: left },
+        offsetTop: { value: 0 },
+        offsetWidth: { value: width },
+        offsetHeight: { value: height },
+      })
+      box.getClientRects = () => [
+        new DOMRect(100 + left, 100, width, height),
+      ] as unknown as DOMRectList
+      root.append(box)
+      return box
+    }
+    try {
+      const header = makeBox(0, 120, 80, 1)
+      const leftCard = makeBox(0, 100, 80)
+      leftCard.dataset.glassMorph = 'travel'
+      await flush()
+      sync()
+      for (let steps = 0; steps < 240 && frame.advanceMotion(1 / 60, null, false); steps++)
+        sync()
+      const headerSurface = layer.surfaces.find(s => s.element === header)!
+
+      leftCard.remove()
+      const rightCard = makeBox(320, 100, 80)
+      rightCard.dataset.glassMorph = 'travel'
+      await flush()
+      sync()
+      const moved = layer.surfaces.find(s => s.element === rightCard)!
+      expect(moved.occluderCount).toBe(0)
+      expect(moved.outgoing?.active).toBe(true)
+      expect(moved.outgoing?.occluderCount).toBe(1)
+      expect(moved.outgoing?.occluders[0]).toBe(headerSurface.volume)
     }
     finally { layer.dispose() }
   })

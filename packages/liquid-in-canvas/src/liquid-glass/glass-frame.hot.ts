@@ -610,7 +610,10 @@ export class GlassFrame {
       && rect.left + rect.width <= Math.min(viewWidth, clip ? clip.right : viewWidth) + 0.5
       && rect.top + rect.height <= Math.min(viewHeight, clip ? clip.bottom : viewHeight) + 0.5
     if (!nested) {
-      if (visible && surface.sizeDirty)
+      const resized = surface.placed
+        && (Math.abs(rect.width - surface.placedWidth) >= GEOMETRY_EPSILON
+          || Math.abs(rect.height - surface.placedHeight) >= GEOMETRY_EPSILON)
+      if (visible && (surface.sizeDirty || resized))
         host.refreshTextureSize(surface)
       if (visible && (!surface.visible || (fullyVisible && !surface.fullyVisible))) {
         host.kickPaint(surface)
@@ -885,8 +888,21 @@ export class GlassFrame {
       }
       const outgoing = surface.outgoing
       if (outgoing !== null && outgoing.active && outgoing.content !== null && outgoing.contentOpacity > 0.001) {
-        const outUniform = writeContent(this.frame, outgoing, surface.occluders, surface.occluderCount, viewWidth, viewHeight, canvasWidth, canvasHeight)
-        list.push(order, clear.get(surface.occluderCount), outUniform, outgoing.content.group)
+        outgoing.occluderCount = 0
+        outgoing.backdropOccluderCount = 0
+        for (let j = i + 1; j < count; j++) {
+          const other = visible[j]!.volume
+          if (other.host === surface.id || !covers(outgoing.contentRect, other))
+            continue
+          outgoing.occluders[outgoing.occluderCount++] = other
+          const above = groups.planOf(other)
+          if (plan === null || above === null || above.level <= plan.level || !stackSees(plan, above))
+            outgoing.backdropOccluders[outgoing.backdropOccluderCount++] = other
+        }
+        const outUniform = writeContent(this.frame, outgoing, outgoing.occluders, outgoing.occluderCount, viewWidth, viewHeight, canvasWidth, canvasHeight)
+        list.push(order, clear.get(outgoing.occluderCount), outUniform, outgoing.content.group)
+        if (outgoing.backdropOccluderCount > 0)
+          this.occluded[occludedCount++] = outgoing
       }
       const uniform = writeContent(this.frame, surface, surface.occluders, surface.occluderCount, viewWidth, viewHeight, canvasWidth, canvasHeight)
       list.push(order, clear.get(surface.occluderCount), uniform, content.group)
@@ -900,14 +916,22 @@ export class GlassFrame {
       if (outgoing === null || !outgoing.active || outgoing.content === null || outgoing.contentOpacity <= 0.001)
         continue
       outgoing.occluderCount = 0
+      outgoing.backdropOccluderCount = 0
+      const ghostPlan = groups.planOf(ghost.volume)
       for (let j = 0; j < count; j++) {
         const other = visible[j]!.volume
-        if (other.layer > ghost.volume.layer && covers(outgoing.contentRect, other))
-          outgoing.occluders[outgoing.occluderCount++] = other
+        if (other.layer <= ghost.volume.layer || !covers(outgoing.contentRect, other))
+          continue
+        outgoing.occluders[outgoing.occluderCount++] = other
+        const above = groups.planOf(other)
+        if (ghostPlan === null || above === null || above.level <= ghostPlan.level || !stackSees(ghostPlan, above))
+          outgoing.backdropOccluders[outgoing.backdropOccluderCount++] = other
       }
       const order = glassContentRenderOrder(ghost.volume.layer, ghost.volume.paintOrder)
       const outUniform = writeContent(this.frame, outgoing, outgoing.occluders, outgoing.occluderCount, viewWidth, viewHeight, canvasWidth, canvasHeight)
       list.push(order, clear.get(outgoing.occluderCount), outUniform, outgoing.content.group)
+      if (outgoing.backdropOccluderCount > 0)
+        this.occluded[occludedCount++] = outgoing
     }
     return occludedCount
   }
