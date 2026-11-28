@@ -1,6 +1,6 @@
 import { wgslFloat } from '../gpu'
 import { LUT_ROWS_PER_PROFILE, LUT_SAMPLES, MAX_TRAVEL } from './optics-lut'
-import { clipCoverage, each, fuseDominance, fuseOutlines, gradientArray, REFLECTION_VARIANCE, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
+import { clipCoverage, each, fuseDominance, fuseOutlines, gradientArray, VOLUME_TEXTURES, volumeCommon } from './volume-shader'
 
 export function profileOptics(): string {
   return /* wgsl */`
@@ -55,22 +55,14 @@ fn glass_lookup(field: Field, xy: vec2f, screen_uv: vec2f) -> vec4f {
   let blue_uv = clamp((shifted + field.gradient * offsets.z) / viewport, u.valid.xy, u.valid.zw);
   let transmitted = glass_tone(sample_blur_rgb(red_uv, green_uv, blue_uv, field.optics.x), field.tone);
   let normal = normalize(vec3f(field.gradient * shift.w * field.stretch - top_tilt * slope.w, slope.w));
-  let reflection = reflect(vec3f(0.0, 0.0, -1.0), normal);
-  let environment_uv = clamp(screen_uv + reflection.xy * 48.0 / viewport, u.valid.xy, u.valid.zw);
-  let environment = sample_blur(environment_uv, field.optics.x + ${wgslFloat(REFLECTION_VARIANCE)});
-  let fresnel = 0.034 + pow(1.0 - clamp(normal.z, 0.0, 1.0), 5.0) * 0.966;
   let tinted = mix(transmitted, material_color, field.optics.z);
-  let valid = validity.xyz;
+  let valid_all = min(validity.x, min(validity.y, validity.z));
   var refracted = tinted;
-  if (min(valid.x, min(valid.y, valid.z)) < 1.0) {
+  if (valid_all < 1.0) {
     let local_environment = glass_tone(sample_blur(screen_uv, field.optics.x), field.tone);
-    refracted = mix(mix(local_environment, material_color, field.optics.z), tinted, valid);
+    refracted = mix(mix(local_environment, material_color, field.optics.z), tinted, valid_all);
   }
-  let reflected = mix(refracted, environment, clamp(fresnel * field.optics.w, 0.0, 1.0));
-  let light = pow(max(dot(normal, normalize(vec3f(-0.45, -0.6, 0.66))), 0.0), 32.0);
-  let edge = pow(1.0 - clamp(normal.z, 0.0, 1.0), 3.0);
-  let highlight = (light * 0.035 * edge + edge * 0.035) * field.optics.w;
-  return vec4f(reflected + vec3f(highlight * u.params.z), field.colored.a);
+  return vec4f(glass_finish(screen_uv, normal, refracted, field.optics.x, field.optics.w, u.params.z), field.colored.a);
 }
 `
 }

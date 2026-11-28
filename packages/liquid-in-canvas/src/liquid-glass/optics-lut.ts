@@ -119,7 +119,7 @@ export function traceProfile(key: ProfileKey): ProfileSample[] {
             const slope = gu / Math.max(-gz, 0.02)
             sample.slope[c] = slope
             sample.shift[c] = (pu - u0 + Math.max(pz, 0) * slope) / hd
-            sample.valid[c] = smoothstep(0.02, 0.14, -gz)
+            sample.valid[c] = smoothstep(0.06, 0.22, -gz)
             done = true
             break
           }

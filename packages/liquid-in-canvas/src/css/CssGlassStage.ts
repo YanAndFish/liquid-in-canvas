@@ -258,11 +258,13 @@ export class CssGlassStage {
     const theme = this.themeSource.value
     const options = parseGlassOptions(element, theme)
     this.applyRefraction(element, options, settled)
+    const surface = this.surfaces.get(element)
     const nested = !!element.parentElement?.closest(attr(GLASS_ATTR))
-    const legible = nested
+    const refracted = !!(surface?.signature || surface?.settle !== undefined)
+    const legible = nested || refracted
       ? options
       : legibleOptions(options, getComputedStyle(element).color, theme)
-    const properties = cssGlassProperties(legible, !this.surfaces.get(element)?.signature)
+    const properties = cssGlassProperties(legible, !surface?.signature)
     for (const name of PROPERTIES) {
       if (element.style.getPropertyValue(name) !== properties[name])
         element.style.setProperty(name, properties[name])

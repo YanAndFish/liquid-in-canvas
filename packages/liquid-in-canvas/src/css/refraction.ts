@@ -291,17 +291,11 @@ export function createRefractionFilter(id: string, shape: RefractionShape): SVGE
       blend('rg', 'b', 'displaced'),
     )
   }
-  filter.append(svgElement('feGaussianBlur', {
-    in: 'displaced',
-    stdDeviation: 0.6,
-    edgeMode: 'duplicate',
-    result: 'refracted',
-  }))
   if (maps.shine) {
     filter.append(
       image(maps.shine, 'ms'),
       matrix('ms', GRAY_TO_WHITE_ALPHA, 'shine'),
-      svgElement('feComposite', { in: 'shine', in2: 'refracted', operator: 'over' }),
+      svgElement('feComposite', { in: 'shine', in2: 'displaced', operator: 'over' }),
     )
   }
   return filter

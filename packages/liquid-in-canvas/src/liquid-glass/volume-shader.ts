@@ -276,6 +276,34 @@ fn shadow_strength(at: vec2f, variance: f32) -> f32 {
   let luminance = dot(backdrop, vec3f(0.2126, 0.7152, 0.0722));
   return mix(0.35, 1.0, smoothstep(0.2, 0.8, luminance));
 }
+
+fn glass_finish(screen_uv: vec2f, normal: vec3f, refracted: vec3f, variance: f32, specular: f32, brightness: f32) -> vec3f {
+  let viewport = u.screen.zw;
+  let nz = clamp(normal.z, 0.0, 1.0);
+  let grazing = 1.0 - nz;
+  let reflection = reflect(vec3f(0.0, 0.0, -1.0), normal);
+  let environment_uv = clamp(screen_uv + reflection.xy * 48.0 / viewport, u.valid.xy, u.valid.zw);
+  let environment = sample_blur(environment_uv, variance + ${wgslFloat(REFLECTION_VARIANCE)});
+  let fresnel = 0.034 + pow(grazing, 5.0) * 0.246;
+  var color = mix(refracted, environment, clamp(fresnel * specular, 0.0, 0.38));
+  let spec = min(specular, 2.0);
+  let n_len = length(normal.xy);
+  let n_xy = select(vec2f(0.0, -1.0), normal.xy / n_len, n_len > 0.0001);
+  let axis = dot(n_xy, normalize(vec2f(-0.22, -0.975)));
+  let axial = axis * axis;
+  let sides = 1.0 - axial;
+  let rim = pow(grazing, 5.0);
+  let rim_outer = pow(grazing, 5.5);
+  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
+  let light_bg = smoothstep(0.28, 0.85, luma);
+  let contour = (0.04 + 0.48 * sides) * rim_outer * light_bg * min(spec, 1.2);
+  color *= 1.0 - contour;
+  let lit_weight = (0.14 * (1.0 - light_bg) + (0.86 + 0.14 * light_bg) * axial) * rim * min(spec, 1.5);
+  let top_glint = pow(max(dot(normal, normalize(vec3f(-0.3, -0.75, 0.59))), 0.0), 24.0) * rim * 0.13 * min(spec, 1.5);
+  let rim_boost = color * (1.5 * (1.0 - light_bg * 0.65) * lit_weight * brightness);
+  let rim_white = vec3f((0.16 * lit_weight + top_glint) * brightness);
+  return color + rim_boost + rim_white;
+}
 ${blurSampler('sample_blur', ['at'])}${blurSampler('sample_blur_rgb', ['red', 'green', 'blue'])}`
 }
 
@@ -436,7 +464,7 @@ fn glass_exit(entry: vec3f, normal: vec3f, ior: f32) -> vec4f {
       if (dot(outgoing, outgoing) > 0.01) {
         let travel = max(p.z, 0.0) / max(-outgoing.z, 0.02);
         let background = p.xy + outgoing.xy * min(travel, 800.0);
-        return vec4f(background, path, smoothstep(0.02, 0.14, -outgoing.z));
+        return vec4f(background, path, smoothstep(0.06, 0.22, -outgoing.z));
       }
       if (bounced) { break; }
       direction = reflect(direction, outward);
@@ -518,22 +546,14 @@ fn glass_shade(screen_uv: vec2f, material: Material, paths: Paths) -> vec4f {
   let green_uv = clamp((paths.green.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
   let blue_uv = clamp((paths.blue.xy + material.lens) / viewport, u.valid.xy, u.valid.zw);
   let transmitted = glass_tone(sample_blur_rgb(red_uv, green_uv, blue_uv, material.optics.x), material.tone);
-  let reflection = reflect(vec3f(0.0, 0.0, -1.0), normal);
-  let environment_uv = clamp(screen_uv + reflection.xy * 48.0 / viewport, u.valid.xy, u.valid.zw);
-  let environment = sample_blur(environment_uv, material.optics.x + ${wgslFloat(REFLECTION_VARIANCE)});
-  let fresnel = 0.034 + pow(1.0 - clamp(normal.z, 0.0, 1.0), 5.0) * 0.966;
   let tinted = mix(transmitted, material.color, material.optics.z);
-  let valid = vec3f(paths.red.z, paths.green.z, paths.blue.z);
+  let valid_all = min(paths.red.z, min(paths.green.z, paths.blue.z));
   var refracted = tinted;
-  if (min(valid.x, min(valid.y, valid.z)) < 1.0) {
+  if (valid_all < 1.0) {
     let local_environment = glass_tone(sample_blur(screen_uv, material.optics.x), material.tone);
-    refracted = mix(mix(local_environment, material.color, material.optics.z), tinted, valid);
+    refracted = mix(mix(local_environment, material.color, material.optics.z), tinted, valid_all);
   }
-  let reflected = mix(refracted, environment, clamp(fresnel * material.optics.w, 0.0, 1.0));
-  let light = pow(max(dot(normal, normalize(vec3f(-0.45, -0.6, 0.66))), 0.0), 32.0);
-  let edge = pow(1.0 - clamp(normal.z, 0.0, 1.0), 3.0);
-  let highlight = (light * 0.035 * edge + edge * 0.035) * material.optics.w;
-  return vec4f(reflected + vec3f(highlight * u.params.z), material.colored.a);
+  return vec4f(glass_finish(screen_uv, normal, refracted, material.optics.x, material.optics.w, u.params.z), material.colored.a);
 }
 
 fn glass_trace(xy: vec2f, screen_uv: vec2f) -> vec4f {
